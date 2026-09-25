@@ -1,36 +1,33 @@
-const document = (id, jobId, requirement, fileName, status, uploadedBy, uploadedAt, extra = {}) => ({
-  id,
-  jobId,
-  requirement,
-  name: fileName,
-  fileName,
-  fileType: 'PDF',
-  fileSize: '1.8 MB',
-  status,
-  uploadedBy,
-  uploadedAt,
-  updatedAt: extra.updatedAt || uploadedAt,
-  reviewAuthority: extra.reviewAuthority || 'trukkas_admin',
-  uploadedByRole: extra.uploadedByRole || 'Forwarder',
-  reviewedBy: extra.reviewedBy,
-  reviewedAt: extra.reviewedAt,
-  rejectionReason: extra.rejectionReason,
-  reuploadMessage: extra.reuploadMessage,
-  version: extra.version || 1,
-});
+// Compliance documents, each attached to one vehicle (`truckPlate`).
+let seq = 1;
+function doc(entry) {
+  return { id: `DOC-${String(seq++).padStart(4, '0')}`, fileSize: '—', ...entry };
+}
 
 export const documents = [
-  document('doc-29821-tdo', 'JOB-29821', 'tdo', 'TDO-JOB-29821.pdf', 'Approved', 'DCL Shipping Services', 'May 26, 2026 09:10 AM', { reviewedBy: 'Amina Yusuf', reviewedAt: 'May 26, 2026 10:24 AM' }),
-  document('doc-29821-gate', 'JOB-29821', 'customs_gate_pass', 'Customs-Gate-Pass.pdf', 'Pending Review', 'DCL Shipping Services', 'May 26, 2026 11:35 AM'),
-  document('doc-29821-exit', 'JOB-29821', 'exit_note', 'Exit-Note.pdf', 'Rejected', 'DCL Shipping Services', 'May 25, 2026 03:40 PM', { rejectionReason: 'Terminal stamp is not legible.', reviewedBy: 'Amina Yusuf', reviewedAt: 'May 26, 2026 08:15 AM' }),
-  document('doc-29818-tdo', 'JOB-29818', 'tdo', 'TDO-JOB-29818.pdf', 'Approved', 'Sunrise Logistics', 'May 20, 2026 10:24 AM', { reviewedBy: 'Amina Yusuf', reviewedAt: 'May 20, 2026 11:02 AM' }),
-  document('doc-29818-gate', 'JOB-29818', 'customs_gate_pass', 'Gate-Pass-v2.pdf', 'Re-upload Requested', 'Sunrise Logistics', 'May 22, 2026 08:30 AM', { reuploadMessage: 'Please upload the full gate pass, including the clearance stamp.', reviewedBy: 'Amina Yusuf', reviewedAt: 'May 22, 2026 09:05 AM', version: 2 }),
-  document('doc-29818-exit', 'JOB-29818', 'exit_note', 'Exit-Note.pdf', 'Pending Review', 'Sunrise Logistics', 'May 25, 2026 10:24 AM'),
-  document('doc-29825-tdo', 'JOB-29825', 'tdo', '—', 'Missing', 'Westafrica Forwarders', '—'),
-  document('doc-29825-gate', 'JOB-29825', 'customs_gate_pass', '—', 'Missing', 'Westafrica Forwarders', '—'),
-  document('doc-29825-exit', 'JOB-29825', 'exit_note', '—', 'Missing', 'Westafrica Forwarders', '—'),
-  document('doc-29820-indemnity', 'JOB-29820', 'indemnity_letter', 'Indemnity-Letter.pdf', 'Pending Truck Company', 'Westafrica Forwarders', 'May 24, 2026 11:15 AM', { reviewAuthority: 'trucking_company', uploadedByRole: 'Exporter' }),
-  document('doc-29820-confirmation', 'JOB-29820', 'confirmation_letter', 'Confirmation-Letter.pdf', 'Approved', 'Westafrica Forwarders', 'May 24, 2026 11:20 AM', { reviewAuthority: 'trucking_company', uploadedByRole: 'Exporter', reviewedBy: 'HaulPro Logistics', reviewedAt: 'May 24, 2026 01:40 PM' }),
-  document('doc-29815-indemnity', 'JOB-29815', 'indemnity_letter', 'Indemnity-Letter.pdf', 'Rejected', 'BlueOcean Trading', 'May 21, 2026 02:12 PM', { reviewAuthority: 'trucking_company', uploadedByRole: 'Exporter', rejectionReason: 'Company signature is missing.', reviewedBy: 'HaulPro Logistics', reviewedAt: 'May 21, 2026 03:34 PM' }),
-  document('doc-29815-confirmation', 'JOB-29815', 'confirmation_letter', 'Confirmation-Letter.pdf', 'Approved', 'BlueOcean Trading', 'May 21, 2026 02:18 PM', { reviewAuthority: 'trucking_company', uploadedByRole: 'Exporter', reviewedBy: 'HaulPro Logistics', reviewedAt: 'May 21, 2026 03:34 PM' }),
+  doc({ truckPlate: 'LSD 123 XY', name: 'Vehicle Registration Certificate.pdf', type: 'Registration', expiryDate: 'Nov 30, 2026', status: 'Valid', uploadedOn: 'Jan 12, 2023' }),
+  doc({ truckPlate: 'LSD 123 XY', name: 'Insurance Certificate.pdf', type: 'Insurance', expiryDate: 'Dec 15, 2026', status: 'Valid', uploadedOn: 'Jan 10, 2023' }),
+  doc({ truckPlate: 'LSD 123 XY', name: 'Road Worthiness Certificate.pdf', type: 'Road Worthiness', expiryDate: 'Nov 30, 2026', status: 'Valid', uploadedOn: 'Jan 15, 2023' }),
+  doc({ truckPlate: 'LSD 123 XY', name: 'Emission Test Report.jpg', type: 'Emission', expiryDate: 'Oct 10, 2026', status: 'Valid', uploadedOn: 'Feb 3, 2023' }),
+  doc({ truckPlate: 'LSD 123 XY', name: 'Customs Permit.pdf', type: 'Customs', expiryDate: 'Sep 20, 2026', status: 'Valid', uploadedOn: 'Mar 12, 2023' }),
+  doc({ truckPlate: 'LSD 123 XY', name: 'Tanker Fitness Certificate.pdf', type: 'Special Permit', expiryDate: 'Aug 18, 2026', status: 'Expiring Soon', uploadedOn: 'Feb 20, 2023' }),
+  doc({ truckPlate: 'LSD 123 XY', name: 'Vehicle Photo (Front).jpg', type: 'Vehicle Photos', expiryDate: '—', status: 'N/A', uploadedOn: 'Jan 12, 2023' }),
+  doc({ truckPlate: 'LSD 123 XY', name: 'Vehicle Photo (Back).jpg', type: 'Vehicle Photos', expiryDate: '—', status: 'N/A', uploadedOn: 'Jan 12, 2023' }),
+  doc({ truckPlate: 'LSD 123 XY', name: 'Load Capacity Certificate.pdf', type: 'Technical', expiryDate: 'Jul 25, 2027', status: 'Valid', uploadedOn: 'Apr 5, 2023' }),
+  doc({ truckPlate: 'LSD 123 XY', name: 'ADR Certificate.pdf', type: 'Safety', expiryDate: 'Jun 12, 2026', status: 'Expiring Soon', uploadedOn: 'Apr 10, 2023' }),
+
+  doc({ truckPlate: 'KJA 456 AB', name: 'Vehicle Registration Certificate.pdf', type: 'Registration', expiryDate: 'Jan 2, 2027', status: 'Valid', uploadedOn: 'Mar 4, 2022' }),
+  doc({ truckPlate: 'KJA 456 AB', name: 'Insurance Certificate.pdf', type: 'Insurance', expiryDate: 'Aug 2, 2026', status: 'Expiring Soon', uploadedOn: 'Aug 2, 2022' }),
+  doc({ truckPlate: 'KJA 456 AB', name: 'Road Worthiness Certificate.pdf', type: 'Road Worthiness', expiryDate: 'Jul 14, 2026', status: 'Expiring Soon', uploadedOn: 'Jul 14, 2022' }),
+
+  doc({ truckPlate: 'APP 789 CD', name: 'Vehicle Registration Certificate.pdf', type: 'Registration', expiryDate: 'Sep 18, 2027', status: 'Valid', uploadedOn: 'Sep 18, 2021' }),
+  doc({ truckPlate: 'APP 789 CD', name: 'Insurance Certificate.pdf', type: 'Insurance', expiryDate: 'Feb 20, 2027', status: 'Valid', uploadedOn: 'Feb 20, 2023' }),
+
+  doc({ truckPlate: 'TKR 987 EF', name: 'ADR Certificate.pdf', type: 'Safety', expiryDate: 'Mar 11, 2027', status: 'Valid', uploadedOn: 'Mar 11, 2023' }),
+  doc({ truckPlate: 'TKR 987 EF', name: 'Insurance Certificate.pdf', type: 'Insurance', expiryDate: 'Mar 11, 2027', status: 'Valid', uploadedOn: 'Mar 11, 2023' }),
+
+  doc({ truckPlate: 'LAG 321 GH', name: 'Insurance Certificate.pdf', type: 'Insurance', expiryDate: 'Jan 5, 2026', status: 'Expired', uploadedOn: 'Jan 5, 2025' }),
+  doc({ truckPlate: 'LAG 321 GH', name: 'Road Worthiness Certificate.pdf', type: 'Road Worthiness', expiryDate: 'Dec 1, 2025', status: 'Expired', uploadedOn: 'Dec 1, 2024' }),
+
+  doc({ truckPlate: 'PHC 665 KL', name: 'Road Worthiness Certificate.pdf', type: 'Road Worthiness', expiryDate: 'Feb 8, 2026', status: 'Expired', uploadedOn: 'Feb 8, 2025' }),
 ];

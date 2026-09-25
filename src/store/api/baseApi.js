@@ -5,14 +5,14 @@ const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://trukk
 const baseUrl = configuredBaseUrl.replace(/\/+$/, '');
 const apiLoggingDisabled = String(process.env.NEXT_PUBLIC_API_LOGGING ?? '').trim().toLowerCase() === 'false';
 const apiLoggingEnabled = process.env.NODE_ENV !== 'production' && !apiLoggingDisabled;
-const publicEndpoints = new Set(['loginAdmin', 'refreshAdmin', 'forgotAdminPassword', 'resetAdminPassword']);
+const publicEndpoints = new Set(['loginAccount', 'refreshAccount', 'forgotAccountPassword', 'resetAccountPassword']);
 const reauthExcludedPaths = new Set([
-  '/admin/auth/login',
-  '/admin/auth/refresh',
-  '/admin/auth/forgot-password',
-  '/admin/auth/reset-password',
+  '/auth/login',
+  '/auth/refresh',
+  '/auth/forgot-password',
+  '/auth/reset-password',
 ]);
-const retryableAfterRefresh = new Set(['markAdminNotificationsRead', 'markAllAdminNotificationsRead']);
+const retryableAfterRefresh = new Set(['markNotificationsRead', 'markAllNotificationsRead']);
 
 const rawBaseQuery = fetchBaseQuery({
   baseUrl,
@@ -159,12 +159,14 @@ export function unwrapApiResponseData(response) {
   return data;
 }
 
+// Not yet exercised — auth stays mock-gated (see authApi.js) until a
+// company-facing auth endpoint is confirmed against the live API spec.
 async function performRefresh(refreshToken, api, extraOptions) {
   const result = await runLoggedBaseQuery(refreshBaseQuery, {
-    url: '/admin/auth/refresh',
+    url: '/auth/refresh',
     method: 'POST',
     body: { refreshToken },
-  }, api, extraOptions, 'refreshAdmin');
+  }, api, extraOptions, 'refreshAccount');
 
   // A logout or newer login may have happened while the request was in flight.
   if (api.getState().auth.refreshToken !== refreshToken) return { status: 'stale' };
@@ -181,7 +183,7 @@ async function performRefresh(refreshToken, api, extraOptions) {
   api.dispatch(setCredentials({
     accessToken: data.accessToken,
     refreshToken: data.refreshToken || refreshToken,
-    admin: data.admin,
+    account: data.account,
   }));
   return { status: 'success' };
 }
@@ -229,6 +231,6 @@ async function baseQueryWithReauth(args, api, extraOptions) {
 export const baseApi = createApi({
   reducerPath: 'baseApi',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['AdminNotifications'],
+  tagTypes: ['Notifications'],
   endpoints: () => ({}),
 });

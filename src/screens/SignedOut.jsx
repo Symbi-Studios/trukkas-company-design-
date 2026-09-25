@@ -23,7 +23,7 @@ export function SignedOut() {
         </span>
         <div style={{ display: 'grid', gap: 7 }}>
           <h1 className="tk-title" style={{ margin: 0 }}>You’re logged out</h1>
-          <p className="tk-body" style={{ margin: 0, color: 'var(--tk-ink-400)' }}>Your admin session has ended on this device.</p>
+          <p className="tk-body" style={{ margin: 0, color: 'var(--tk-ink-400)' }}>Your session has ended on this device.</p>
         </div>
         {serverUnconfirmed && (
           <p role="alert" className="tk-meta" style={{ margin: 0, color: 'var(--tk-danger)' }}>

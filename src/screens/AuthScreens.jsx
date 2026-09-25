@@ -6,13 +6,14 @@ import { useRouter } from 'next/navigation';
 import { useDispatch, useSelector } from 'react-redux';
 import { Button, Card, Logo, TextField } from '../ds.js';
 import {
-  useForgotAdminPasswordMutation,
-  useLoginAdminMutation,
-  useResetAdminPasswordMutation,
+  useForgotAccountPasswordMutation,
+  useLoginAccountMutation,
+  useResetAccountPasswordMutation,
 } from '../store/features/auth/authApi.js';
 import { clearSession } from '../store/features/auth/authSlice.js';
 import { baseApi } from '../store/api/baseApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { MOCK_CREDENTIALS } from '../mock/fixtures/account.js';
 import styles from './AuthScreens.module.css';
 
 function AuthFrame({ eyebrow, title, description, children }) {
@@ -26,7 +27,7 @@ function AuthFrame({ eyebrow, title, description, children }) {
           <p className={styles.description}>{description}</p>
           {children}
         </Card>
-        <p className={styles.footer}>Trukkas Admin Console</p>
+        <p className={styles.footer}>Trukkas for Trucking Companies</p>
       </div>
     </main>
   );
@@ -60,20 +61,20 @@ export function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
-  const [loginAdmin, { isLoading: busy }] = useLoginAdminMutation();
-  const admin = useSelector((state) => state.auth.admin);
+  const [loginAccount, { isLoading: busy }] = useLoginAccountMutation();
+  const account = useSelector((state) => state.auth.account);
   const [error, setError] = React.useState('');
   const [notice, setNotice] = React.useState('');
 
   React.useEffect(() => {
-    if (admin) {
+    if (account) {
       router.replace(destinationAfterLogin());
       return;
     }
     if (new URLSearchParams(window.location.search).get('reset') === '1') {
       setNotice('Password updated. Sign in with your new password.');
     }
-  }, [admin, router]);
+  }, [account, router]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -83,7 +84,7 @@ export function LoginScreen() {
       return;
     }
     try {
-      await loginAdmin({ email: email.trim(), password }).unwrap();
+      await loginAccount({ email: email.trim(), password }).unwrap();
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
     }
@@ -91,9 +92,9 @@ export function LoginScreen() {
 
   return (
     <AuthFrame
-      eyebrow="ADMIN ACCESS"
+      eyebrow="COMPANY ACCESS"
       title="Welcome back"
-      description="Sign in to manage Trukkas operations."
+      description="Sign in to manage your fleet, jobs, and earnings on Trukkas."
     >
       <Notice message={notice} />
       <Notice message={error} error />
@@ -109,7 +110,7 @@ export function LoginScreen() {
           required
           aria-required="true"
           disabled={busy}
-          placeholder="admin@trukkas.com"
+          placeholder={MOCK_CREDENTIALS.email}
         />
         <TextField
           label="Password"
@@ -136,7 +137,7 @@ export function LoginScreen() {
 
 export function ForgotPasswordScreen() {
   const [email, setEmail] = React.useState('');
-  const [forgotAdminPassword, { isLoading: busy }] = useForgotAdminPasswordMutation();
+  const [forgotAccountPassword, { isLoading: busy }] = useForgotAccountPasswordMutation();
   const [error, setError] = React.useState('');
   const [sent, setSent] = React.useState(false);
 
@@ -144,11 +145,11 @@ export function ForgotPasswordScreen() {
     event.preventDefault();
     setError('');
     if (!email.trim()) {
-      setError('Enter your admin email address.');
+      setError('Enter your registered email address.');
       return;
     }
     try {
-      await forgotAdminPassword({ email: email.trim() }).unwrap();
+      await forgotAccountPassword({ email: email.trim() }).unwrap();
       setSent(true);
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
@@ -159,7 +160,7 @@ export function ForgotPasswordScreen() {
     <AuthFrame
       eyebrow="ACCOUNT RECOVERY"
       title="Forgot your password?"
-      description="Enter your admin email. If it is registered, we’ll send a reset link."
+      description="Enter your email. If it is registered, we’ll send a reset link."
     >
       <Notice message={error} error />
       {sent ? (
@@ -181,7 +182,7 @@ export function ForgotPasswordScreen() {
             required
             aria-required="true"
             disabled={busy}
-            placeholder="admin@trukkas.com"
+            placeholder={MOCK_CREDENTIALS.email}
           />
           <Button type="submit" fullWidth disabled={busy}>
             {busy ? 'Sending link…' : 'Send reset link'}
@@ -199,7 +200,7 @@ export function ForgotPasswordScreen() {
 export function ResetPasswordScreen() {
   const router = useRouter();
   const dispatch = useDispatch();
-  const [resetAdminPassword, { isLoading: busy }] = useResetAdminPasswordMutation();
+  const [resetAccountPassword, { isLoading: busy }] = useResetAccountPasswordMutation();
   const [email, setEmail] = React.useState('');
   const [token, setToken] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
@@ -224,7 +225,7 @@ export function ResetPasswordScreen() {
       return;
     }
     try {
-      await resetAdminPassword({ email: email.trim(), token: token.trim(), newPassword }).unwrap();
+      await resetAccountPassword({ email: email.trim(), token: token.trim(), newPassword }).unwrap();
       dispatch(clearSession());
       dispatch(baseApi.util.resetApiState());
       router.replace('/login?reset=1');
@@ -237,7 +238,7 @@ export function ResetPasswordScreen() {
     <AuthFrame
       eyebrow="ACCOUNT RECOVERY"
       title="Set a new password"
-      description="Use the token from your Trukkas admin reset email."
+      description="Use the token from your Trukkas password reset email."
     >
       <Notice message={error} error />
       <form className={styles.form} onSubmit={handleSubmit}>
@@ -251,7 +252,7 @@ export function ResetPasswordScreen() {
           required
           aria-required="true"
           disabled={busy}
-          placeholder="admin@trukkas.com"
+          placeholder={MOCK_CREDENTIALS.email}
         />
         <TextField
           label="Reset token"

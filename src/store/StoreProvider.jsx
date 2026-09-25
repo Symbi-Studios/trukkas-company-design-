@@ -30,7 +30,7 @@ function AuthRefreshManager() {
     let timer;
     const schedule = (delay) => {
       timer = window.setTimeout(async () => {
-        const result = dispatch(authApi.endpoints.refreshAdmin.initiate());
+        const result = dispatch(authApi.endpoints.refreshAccount.initiate());
         try {
           await result.unwrap();
         } catch {

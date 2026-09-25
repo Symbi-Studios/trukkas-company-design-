@@ -1,21 +1,19 @@
 export const walletSummary = {
-  totalBalance: 78430500,
-  availableBalance: 65870500,
-  pendingWithdrawals: 6250000,
-  totalFundsAdded: 102450000,
-  totalFundsWithdrawn: 24020000,
+  balance: 3230000,
+  pendingPayout: 2400000,
+  earningsThisMonth: 4920000,
+  earningsLastMonth: 1210000,
+  completedTripsThisMonth: 5,
+  bankAccount: { bankName: 'GTBank', accountName: 'SpeedLine Logistics Limited', last4: '4821' },
 };
 
-export const transactions = [
-  { id: 'TRX-2024-0856', type: 'Funds Added', icon: 'arrow-down', tone: 'var(--tk-success)', desc: 'Payment from Global Haulage Ltd', sub: 'Escrow Release', party: 'Global Haulage Ltd', amt: 4250000, pos: true, status: 'Completed', date: 'May 31, 2024', time: '10:24 AM' },
-  { id: 'TRX-2024-0855', type: 'Withdrawal', icon: 'arrow-up', tone: 'var(--tk-purple)', desc: 'Paid to Danjos Carriers', sub: 'Service Payment', party: 'Danjos Carriers', amt: -2180000, pos: false, status: 'Completed', date: 'May 30, 2024', time: '04:30 PM' },
-  { id: 'TRX-2024-0854', type: 'Held in Escrow', icon: 'hourglass', tone: 'var(--tk-warning)', desc: 'Escrow Deposit', sub: 'ESC-2024-0891', party: 'Global Haulage Ltd', amt: -4250000, pos: false, status: 'In Escrow', date: 'May 29, 2024', time: '11:02 AM' },
-  { id: 'TRX-2024-0853', type: 'Funds Added', icon: 'arrow-down', tone: 'var(--tk-success)', desc: 'Payment from Atlantic Logistics', sub: 'Invoice INV-2024-1345', party: 'Atlantic Logistics', amt: 3800000, pos: true, status: 'Completed', date: 'May 28, 2024', time: '09:15 AM' },
-  { id: 'TRX-2024-0852', type: 'Withdrawal', icon: 'arrow-up', tone: 'var(--tk-purple)', desc: 'Paid to Tin Can Logistics', sub: 'Truck Assignment', party: 'Tin Can Logistics', amt: -1250000, pos: false, status: 'Pending', date: 'May 27, 2024', time: '03:40 PM' },
-  { id: 'TRX-2024-0851', type: 'Adjustment', icon: 'circle-alert', tone: 'var(--tk-danger)', desc: 'Reversal of failed payment', sub: 'Reversal', party: '—', amt: 120000, pos: true, status: 'Completed', date: 'May 27, 2024', time: '01:20 PM' },
-];
-
-export const bankAccounts = [
-  { bank: 'Zenith Bank Plc', mask: '**** **** **** 1234', balance: 65870500, primary: true },
-  { bank: 'GTBank Plc', mask: '**** **** **** 5678', balance: 12560000, primary: false },
-];
+// Oldest first; `balanceAfter` is the running balance once each transaction lands.
+export const walletTransactions = [
+  { id: 'TXN-8811', type: 'Debit', desc: 'Withdrawal to GTBank ••4821', amount: -2000000, date: 'Apr 20, 2026', status: 'Completed', balanceAfter: -2000000 },
+  { id: 'TXN-8870', type: 'Credit', desc: 'Payout · TRP-0031 (Apapa → Kaduna)', amount: 1210000, date: 'Apr 25, 2026', status: 'Completed', balanceAfter: -790000 },
+  { id: 'TXN-8902', type: 'Credit', desc: 'Payout · TRP-0040 (Ibadan → Sokoto)', amount: 920000, date: 'May 3, 2026', status: 'Completed', balanceAfter: 130000 },
+  { id: 'TXN-8940', type: 'Credit', desc: 'Payout · TRP-0034 (Lagos → Benin City)', amount: 950000, date: 'May 12, 2026', status: 'Completed', balanceAfter: 1080000 },
+  { id: 'TXN-8971', type: 'Debit', desc: 'Withdrawal to GTBank ••4821', amount: -900000, date: 'May 15, 2026', status: 'Completed', balanceAfter: 180000 },
+  { id: 'TXN-8994', type: 'Credit', desc: 'Payout · TRP-0036 (Lagos → Port Harcourt)', amount: 1250000, date: 'May 18, 2026', status: 'Completed', balanceAfter: 1430000 },
+  { id: 'TXN-9001', type: 'Credit', desc: 'Payout · TRP-0037 (Lagos → Port Harcourt)', amount: 1800000, date: 'May 22, 2026', status: 'Completed', balanceAfter: 3230000 },
+].slice().reverse();

@@ -1,36 +1,35 @@
 export const supportTickets = [
   {
-    id: 'TKTS-2024-0248', subject: 'Unable to create a new trip', customer: 'John Doe',
-    email: 'johndoe@oceanic.com', company: 'Oceanic Logistics Ltd', category: 'Trips & Jobs',
-    subcategory: 'Trip Creation', priority: 'High', status: 'Open', assignee: 'Sarah Johnson',
-    source: 'Web Portal', created: 'May 31, 2024, 10:30 AM', updated: 'May 31, 2024, 11:20 AM',
-    description: 'I am unable to create a new trip from the Trips & Jobs module. After filling in all the required details and clicking on “Create Trip”, nothing happens. No error message is shown.\n\nPlease help me resolve this issue as soon as possible.',
-    attachments: [{ name: 'Error_Screenshot.pdf', size: '245 KB', icon: 'file-text' }, { name: 'Trip_Form_Details.png', size: '1.2 MB', icon: 'image' }],
+    id: 'TCK-2026-0041', subject: 'Payout for TRP-0037 delayed by two days', category: 'Payments',
+    status: 'Resolved', createdAt: 'May 20, 2026', updatedAt: 'May 22, 2026',
     messages: [
-      { author: 'John Doe', initials: 'JD', role: 'Ticket Creator', time: 'May 31, 2024, 10:30 AM', body: 'I am unable to create a new trip from the Trips & Jobs module. After filling in all the required details and clicking on “Create Trip”, nothing happens. No error message is shown.\n\nPlease help me resolve this issue as soon as possible.' },
-      { author: 'Sarah Johnson', initials: 'SA', role: 'Support Agent', time: 'May 31, 2024, 11:05 AM', agent: true, body: 'Hello John,\n\nThanks for reaching out. I’m sorry you’re experiencing this issue. Could you please try clearing your cache and cookies, then attempt to create the trip again? If the issue persists, please share a screenshot or screen recording of the problem.\n\nThank you!' },
-      { author: 'John Doe', initials: 'JD', role: 'Ticket Creator', time: 'May 31, 2024, 11:20 AM', body: 'I’ve cleared the cache but the issue persists. Please find the screenshot attached.' },
+      { author: 'SpeedLine Admin', role: 'You', time: 'May 20, 2026 · 9:00 AM', agent: false, body: 'The payout for TRP-0037 was due May 20 but hasn’t landed yet.' },
+      { author: 'Amaka (Trukkas Support)', role: 'Support Agent', time: 'May 20, 2026 · 2:40 PM', agent: true, body: 'Thanks for flagging — this was held for a routine bank verification. It has been released and should land within 24 hours.' },
+      { author: 'SpeedLine Admin', role: 'You', time: 'May 22, 2026 · 10:05 AM', agent: false, body: 'Confirmed, funds received. Thank you!' },
     ],
   },
-  { id: 'TKTS-2024-0247', subject: 'Payment still pending after 24 hours', customer: 'Musa Bello', email: 'musa@northstar.ng', company: 'Northstar Haulage', category: 'Finance', subcategory: 'Payments', priority: 'High', status: 'In Progress', assignee: 'Michael Brown', source: 'Email', created: 'May 30, 2024, 4:20 PM', updated: 'May 31, 2024, 9:15 AM', description: 'A completed delivery payment is still pending.', attachments: [], messages: [] },
-  { id: 'TKTS-2024-0246', subject: 'Container location is not updating', customer: 'Ada Nwosu', email: 'ada@apexcargo.com', company: 'Apex Cargo', category: 'Live Tracking', subcategory: 'Location Updates', priority: 'Medium', status: 'Open', assignee: 'Sarah Wilson', source: 'Web Portal', created: 'May 30, 2024, 1:10 PM', updated: 'May 30, 2024, 3:45 PM', description: 'The container location has not changed since yesterday.', attachments: [], messages: [] },
-  { id: 'TKTS-2024-0245', subject: 'Driver document rejected', customer: 'Chidi Okafor', email: 'chidi@swiftlane.ng', company: 'Swiftlane Transport', category: 'Fleet Management', subcategory: 'Driver Documents', priority: 'Low', status: 'Resolved', assignee: 'David Wilson', source: 'Web Portal', created: 'May 29, 2024, 11:45 AM', updated: 'May 30, 2024, 8:10 AM', description: 'Please explain why the driver licence was rejected.', attachments: [], messages: [] },
-  { id: 'TKTS-2024-0244', subject: 'Incorrect trip rate displayed', customer: 'Amina Yusuf', email: 'amina@meridian.com', company: 'Meridian Exports', category: 'Pricing', subcategory: 'Trip Rates', priority: 'Medium', status: 'Pending', assignee: 'Michael Brown', source: 'Email', created: 'May 28, 2024, 9:05 AM', updated: 'May 29, 2024, 2:30 PM', description: 'The quoted rate differs from our approved rate card.', attachments: [], messages: [] },
-  { id: 'TKTS-2024-0243', subject: 'How do I add another truck?', customer: 'Emeka Obi', email: 'emeka@haulpro.ng', company: 'HaulPro Nigeria', category: 'Fleet Management', subcategory: 'Truck Setup', priority: 'Low', status: 'Closed', assignee: 'Sarah Johnson', source: 'Web Portal', created: 'May 27, 2024, 3:15 PM', updated: 'May 27, 2024, 4:00 PM', description: 'I need help adding another vehicle to our fleet.', attachments: [], messages: [] },
+  {
+    id: 'TCK-2026-0052', subject: 'Cannot upload ADR certificate for TKR 987 EF', category: 'Documents',
+    status: 'Open', createdAt: 'May 29, 2026', updatedAt: 'May 30, 2026',
+    messages: [
+      { author: 'SpeedLine Admin', role: 'You', time: 'May 29, 2026 · 11:12 AM', agent: false, body: 'The upload keeps failing at 90% for the ADR certificate PDF.' },
+      { author: 'Tunde (Trukkas Support)', role: 'Support Agent', time: 'May 30, 2026 · 8:30 AM', agent: true, body: 'Could you confirm the file size? Uploads are capped at 10MB per document.' },
+    ],
+  },
+  {
+    id: 'TCK-2026-0058', subject: 'Question about container demurrage charges', category: 'Billing',
+    status: 'Pending', createdAt: 'May 31, 2026', updatedAt: 'May 31, 2026',
+    messages: [
+      { author: 'SpeedLine Admin', role: 'You', time: 'May 31, 2026 · 3:15 PM', agent: false, body: 'Who absorbs demurrage if a forwarder delays document approval past the free period?' },
+    ],
+  },
 ];
 
-export const knowledgeArticles = [
-  { id: 'how-to-create-a-new-trip', title: 'How to Create a New Trip', summary: 'Learn how to create a new trip and add all required details...', category: 'Trips & Jobs', subcategory: 'Trip Creation', author: 'Sarah Johnson', status: 'Published', views: 1245, helpful: 96, updated: 'May 31, 2024', time: '10:30 AM', visibility: 'Public', featured: true, feedback: true, related: true },
-  { id: 'understanding-container-triangulation', title: 'Understanding Container Triangulation', summary: 'A complete guide to container triangulation and how it works...', category: 'Container Triangulation', subcategory: 'Overview', author: 'Sarah Wilson', status: 'Published', views: 987, helpful: 94, updated: 'May 30, 2024', time: '09:15 AM', visibility: 'Public', feedback: true, related: true },
-  { id: 'provisional-release-step-by-step', title: 'Provisional Release: Step by Step', summary: 'Steps to handle provisional release of containers...', category: 'Provisional Release', subcategory: 'Process', author: 'Sarah Johnson', status: 'Published', views: 756, helpful: 93, updated: 'May 29, 2024', time: '04:20 PM', visibility: 'Public', feedback: true, related: true },
-  { id: 'managing-payments-and-escrows', title: 'Managing Payments and Escrows', summary: 'How escrows work and managing payments securely...', category: 'Finance', subcategory: 'Escrow', author: 'Michael Brown', status: 'Published', views: 642, helpful: 91, updated: 'May 28, 2024', time: '11:05 AM', visibility: 'Public', feedback: true, related: true },
-  { id: 'adding-and-managing-drivers', title: 'Adding and Managing Drivers', summary: 'Add new drivers and manage driver information...', category: 'Fleet Management', subcategory: 'Drivers', author: 'John Doe', status: 'Draft', views: null, helpful: null, updated: 'May 28, 2024', time: '10:20 AM', visibility: 'Internal', feedback: true, related: true },
-  { id: 'how-to-track-your-shipment', title: 'How to Track Your Shipment', summary: 'Use live tracking to monitor your shipment in real-time...', category: 'Live Tracking', subcategory: 'Tracking', author: 'David Wilson', status: 'Published', views: 1102, helpful: 95, updated: 'May 27, 2024', time: '02:45 PM', visibility: 'Public', feedback: true, related: true },
-  { id: 'troubleshooting-common-issues', title: 'Troubleshooting Common Issues', summary: 'Solutions to common problems you might encounter...', category: 'General', subcategory: 'Troubleshooting', author: 'Sarah Johnson', status: 'Published', views: 889, helpful: 93, updated: 'May 26, 2024', time: '03:10 PM', visibility: 'Public', feedback: true, related: true },
-  { id: 'understanding-pricing-and-rates', title: 'Understanding Pricing and Rates', summary: 'How pricing is calculated and rate factors explained...', category: 'Pricing', subcategory: 'Rates', author: 'Michael Brown', status: 'Draft', views: null, helpful: null, updated: 'May 25, 2024', time: '09:00 AM', visibility: 'Internal', feedback: true, related: true },
-];
-
-export const knowledgeCategories = [
-  ['Trips & Jobs', 28], ['Container Triangulation', 18], ['Provisional Release', 16],
-  ['Fleet Management', 22], ['Finance', 25], ['Live Tracking', 15], ['Pricing', 14], ['General', 48],
+export const faqs = [
+  { id: 'FAQ-01', category: 'Getting Started', question: 'How do I bid on a job request?', answer: 'Open Jobs & Trips, switch to the Job Requests tab, choose a request, and select Place a Bid. Enter your amount and an optional note, then submit.' },
+  { id: 'FAQ-02', category: 'Fleet', question: 'How do I keep a vehicle’s documents compliant?', answer: 'Open Fleet, select a vehicle, and use the Documents tab to upload or renew registration, insurance, road worthiness, and any special permits before they expire.' },
+  { id: 'FAQ-03', category: 'Payments', question: 'When are payouts released?', answer: 'Payouts are released within 3–5 business days after a trip is marked Delivered and the forwarder confirms receipt.' },
+  { id: 'FAQ-04', category: 'Payments', question: 'How do I withdraw my wallet balance?', answer: 'Go to Earnings & Wallet and select Withdraw. Funds are sent to the bank account on file in Company Settings.' },
+  { id: 'FAQ-05', category: 'Fleet', question: 'What happens if a vehicle’s insurance expires?', answer: 'The vehicle is flagged as non-compliant and cannot be assigned to new trips until a valid certificate is uploaded.' },
+  { id: 'FAQ-06', category: 'Jobs & Trips', question: 'Can I withdraw a bid after submitting it?', answer: 'Yes, while the request is still in the Quoted stage and the forwarder has not yet accepted it.' },
 ];

@@ -1,15 +1,15 @@
 import '../ds/styles.css';
-import { AdminShell } from '../App.jsx';
+import { CompanyShell } from '../App.jsx';
 import { StoreProvider } from '../store/StoreProvider.jsx';
 import { DesktopOnlyNotice } from '../components/DesktopOnlyNotice.jsx';
 import screenStyles from '../components/DesktopOnlyNotice.module.css';
 
 export const metadata = {
   title: {
-    default: 'Trukkas Admin',
-    template: '%s | Trukkas Admin',
+    default: 'Trukkas',
+    template: '%s | Trukkas',
   },
-  description: 'Operations console for jobs, trips, bids, fleet, finance, and compliance.',
+  description: 'Manage jobs, trips, fleet, drivers, earnings, and payouts for your trucking company.',
 };
 
 export default function RootLayout({ children }) {
@@ -17,7 +17,7 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body style={{ margin: 0 }}>
         <div className={screenStyles.experience}>
-          <StoreProvider><AdminShell>{children}</AdminShell></StoreProvider>
+          <StoreProvider><CompanyShell>{children}</CompanyShell></StoreProvider>
         </div>
         <DesktopOnlyNotice />
       </body>

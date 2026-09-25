@@ -5,17 +5,20 @@ import { usePathname, useRouter } from "next/navigation.js";
 import { useDispatch, useSelector } from "react-redux";
 import {
   AppShell,
+  Avatar,
+  CompanySwitcher,
   Sidebar,
   SidebarNavItem,
   SidebarSectionLabel,
   TopBar,
 } from "./ds.js";
 import { NAV, SEARCH_PLACEHOLDER } from "./nav.js";
-import { useLogoutAdminMutation } from "./store/features/auth/authApi.js";
-import { useGetAdminNotificationsQuery } from "./store/features/notifications/notificationsApi.js";
-import { clearSession } from "./store/features/auth/authSlice.js";
+import { useLogoutAccountMutation } from "./store/features/auth/authApi.js";
+import { setActiveCompany, clearSession } from "./store/features/auth/authSlice.js";
 import { baseApi } from "./store/api/baseApi.js";
 import { AppLoadingScreen } from "./components/AppLoadingScreen.jsx";
+import { useCollection } from "./mock/useCollection.js";
+import { myCompany } from "./mock/fixtures/companies.js";
 import "./mock/api.js";
 
 const PUBLIC_ROUTES = new Set([
@@ -25,19 +28,17 @@ const PUBLIC_ROUTES = new Set([
   "/signed-out",
 ]);
 
-export function AdminShell({ children }) {
+export function CompanyShell({ children }) {
   const [collapsed, setCollapsed] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [globalSearch, setGlobalSearch] = React.useState("");
   const [mounted, setMounted] = React.useState(false);
   const [loggingOut, setLoggingOut] = React.useState(false);
-  const admin = useSelector((state) => state.auth.admin);
+  const account = useSelector((state) => state.auth.account);
   const dispatch = useDispatch();
-  const [logoutAdmin] = useLogoutAdminMutation();
-  const { data: notificationData } = useGetAdminNotificationsQuery(
-    { page: 1, limit: 20, tab: "all" },
-    { skip: !mounted || !admin || loggingOut, pollingInterval: 60000 },
-  );
+  const [logoutAccount] = useLogoutAccountMutation();
+  const notifications = useCollection("notifications") || [];
+  const unreadCount = notifications.filter((n) => !n.read).length;
   const router = useRouter();
   const pathname = usePathname();
   const activeId = pathname.split("/")[1] || "dashboard";
@@ -47,10 +48,10 @@ export function AdminShell({ children }) {
   }, []);
 
   React.useEffect(() => {
-    if (!mounted || PUBLIC_ROUTES.has(pathname) || admin || loggingOut) return;
+    if (!mounted || PUBLIC_ROUTES.has(pathname) || account || loggingOut) return;
     const target = pathname + window.location.search;
     router.replace("/login?next=" + encodeURIComponent(target));
-  }, [admin, loggingOut, mounted, pathname, router]);
+  }, [account, loggingOut, mounted, pathname, router]);
 
   React.useEffect(() => {
     if (pathname === "/signed-out") setLoggingOut(false);
@@ -71,7 +72,7 @@ export function AdminShell({ children }) {
     setLoggingOut(true);
     let confirmedByServer = false;
     try {
-      await logoutAdmin().unwrap();
+      await logoutAccount().unwrap();
       confirmedByServer = true;
     } catch {
       // Clear this device's session even when server logout cannot be confirmed.
@@ -86,7 +87,7 @@ export function AdminShell({ children }) {
     return <AppLoadingScreen mode="startup" />;
   }
   if (PUBLIC_ROUTES.has(pathname)) return children;
-  if (!admin || loggingOut) {
+  if (!account || loggingOut) {
     return <AppLoadingScreen mode={loggingOut ? "logout" : "session"} />;
   }
 
@@ -94,34 +95,50 @@ export function AdminShell({ children }) {
     <Sidebar
       collapsed={collapsed}
       onCollapse={toggleNavigation}
+      header={
+        <CompanySwitcher
+          collapsed={collapsed}
+          company={myCompany}
+          companies={[myCompany]}
+          onSelect={(company) => dispatch(setActiveCompany(company.id))}
+        />
+      }
       footer={
         !collapsed && (
           <div
             style={{
-              padding: "12px 14px",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 8px",
               borderRadius: "var(--tk-r-lg)",
               border: "1px solid var(--tk-line)",
               background: "var(--tk-surface-sunk)",
             }}
           >
-            <span
-              style={{
-                display: "block",
-                font: "600 13px/18px var(--tk-font-sans)",
-                color: "var(--tk-ink-900)",
-              }}
-            >
-              Trukkas is moving Africa forward.
-            </span>
-            <span
-              style={{
-                display: "block",
-                marginTop: 2,
-                font: "400 12px/16px var(--tk-font-sans)",
-                color: "var(--tk-ink-400)",
-              }}
-            >
-              Safer. Smarter. Together.
+            <Avatar name={account.name} size={32} tone="var(--tk-navy)" />
+            <span style={{ minWidth: 0 }}>
+              <span
+                style={{
+                  display: "block",
+                  font: "600 13px/18px var(--tk-font-sans)",
+                  color: "var(--tk-ink-900)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {account.name}
+              </span>
+              <span
+                style={{
+                  display: "block",
+                  font: "400 12px/16px var(--tk-font-sans)",
+                  color: "var(--tk-ink-400)",
+                }}
+              >
+                {account.role}
+              </span>
             </span>
           </div>
         )
@@ -155,7 +172,7 @@ export function AdminShell({ children }) {
       topbar={
         <TopBar
           onMenu={toggleNavigation}
-          notifications={notificationData?.unreadCount ?? 0}
+          notifications={unreadCount}
           searchPlaceholder={SEARCH_PLACEHOLDER[activeId]}
           searchValue={globalSearch}
           onSearch={(event) => {
@@ -166,11 +183,12 @@ export function AdminShell({ children }) {
               }),
             );
           }}
+          health={null}
           onNotifications={() => router.push("/notifications")}
-          onViewProfile={() => router.push("/profile")}
+          onViewProfile={() => router.push("/company-settings")}
           onLogout={handleLogout}
-          user={admin.name || admin.email || "Trukkas Admin"}
-          role={admin.role === "SUPER_ADMIN" ? "Super Admin" : "Admin"}
+          user={account.name || account.email || "Trukkas Company"}
+          role={account.role}
         />
       }
     >

@@ -1,4 +1,4 @@
-// Barrel re-export of the Trukkas Admin design system, wired as real ES modules
+// Barrel re-export of the Trukkas design system, wired as real ES modules
 // (no window globals, no runtime Babel). Source of truth lives under ./ds/
 // (components/, tokens/, assets/) — this file is the only place that needs
 // updating when a component is added there.
@@ -51,6 +51,7 @@ export { TextField } from './ds/components/forms/TextField.jsx';
 export { Textarea } from './ds/components/forms/Textarea.jsx';
 
 export { Breadcrumbs } from './ds/components/navigation/Breadcrumbs.jsx';
+export { CompanySwitcher } from './ds/components/navigation/CompanySwitcher.jsx';
 export { PageHeader } from './ds/components/navigation/PageHeader.jsx';
 export { Sidebar } from './ds/components/navigation/Sidebar.jsx';
 export { SidebarNavItem } from './ds/components/navigation/SidebarNavItem.jsx';

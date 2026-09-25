@@ -8,11 +8,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-# Trukkas Admin project instructions
+# Trukkas company dashboard project instructions
 
 ## Project structure and runtime
 
-- This repository is a JavaScript/JSX admin console using Next.js 16.3.4, React 18, and the App Router, with TypeScript/TSX enabled for gradual adoption. Routes live in `src/app/`; the shared shell is in `src/App.jsx`; screen components are in `src/screens/`.
+- This repository is a JavaScript/JSX dashboard for **trucking-company clients** (fleet managers / company admins managing their own company's jobs, fleet, drivers, and finances), built with Next.js 16.3.4, React 18, and the App Router, with TypeScript/TSX enabled for gradual adoption. Routes live in `src/app/`; the shared shell is `CompanyShell` in `src/App.jsx`; screen components are in `src/screens/`. This app previously held an internal Trukkas admin console covering other companies' data, platform config, and compliance review — that scope is retired; see HANDOFF.md for what replaced it.
 - `tsconfig.json` enables `allowJs` and leaves existing JavaScript unchecked (`checkJs: false`); TypeScript files use strict checking. Keep existing modules in JavaScript unless a task benefits from typed contracts or components, and allow `.tsx` files to import existing `.jsx` modules.
 - Shared UI components and design tokens are under `src/ds/`. Reuse those components, tokens, and established screen patterns before adding new dependencies or one-off styles.
 - `next.config.mjs` sets `output: 'export'`. Treat the app as a static client deployment: there is no deployed Next.js server runtime for API proxying, server actions, or route handlers. Preserve static export unless a task explicitly calls for an architecture change.
@@ -31,10 +31,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Backend API reference and integration
 
-- The live OpenAPI/Swagger reference is [Trukkas API docs](https://trukkas-backend.onrender.com/api/docs#/). It describes a versioned `/api/v1` API, including separate `/api/v1/admin/*` and non-admin `/api/v1/auth/*` routes.
-- Admin routes cover authentication, overview, users and compliance review, jobs, trips and bids, payouts and payments, escrow and disputes, notifications, support, knowledge base and FAQ, platform/reference configuration, admin accounts, and audit logs. Use the live spec for exact paths, schemas, query parameters, responses, and operation permissions; do not copy a route catalog into this file where it can become stale.
-- Use the admin-specific login, refresh, and logout operations for the admin console where appropriate. Do not substitute general-user auth endpoints. The implemented admin auth operations are in `src/store/features/auth/authApi.js`; confirm future schema, pagination, error, and CORS details from the current spec and backend behavior.
-- Preserve every documented authorization boundary. The API marks some operations Admin-only and some Super-Admin-only; UI visibility is not security enforcement, so the backend remains authoritative.
+- The live OpenAPI/Swagger reference is [Trukkas API docs](https://trukkas-backend.onrender.com/api/docs#/). It describes a versioned `/api/v1` API, including separate `/api/v1/admin/*` and non-admin `/api/v1/auth/*` routes. This app is a non-admin, company-facing client — confirm the actual company/operator-facing routes (auth, jobs, fleet, trips, payouts, etc.) against the live spec before wiring any of them; do not assume the retired admin routes have non-admin equivalents at matching paths.
+- `src/store/features/auth/authApi.js` is currently **mock-gated** (see its own comment) because no company-facing auth endpoint has been verified yet — it does not call the live API. Wire it to a real endpoint only after confirming schema, pagination, error, and CORS details from the current spec and backend behavior; keep the existing `authSlice`/`baseApi` refresh-and-redaction mechanics, only the endpoint bodies need to change.
+- Preserve every documented authorization boundary once real endpoints are wired. UI visibility is not security enforcement, so the backend remains authoritative.
 - For integrations, verify request/response schemas, IDs, enums and status transitions, filtering and pagination, date/time and currency units, upload behavior, and error/status-code handling against the live spec. Avoid guessing from fixture shapes; map wire data at the API boundary.
 - Do not send development or verification writes to production endpoints. Use a confirmed development/staging environment or mocks for write flows, especially approval, payout, payment, account, and deletion actions. Never exercise real user data or credentials as test data.
 
@@ -42,7 +41,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 - The current static export means browser code, built assets, and public environment variables are visible to users. A public API base URL may be configured as client-side environment data; never put passwords, signing keys, service credentials, or other secrets in source, fixtures, browser storage, or any `NEXT_PUBLIC_*` variable.
 - Check backend CORS settings for the deployed frontend origin. If an integration requires a server-held secret or server-side session, resolve the hosting/runtime architecture explicitly before changing static export or exposing credentials.
-- Auth state is in `src/store/features/auth/authSlice.js` and is restored from the guarded `trukkas-admin-auth` localStorage entry so a browser refresh keeps the admin session. Store only `admin`, `accessToken`, and `refreshToken` there; never store passwords, reset tokens, credentials, or other secrets. `baseApi.js` attaches the bearer token, performs a single shared refresh when needed, preserves the current refresh token when the backend returns only a new access token, and clears a terminally expired session from Redux and storage; `StoreProvider.jsx` schedules a refresh before a parseable JWT expiry. Never log tokens, credentials, or personal data. Treat client-side role checks as presentation only; enforce access on the server.
+- Auth state is in `src/store/features/auth/authSlice.js` and is restored from the guarded `trukkas-company-auth` localStorage entry so a browser refresh keeps the session. Store only `account`, `activeCompanyId`, `accessToken`, and `refreshToken` there; never store passwords, reset tokens, credentials, or other secrets. `baseApi.js` attaches the bearer token, performs a single shared refresh when needed, preserves the current refresh token when the backend returns only a new access token, and clears a terminally expired session from Redux and storage; `StoreProvider.jsx` schedules a refresh before a parseable JWT expiry. Never log tokens, credentials, or personal data. Treat client-side role checks as presentation only; enforce access on the server.
 - Avoid automatic retries for non-idempotent writes unless the API documents an idempotency mechanism.
 
 ## Editing and validation

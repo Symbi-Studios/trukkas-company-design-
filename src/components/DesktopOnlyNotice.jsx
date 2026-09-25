@@ -27,7 +27,7 @@ export function DesktopOnlyNotice() {
         </svg>
         <div className={styles.copy}>
           <h1 id="desktop-only-title">Desktop access only</h1>
-          <p>You can only use Trukkas Admin on a desktop or laptop screen.</p>
+          <p>You can only use the Trukkas company dashboard on a desktop or laptop screen.</p>
         </div>
       </div>
     </main>

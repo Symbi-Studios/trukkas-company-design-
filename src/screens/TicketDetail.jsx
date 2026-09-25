@@ -2,48 +2,59 @@
 
 import { useState } from 'react';
 import { useNavigate, useParams } from '../router.js';
-import { PageHeader, Button, Card, SectionCard, Badge, Avatar, Icon, Select, DropdownMenu, Modal, TextField, Textarea } from '../ds.js';
+import { Badge, Button, Card, MessageBubble, PageHeader, TextField } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
-import { updateTicket, replyToTicket } from '../mock/api.js';
-import './Support.css';
+import { replyToTicket } from '../mock/api.js';
 
-const STATUSES=['Open','In Progress','Pending','Resolved','Closed']; const PRIORITIES=['High','Medium','Low']; const CATEGORIES=['Trips & Jobs','Container Triangulation','Fleet Management','Finance','Live Tracking','Pricing','General']; const AGENTS=['Sarah Johnson','Sarah Wilson','Michael Brown','David Wilson','Trukkas Admin'];
+const STATUS_TONE = { Open: 'info', Pending: 'warning', Resolved: 'success' };
 
-function downloadText(name,text){const blob=new Blob([text],{type:'text/plain'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url)}
-function Action({icon,label,hint,danger,onClick}){return <button className={'support-action'+(danger?' danger':'')} onClick={onClick}><span className="ico"><Icon name={icon} size={14}/></span><span><strong>{label}</strong><small>{hint}</small></span></button>}
+export function TicketDetail() {
+  const { ticketId } = useParams();
+  const navigate = useNavigate();
+  const tickets = useCollection('supportTickets') || [];
+  const ticket = tickets.find((t) => t.id === ticketId);
+  const [reply, setReply] = useState('');
+  const [busy, setBusy] = useState(false);
 
-export function TicketDetail(){
-  const {ticketId}=useParams(); const navigate=useNavigate(); const tickets=useCollection('supportTickets')||[]; const ticket=tickets.find(t=>t.id===ticketId); const [tab,setTab]=useState('Reply'); const [reply,setReply]=useState(''); const [menu,setMenu]=useState(false); const [edit,setEdit]=useState(false); const [toast,setToast]=useState(''); const [draft,setDraft]=useState(null);
-  function notify(s){setToast(s);setTimeout(()=>setToast(''),1800)}
-  if(!ticket)return <Card><p>Ticket {ticketId} was not found.</p><Button variant="outline" icon="arrow-left" onClick={()=>navigate('/tickets')}>Back to Tickets</Button></Card>;
-  async function send(){if(!reply.trim())return;await replyToTicket(ticket.id,reply.trim(),tab==='Internal Note');setReply('');notify(tab==='Internal Note'?'Internal note added':'Reply sent')}
-  function openEdit(){setDraft({...ticket});setEdit(true)}
-  async function saveEdit(){await updateTicket(ticket.id,{subject:draft.subject,priority:draft.priority,category:draft.category,assignee:draft.assignee});setEdit(false);notify('Ticket updated')}
-  const update=(key,value)=>updateTicket(ticket.id,{[key]:value});
-  return <div className="support-page">
-    <PageHeader crumbs={['Support System','Tickets',ticket.id]} title="Ticket Details" description="View and manage the details of this support ticket." actions={<><Button variant="outline" icon="arrow-left" onClick={()=>navigate('/tickets')}>Back to Tickets</Button><Button variant="outline" icon="pencil" onClick={openEdit}>Edit Ticket</Button><span style={{position:'relative'}}><Button variant="outline" icon="ellipsis" onClick={()=>setMenu(!menu)}>More Actions</Button>{menu&&<span style={{position:'absolute',right:0,top:44,zIndex:30}}><DropdownMenu width={220} items={[{label:'Print Ticket',icon:'printer',onClick:()=>window.print()},{label:'Download Ticket',icon:'download',onClick:()=>downloadText(ticket.id+'.txt',ticket.subject+'\n\n'+ticket.description)},{label:'Copy Ticket ID',icon:'copy',onClick:()=>{navigator.clipboard?.writeText(ticket.id);notify('Ticket ID copied')}},{divider:true},{label:'Close Ticket',icon:'circle-x',tone:'danger',onClick:()=>{update('status','Closed');setMenu(false)}}]}/></span>}</span></>} />
-    <div className="ticket-grid">
-      <div className="ticket-main">
-        <Card className="ticket-head-card">
-          <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}><Badge tone="info">{ticket.id}</Badge><Badge tone={ticket.status==='Open'?'success':'info'} dot>{ticket.status}</Badge></div>
-          <h2 style={{fontSize:19,margin:'14px 0 0',color:'var(--tk-ink-900)'}}>{ticket.subject}</h2>
-          <div className="ticket-meta"><span className="ticket-meta-item"><Avatar name={ticket.customer} size={28}/><span>{ticket.customer}<small style={{display:'block',color:'var(--tk-ink-400)'}}>({ticket.email})</small></span></span><span className="ticket-meta-item"><Icon name="tag" size={16}/><Badge>{ticket.category}</Badge></span><span className="ticket-meta-item"><Icon name="flag" size={16} color="var(--tk-danger)"/><Badge tone={ticket.priority==='High'?'danger':'warning'}>{ticket.priority}</Badge></span><span className="ticket-meta-item"><Icon name="calendar-days" size={16}/><span>{ticket.created}<small style={{display:'block',color:'var(--tk-ink-400)'}}>Created 2 days ago</small></span></span></div>
-          <h3 style={{fontSize:12,margin:'15px 0 4px'}}>Description</h3><div className="ticket-copy">{ticket.description}</div>
-          <h3 style={{fontSize:12,margin:'18px 0 8px'}}>Attachments ({ticket.attachments.length})</h3><div className="attachments">{ticket.attachments.map(a=><button className="attachment" key={a.name} onClick={()=>downloadText(a.name,'Demo attachment for '+ticket.id)}><span className="file-ico"><Icon name={a.icon} size={18}/></span><span><strong>{a.name}</strong><small>{a.size}</small></span></button>)}</div>
-          {!!ticket.attachments.length&&<div style={{textAlign:'right',marginTop:10}}><button className="support-link" style={{border:0,background:'none'}} onClick={()=>ticket.attachments.forEach(a=>downloadText(a.name,'Demo attachment for '+ticket.id))}><Icon name="download" size={13}/> Download All</button></div>}
-        </Card>
-        <SectionCard title="Conversation" pad="none">
-          <div className="conversation">{ticket.messages.length?ticket.messages.map((m,i)=><div className="message" key={i}><Avatar name={m.author} size={30}/><div><div style={{display:'flex',gap:8,alignItems:'center'}}><strong style={{fontSize:12}}>{m.author}</strong><Badge tone={m.internal?'warning':'info'} style={{height:18,fontSize:9}}>{m.role}</Badge></div><div className="message-body">{m.body}</div></div><span className="message-time">{m.time}</span></div>):<div style={{padding:20,color:'var(--tk-ink-400)'}}>No conversation yet.</div>}</div>
-          <div className="reply-box"><div className="reply-tabs"><button className={tab==='Reply'?'active':''} onClick={()=>setTab('Reply')}>Reply</button><button className={tab==='Internal Note'?'active':''} onClick={()=>setTab('Internal Note')}>Internal Note</button></div><div className="reply-compose"><textarea aria-label={tab} placeholder={tab==='Reply'?'Type your reply...':'Add a private note for agents...'} value={reply} onChange={e=>setReply(e.target.value)}/><div className="reply-actions"><Button variant="ghost" icon="paperclip" aria-label="Attach file"/><Button variant="ghost" icon="smile" aria-label="Add emoji" onClick={()=>setReply(r=>r+' 🙂')}/><Button onClick={send}>{tab==='Reply'?'Send Reply':'Add Note'}</Button></div></div></div>
-        </SectionCard>
+  if (!ticket) {
+    return (
+      <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
+        <PageHeader title="Ticket not found" />
+        <Button variant="outline" onClick={() => navigate('/support')}>Back to Support</Button>
       </div>
-      <div className="support-rail">
-        <SectionCard title="Ticket Information"><div className="info-list"><div className="info-row"><label>Ticket ID</label><span>{ticket.id}</span></div><div className="info-row"><label>Status</label><Select value={ticket.status} options={STATUSES} leadingDot="var(--tk-blue)" onChange={e=>update('status',e.target.value)}/></div><div className="info-row"><label>Priority</label><Select value={ticket.priority} options={PRIORITIES} leadingDot="var(--tk-danger)" onChange={e=>update('priority',e.target.value)}/></div><div className="info-row"><label>Category</label><Select value={ticket.category} options={CATEGORIES} onChange={e=>update('category',e.target.value)}/></div><div className="info-row"><label>Sub Category</label><span>{ticket.subcategory}</span></div><div className="info-row"><label>Assigned To</label><Select value={ticket.assignee} options={AGENTS} onChange={e=>update('assignee',e.target.value)}/></div><div className="info-row"><label>Source</label><span>{ticket.source}</span></div><div className="info-row"><label>Customer</label><span>{ticket.company}</span></div><div className="info-row"><label>Last Update</label><span>{ticket.updated}</span></div></div></SectionCard>
-        <SectionCard title="Status Timeline"><div className="timeline-item"><i style={{background:'var(--tk-success)'}}/><div><strong>Open</strong><small>{ticket.created}<br/>Ticket created</small></div></div><div className="timeline-item"><i/><div><strong>In Progress</strong><small>May 31, 2024, 11:05 AM<br/>Assigned to {ticket.assignee}</small></div></div><div className="timeline-item"><i style={{background:'var(--tk-neutral)'}}/><div><strong>—</strong><small>Pending your response</small></div></div></SectionCard>
-        <SectionCard title="Quick Actions"><Action icon="circle-dot" label="Change Status" hint="Update the current status" onClick={()=>update('status',ticket.status==='Open'?'In Progress':'Open')}/><Action icon="user-round-plus" label="Assign Ticket" hint="Assign to another agent" onClick={()=>update('assignee',ticket.assignee==='Sarah Johnson'?'Michael Brown':'Sarah Johnson')}/><Action icon="message-square" label="Add Internal Note" hint="Add private note for agents" onClick={()=>{setTab('Internal Note');document.querySelector('[aria-label="Internal Note"]')?.focus()}}/><Action icon="git-merge" label="Merge Ticket" hint="Merge with another ticket" onClick={()=>notify('Select another ticket to merge')}/><Action danger icon="trash-2" label="Close Ticket" hint="Close this ticket" onClick={()=>update('status','Closed')}/></SectionCard>
-      </div>
+    );
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!reply.trim()) return;
+    setBusy(true);
+    await replyToTicket(ticket.id, reply.trim());
+    setReply('');
+    setBusy(false);
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
+      <PageHeader
+        crumbs={[{ label: 'Support', onClick: () => navigate('/support') }, ticket.id]}
+        title={ticket.subject}
+        description={`${ticket.category} · Opened ${ticket.createdAt}`}
+        meta={<Badge tone={STATUS_TONE[ticket.status]}>{ticket.status}</Badge>}
+      />
+      <Card pad="none">
+        <div style={{ padding: '0 var(--tk-card-pad)' }}>
+          {ticket.messages.length === 0 ? (
+            <p style={{ padding: '16px 0', margin: 0 }} className="tk-meta">No messages yet.</p>
+          ) : ticket.messages.map((m, i) => (
+            <MessageBubble key={i} author={m.author} role={m.role} roleTone={m.agent ? 'blue' : 'neutral'} time={m.time}>{m.body}</MessageBubble>
+          ))}
+        </div>
+        <form onSubmit={submit} style={{ display: 'flex', gap: 8, padding: 'var(--tk-card-pad)', borderTop: '1px solid var(--tk-line)' }}>
+          <TextField style={{ flex: 1 }} placeholder="Write a reply..." value={reply} onChange={(e) => setReply(e.target.value)} />
+          <Button type="submit" disabled={busy}>{busy ? 'Sending…' : 'Send'}</Button>
+        </form>
+      </Card>
     </div>
-    <Modal open={edit} onClose={()=>setEdit(false)} title="Edit Ticket" width={560} footer={<><Button variant="outline" onClick={()=>setEdit(false)}>Cancel</Button><Button onClick={saveEdit}>Save Changes</Button></>}>{draft&&<div style={{display:'grid',gap:14}}><TextField label="Subject" value={draft.subject} onChange={e=>setDraft({...draft,subject:e.target.value})}/><Select label="Priority" value={draft.priority} options={PRIORITIES} onChange={e=>setDraft({...draft,priority:e.target.value})}/><Select label="Category" value={draft.category} options={CATEGORIES} onChange={e=>setDraft({...draft,category:e.target.value})}/><Select label="Assigned To" value={draft.assignee} options={AGENTS} onChange={e=>setDraft({...draft,assignee:e.target.value})}/></div>}</Modal>
-    {toast&&<div className="toast">{toast}</div>}
-  </div>
+  );
 }

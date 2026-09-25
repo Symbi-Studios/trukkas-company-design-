@@ -4,7 +4,7 @@ import { Icon } from "../../assets/icons/Icon.jsx";
 
 /** Fixed-width navigation column — white, with a hairline right edge.
  *  Children are SidebarSectionLabel + SidebarNavItem rows. */
-export function Sidebar({ collapsed, children, footer, onCollapse, style }) {
+export function Sidebar({ collapsed, children, header, footer, onCollapse, style }) {
   return (
     <aside
       className="tk-scroll tk-sidebar"
@@ -27,6 +27,7 @@ export function Sidebar({ collapsed, children, footer, onCollapse, style }) {
       <div style={{ padding: "18px 14px 6px" }}>
         <Logo showWordmark={!collapsed} size={36} />
       </div>
+      {header && <div style={{ padding: "8px 14px 6px" }}>{header}</div>}
       <nav
         style={{
           flex: 1,

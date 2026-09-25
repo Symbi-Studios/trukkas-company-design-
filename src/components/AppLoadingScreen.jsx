@@ -4,15 +4,15 @@ import styles from "./AppLoadingScreen.module.css";
 const LOADING_COPY = {
   startup: {
     title: "Getting your workspace ready",
-    description: "Loading your Trukkas admin console.",
+    description: "Loading your Trukkas company dashboard.",
   },
   session: {
     title: "Checking your session",
-    description: "Verifying your admin access before opening the workspace.",
+    description: "Verifying your access before opening the workspace.",
   },
   logout: {
     title: "Signing you out",
-    description: "Closing your admin session.",
+    description: "Closing your session.",
   },
 };
 
@@ -34,7 +34,7 @@ export function AppLoadingScreen({ mode = "startup" }) {
             <Logo showWordmark={false} size={34} />
           </span>
         </div>
-        <span className={styles.eyebrow}>ADMIN WORKSPACE</span>
+        <span className={styles.eyebrow}>COMPANY WORKSPACE</span>
         <h1 className={styles.title}>{copy.title}</h1>
         <p className={styles.description}>{copy.description}</p>
         <div className={styles.progressTrack} aria-hidden="true">
@@ -45,7 +45,7 @@ export function AppLoadingScreen({ mode = "startup" }) {
 
       <footer className={styles.footer}>
         <span className={styles.footerDot} aria-hidden="true" />
-        Trukkas Admin Console <span className={styles.footerDivider}>·</span> Move. Earn. Grow.
+        Trukkas <span className={styles.footerDivider}>·</span> Move. Earn. Grow.
       </footer>
     </main>
   );

@@ -2,71 +2,54 @@
 
 import { useState } from 'react';
 import { useNavigate, useParams } from '../router.js';
-import { Badge, Banner, Button, Card, Icon, Modal, PageHeader, SectionCard, Textarea } from '../ds.js';
+import { Badge, Button, Card, LabelValue, Modal, PageHeader, TextField } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
-import { approveOperationalDocument, rejectOperationalDocument } from '../mock/api.js';
-import { canAdminReview, documentStatusTone } from '../domain/documents.js';
-import './Documents.css';
-
-const labels = { tdo: 'TDO', customs_gate_pass: 'Customs Gate Pass', exit_note: 'Exit Note', indemnity_letter: 'Indemnity Letter', confirmation_letter: 'Confirmation Letter' };
+import { updateDocument } from '../mock/api.js';
+import { documentStatusTone } from '../domain/documents.js';
 
 export function DocumentDetail() {
-  const navigate = useNavigate();
   const { documentId } = useParams();
-  const documents = useCollection('documents');
-  const jobs = useCollection('jobs');
-  const document = documents.find((item) => item.id === documentId);
-  const job = jobs.find((item) => item.id === document?.jobId);
-  const [action, setAction] = useState(null);
-  const [reason, setReason] = useState('');
-  const [notice, setNotice] = useState('');
-  if (!document) return <Card><p>Document not found.</p><Button variant="secondary" onClick={() => navigate('/documents')}>Back to Documents</Button></Card>;
+  const navigate = useNavigate();
+  const documents = useCollection('documents') || [];
+  const document_ = documents.find((d) => d.id === documentId);
+  const [renewOpen, setRenewOpen] = useState(false);
+  const [expiryDate, setExpiryDate] = useState('');
 
-  const download = () => {
-    const file = new Blob([`${document.name}\nJob: ${document.jobId}\nStatus: ${document.status}`], { type: 'text/plain' });
-    const url = URL.createObjectURL(file); const link = window.document.createElement('a');
-    link.href = url; link.download = document.fileName === '—' ? 'document.txt' : `${document.fileName}.txt`; link.click(); URL.revokeObjectURL(url);
-  };
-  const submit = async () => {
-    if (action === 'approve') await approveOperationalDocument(document.id);
-    else await rejectOperationalDocument(document.id, reason, action === 'request');
-    setNotice(action === 'approve' ? 'Document approved.' : action === 'request' ? 'Re-upload requested from the forwarder.' : 'Document rejected.');
-    setAction(null); setReason('');
-  };
+  if (!document_) {
+    return (
+      <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
+        <PageHeader title="Document not found" />
+        <Button variant="outline" onClick={() => navigate('/documents')}>Back to Documents</Button>
+      </div>
+    );
+  }
 
-  return <div className="documents-screen">
-    <PageHeader crumbs={[{ label: 'Operations' }, { label: 'Documents', href: '/documents' }, { label: document.jobId }, { label: labels[document.requirement] }]} title={document.name} description={`Job document for ${document.jobId}.`} actions={<><Button variant="secondary" icon="arrow-left" onClick={() => navigate('/documents')}>Back to Documents</Button><Button variant="outline" icon="download" disabled={document.status === 'Missing'} onClick={download}>Download</Button></>} />
-    {notice && <Banner tone="success" onClose={() => setNotice('')}>{notice}</Banner>}
-    {document.reviewAuthority !== 'trukkas_admin' && <Banner tone="info">This export document is reviewed by the trucking company. Admin access is view-only.</Banner>}
-    <div className="job-document-detail-grid">
-      <div className="document-detail-main">
-        <SectionCard title="Document preview" action={<Badge tone={documentStatusTone(document.status)}>{document.status}</Badge>}>
-          <div className="job-document-preview"><Icon name="file-text" size={38} color="var(--tk-blue)" /><strong>{document.fileName}</strong><span>{document.status === 'Missing' ? 'This required document has not been uploaded yet.' : 'PDF document · Secure preview is available to authorized administrators.'}</span></div>
-        </SectionCard>
-        <SectionCard title="Review history">
-          <div className="document-activity"><span className="node"><Icon name="upload" size={12} /></span><span><strong>{document.status === 'Missing' ? 'Document required' : 'Document uploaded'}</strong><small>{document.status === 'Missing' ? `${document.uploadedBy} needs to upload this requirement.` : `${document.uploadedBy} · ${document.uploadedAt}`}</small></span></div>
-          {document.reviewedAt && <div className="document-activity"><span className="node"><Icon name="shield-check" size={12} /></span><span><strong>Review recorded</strong><small>{document.reviewedBy} · {document.reviewedAt}</small></span></div>}
-          {(document.rejectionReason || document.reuploadMessage) && <div className="document-review-note"><strong>{document.status === 'Re-upload Requested' ? 'Re-upload request' : 'Review reason'}</strong><p>{document.reuploadMessage || document.rejectionReason}</p></div>}
-        </SectionCard>
-      </div>
-      <div className="document-detail-rail">
-        <SectionCard title="Document status">
-          <Info label="Status" value={<Badge tone={documentStatusTone(document.status)}>{document.status}</Badge>} />
-          <Info label="Review authority" value={document.reviewAuthority === 'trukkas_admin' ? 'Trukkas Admin' : 'Trucking company'} />
-          <Info label="Required for" value={job?.requestType || 'Job progression'} />
-          {canAdminReview(document) && <div className="document-review-actions"><Button fullWidth onClick={() => setAction('approve')}>Approve document</Button><Button fullWidth variant="secondary" onClick={() => setAction('request')}>Request re-upload</Button><Button fullWidth variant="danger" onClick={() => setAction('reject')}>Reject document</Button></div>}
-        </SectionCard>
-        <SectionCard title="Document information">
-          <Info label="Document type" value={labels[document.requirement]} /><Info label="Job ID" value={document.jobId} /><Info label="Uploaded by" value={document.uploadedBy} /><Info label="Uploader role" value={document.uploadedByRole} /><Info label="Date uploaded" value={document.uploadedAt} /><Info label="File type" value={document.fileType} /><Info label="File size" value={document.fileSize} /><Info label="Version" value={`v${document.version}`} />
-          {job && <Button fullWidth variant="secondary" style={{ marginTop: 12 }} onClick={() => navigate(`/jobs/${job.id}`)}>View job details</Button>}
-        </SectionCard>
-      </div>
+  async function renew() {
+    if (!expiryDate) return;
+    await updateDocument(document_.id, { expiryDate, status: 'Valid', uploadedOn: 'Just now' });
+    setRenewOpen(false);
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
+      <PageHeader
+        crumbs={[{ label: 'Documents', onClick: () => navigate('/documents') }, document_.name]}
+        title={document_.name}
+        description={`${document_.type} · ${document_.truckPlate}`}
+        meta={<Badge tone={documentStatusTone(document_.status)} dot>{document_.status}</Badge>}
+        actions={<Button icon="refresh-cw" onClick={() => setRenewOpen(true)}>Renew Document</Button>}
+      />
+      <Card>
+        <LabelValue label="Vehicle" value={document_.truckPlate} />
+        <LabelValue label="Document Type" value={document_.type} />
+        <LabelValue label="Expiry Date" value={document_.expiryDate} />
+        <LabelValue label="Uploaded On" value={document_.uploadedOn} />
+        <LabelValue label="File Size" value={document_.fileSize} />
+      </Card>
+      <Modal open={renewOpen} onClose={() => setRenewOpen(false)} title="Renew Document" width={420}
+        footer={<><Button variant="outline" onClick={() => setRenewOpen(false)}>Cancel</Button><Button onClick={renew}>Save</Button></>}>
+        <TextField label="New Expiry Date" type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+      </Modal>
     </div>
-    <Modal open={!!action} onClose={() => setAction(null)} title={action === 'approve' ? 'Approve document' : action === 'request' ? 'Request re-upload' : 'Reject document'} footer={<><Button variant="outline" onClick={() => setAction(null)}>Cancel</Button><Button variant={action === 'reject' ? 'danger' : 'primary'} disabled={action !== 'approve' && !reason.trim()} onClick={submit}>{action === 'approve' ? 'Approve' : action === 'request' ? 'Send request' : 'Reject'}</Button></>}>
-      {action === 'approve' ? <p className="tk-muted">Approve this document for job progression?</p> : <Textarea label="Reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Explain what needs to be corrected…" />}
-    </Modal>
-  </div>;
+  );
 }
-
-function Info({ label, value }) { return <div className="document-info-row"><span>{label}</span><span>{value}</span></div>; }
-export default DocumentDetail;

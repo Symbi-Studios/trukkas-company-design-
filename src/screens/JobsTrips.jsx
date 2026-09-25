@@ -1,1053 +1,181 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "../router.js";
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from '../router.js';
 import {
-  Avatar,
-  Badge,
-  Banner,
-  Button,
-  Card,
-  DataTable,
-  DropdownMenu,
-  Icon,
-  IconButton,
-  Modal,
-  Pagination,
-  PageHeader,
-  SearchField,
-  Select,
-  StatCard,
-  TextField,
-} from "../ds.js";
-import { useCollection } from "../mock/useCollection.js";
-import {
-  approveJob,
-  cancelJob,
-  createJob,
-  markJobDelivered,
-} from "../mock/api.js";
-import { statusTone } from "./JobDetail.jsx";
-import { getJobTripCounts, getJobTrips } from "../domain/jobTrips.js";
-import styles from "./JobsTrips.module.css";
+  Badge, Button, Card, DataTable, EmptyState, Icon, Modal, PageHeader,
+  SearchField, StatCard, Textarea, TextField,
+} from '../ds.js';
+import { useCollection } from '../mock/useCollection.js';
+import { placeBid } from '../mock/api.js';
+import { JOB_TABS, jobStatusTone, nextStepFor } from '../domain/jobs.js';
+import { posters } from '../mock/fixtures/companies.js';
+import { formatNaira } from '../mock/format.js';
+import styles from './JobsTrips.module.css';
 
-const REQUEST_TYPES = [
-  "Import (Container)",
-  "Export",
-  "Transfer / Value Chain",
-  "Break-Bulk",
-];
-const DATE_OPTIONS = [
-  "All Dates",
-  "May 24 – May 30, 2026",
-  "May 18 – May 23, 2026",
-];
-const naira = (number) => `₦${Math.round(number || 0).toLocaleString("en-NG")}`;
-const shortType = (type) =>
-  type === "Transfer / Value Chain" ? "Transfer" : type;
-
-function normalize(job) {
-  const tripCounts = getJobTripCounts(job);
-  const trips = getJobTrips(job);
-  return {
-    ...job,
-    displayValue: job.jobValue ?? job.amount ?? 0,
-    displayRoute:
-      job.route || `${job.origin || "—"} → ${job.destination || "—"}`,
-    displayType: job.requestType || job.cargoType || "—",
-    displayForwarder: job.forwarder || "—",
-    displayCreated: job.createdAt || job.published || "—",
-    displayCargo: job.cargoDetails || job.cargo || job.cargoType || "—",
-    tripCounts,
-    trips,
-    displayAssignee: tripCounts.assigned
-      ? `${tripCounts.assigned} trip${tripCounts.assigned === 1 ? "" : "s"} · ${job.truckingCompany || job.truckCompany || "Assigned"}`
-      : null,
-  };
+function posterName(id) {
+  return posters.find((p) => p.id === id)?.name || '—';
 }
 
-function FilterMenu({ open, options, value, onChange }) {
-  if (!open) return null;
+function JobRequestCard({ job, onBid }) {
   return (
-    <span className={styles.menuPopover}>
-      <DropdownMenu
-        width={216}
-        items={options.map((option) => ({
-          label: option,
-          icon: option === value ? "check" : undefined,
-          onClick: () => onChange(option),
-        }))}
-      />
-    </span>
+    <Card style={{ display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+        <div>
+          <Badge tone="info">{job.jobType}</Badge>
+          <h3 className="tk-title" style={{ fontSize: 16, margin: '8px 0 2px' }}>{job.cargoType}</h3>
+          <span className="tk-meta">{job.equipment} · {job.weightKg.toLocaleString()} kg</span>
+        </div>
+        <span className="tk-meta" style={{ textAlign: 'right', color: 'var(--tk-danger)' }}>{job.closesAt}</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--tk-ink-500)', font: '500 13px/18px var(--tk-font-sans)' }}>
+        <Icon name="map-pin" size={14} /> {job.origin}
+        <Icon name="arrow-right" size={14} />
+        <Icon name="map-pin" size={14} /> {job.destination}
+        <span className="tk-meta">· {job.distanceKm.toLocaleString()} km</span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--tk-line)', paddingTop: 10 }}>
+        <span>
+          <strong style={{ display: 'block', font: '700 18px/24px var(--tk-font-sans)', color: 'var(--tk-ink-900)' }}>{formatNaira(job.budget)}</strong>
+          <span className="tk-meta">Posted by {posterName(job.postedBy)}</span>
+        </span>
+        <span style={{ display: 'flex', gap: 8 }}>
+          <Link to={`/jobs-trips/${job.id}`}><Button variant="outline">View Details</Button></Link>
+          <Button onClick={() => onBid(job)}>Place a Bid</Button>
+        </span>
+      </div>
+    </Card>
   );
 }
 
-function FilterControl({ name, value, options, menu, setMenu, onChange }) {
-  return (
-    <span className={styles.filterWrap}>
-      <button
-        className={styles.filterControl}
-        type="button"
-        onClick={() => setMenu(menu === name ? null : name)}
-      >
-        <span>{name}</span>
-        <strong>{value}</strong>
-        <Icon name="chevron-down" size={14} />
-      </button>
-      <FilterMenu
-        open={menu === name}
-        options={options}
-        value={value}
-        onChange={(next) => {
-          onChange(next);
-          setMenu(null);
-        }}
-      />
-    </span>
-  );
-}
+function BidModal({ job, open, onClose, onSubmit }) {
+  const [amount, setAmount] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
 
-function Inspector({ job, onClose, onAction, menu, setMenu }) {
+  useEffect(() => {
+    if (open && job) { setAmount(String(job.budget)); setMessage(''); }
+  }, [open, job]);
+
   if (!job) return null;
-  const pending = job.status === "Pending Approval";
-  const timeline = [
-    { title: "Job Created", description: job.displayCreated, state: "done" },
-    pending
-      ? {
-          title: "Pending Approval",
-          description: "Awaiting review",
-          state: "warning",
-        }
-      : {
-          title: job.status,
-          description: job.updatedAt || "Job is active",
-          state: job.status === "Cancelled" ? "danger" : "current",
-        },
-    {
-      title: pending
-        ? "—"
-        : job.status === "Delivered"
-          ? "Delivered"
-          : "Delivery",
-      description: pending ? "Not started" : job.deliveryDate || "In progress",
-      state: job.status === "Delivered" ? "done" : "pending",
-    },
-  ];
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    await onSubmit(job.id, Number(amount), message);
+    setBusy(false);
+  }
   return (
-    <aside className={styles.inspector} aria-label={`Selected job ${job.id}`}>
-      <div className={styles.inspectorHead}>
-        <span className={styles.jobTitle}>
-          <Icon name="package" size={16} />
-          {job.id}
-        </span>
-        <IconButton icon="x" label="Close inspector" onClick={onClose} />
-      </div>
-      <Badge tone={statusTone(job.status)} dot>
-        {job.status}
-      </Badge>
-      <section className={styles.inspectorSection}>
-        <h3>Overview</h3>
-        <dl className={styles.detailsList}>
-          <div>
-            <dt>Company</dt>
-            <dd>{job.displayForwarder}</dd>
-          </div>
-          <div>
-            <dt>Trip Type</dt>
-            <dd>
-              <Badge tone="purple">{shortType(job.displayType)}</Badge>
-            </dd>
-          </div>
-          <div>
-            <dt>Route</dt>
-            <dd>{job.displayRoute}</dd>
-          </div>
-          <div>
-            <dt>Cargo</dt>
-            <dd>{job.displayCargo}</dd>
-          </div>
-          <div>
-            <dt>Job Value</dt>
-            <dd>
-              <strong>{naira(job.displayValue)}</strong>
-            </dd>
-          </div>
-          <div>
-            <dt>Created</dt>
-            <dd>{job.displayCreated}</dd>
-          </div>
-          <div>
-            <dt>Trip Fulfilment</dt>
-            <dd><strong>{job.tripCounts.assigned} of {job.tripCounts.required} assigned</strong></dd>
-          </div>
-        </dl>
-        <div className={styles.requester}>
-          <span>Requested By</span>
-          <Avatar name={job.contactPerson || job.displayForwarder} size={34} />
-          <span>
-            <strong>{job.contactPerson || job.displayForwarder}</strong>
-            <small>{job.contactEmail || "Operations contact"}</small>
-          </span>
-        </div>
-      </section>
-      <div className={styles.inspectorActions}>
-        <Button
-          fullWidth
-          iconRight="arrow-right"
-          onClick={() => onAction("view", job)}
-        >
-          View Full Details
-        </Button>
-        <span className={styles.moreWrap}>
-          <Button
-            fullWidth
-            variant="outline"
-            iconRight="chevron-down"
-            onClick={() => setMenu(menu === "more" ? null : "more")}
-          >
-            More Actions
-          </Button>
-          {menu === "more" && (
-            <span className={styles.moreMenu}>
-              <DropdownMenu
-                width={240}
-                items={[
-                  ...(pending
-                    ? [
-                        {
-                          label: "Approve Job",
-                          icon: "circle-check",
-                          onClick: () => onAction("approve", job),
-                        },
-                      ]
-                    : []),
-                  ...(job.status === "In Transit"
-                    ? [
-                        {
-                          label: "Mark Delivered",
-                          icon: "circle-check",
-                          onClick: () => onAction("deliver", job),
-                        },
-                      ]
-                    : []),
-                  {
-                    label: "Export Job Sheet",
-                    icon: "download",
-                    onClick: () => onAction("export", job),
-                  },
-                  ...(job.status !== "Cancelled" && job.status !== "Delivered"
-                    ? [
-                        { divider: true },
-                        {
-                          label: "Cancel Job",
-                          icon: "ban",
-                          tone: "danger",
-                          onClick: () => onAction("cancel", job),
-                        },
-                      ]
-                    : []),
-                ]}
-              />
-            </span>
-          )}
-        </span>
-      </div>
-      <section className={styles.timelineSection}>
-        <h3>Timeline</h3>
-        <div className={styles.timeline}>
-          {timeline.map((item, index) => (
-            <div className={styles.timelineItem} key={`${item.title}-${index}`}>
-              <span className={`${styles.timelineDot} ${styles[item.state]}`} />
-              <span>
-                <strong>{item.title}</strong>
-                <small>{item.description}</small>
-              </span>
-            </div>
-          ))}
-        </div>
-      </section>
-    </aside>
+    <Modal
+      open={open} onClose={onClose} title="Place a Bid" description={`${job.origin} → ${job.destination}`} width={480}
+      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button form="bid-form" type="submit" disabled={busy}>{busy ? 'Submitting…' : 'Submit Bid'}</Button></>}
+    >
+      <form id="bid-form" onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
+        <TextField label="Bid Amount (₦)" type="number" min="0" required value={amount} onChange={(e) => setAmount(e.target.value)} hint={`Suggested range: ${formatNaira(job.budget * 0.9)} – ${formatNaira(job.budget * 1.1)}`} />
+        <Textarea label="Message (optional)" rows={4} maxLength={500} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Introduce your company and why you're the best fit for this job..." />
+      </form>
+    </Modal>
   );
 }
 
 export function JobsTrips() {
   const navigate = useNavigate();
-  const rawJobs = useCollection("jobs") || [];
-  const jobs = useMemo(
-    () =>
-      rawJobs
-        .map(normalize)
-        .sort(
-          (a, b) =>
-            Number(b.id.startsWith("JOB-")) - Number(a.id.startsWith("JOB-")),
-        ),
-    [rawJobs],
-  );
-  const [tab, setTab] = useState("All Jobs");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All Statuses");
-  const [typeFilter, setTypeFilter] = useState("All Types");
-  const [cargoFilter, setCargoFilter] = useState("All Cargo");
-  const [originFilter, setOriginFilter] = useState("All Locations");
-  const [destinationFilter, setDestinationFilter] = useState("All Locations");
-  const [dateFilter, setDateFilter] = useState("All Dates");
-  const [menu, setMenu] = useState(null);
-  const [selected, setSelected] = useState([]);
-  const [selectedJobId, setSelectedJobId] = useState("JOB-29821");
-  const [rowMenu, setRowMenu] = useState(null);
+  const jobs = useCollection('jobs') || [];
+  const [tab, setTab] = useState('all');
+  const [query, setQuery] = useState('');
+  const [bidJob, setBidJob] = useState(null);
   const [toast, setToast] = useState(null);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [draft, setDraft] = useState({
-    forwarder: "",
-    requestType: REQUEST_TYPES[0],
-    origin: "",
-    destination: "",
-    cargo: "",
-    jobValue: "",
-    requiredTrucks: 1,
-  });
 
   useEffect(() => {
-    const onGlobalSearch = (event) => setQuery(event.detail || "");
-    window.addEventListener("trukkas:global-search", onGlobalSearch);
-    return () =>
-      window.removeEventListener("trukkas:global-search", onGlobalSearch);
+    const onSearch = (event) => setQuery(event.detail || '');
+    window.addEventListener('trukkas:global-search', onSearch);
+    return () => window.removeEventListener('trukkas:global-search', onSearch);
   }, []);
   useEffect(() => {
     if (!toast) return undefined;
     const timer = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(timer);
   }, [toast]);
-  useEffect(() => {
-    setPage(1);
-  }, [
-    tab,
-    statusFilter,
-    typeFilter,
-    cargoFilter,
-    originFilter,
-    destinationFilter,
-    dateFilter,
-    query,
-    pageSize,
-  ]);
 
-  const counts = useMemo(
-    () => ({
-      total: jobs.length,
-      pending: jobs.filter((job) => job.status === "Pending Approval").length,
-      bidding: jobs.filter((job) => job.status === "Bidding").length,
-      assigned: jobs.filter((job) => ["Awaiting Assignment", "Partially Assigned", "Assigned"].includes(job.status)).length,
-      inTransit: jobs.filter((job) => ["In Transit", "Partially Delivered", "Attention Required"].includes(job.status)).length,
-      delivered: jobs.filter((job) => job.status === "Delivered").length,
-      cancelled: jobs.filter((job) =>
-        ["Cancelled", "Rejected"].includes(job.status),
-      ).length,
-      flagged: jobs.filter((job) => job.status === "Rejected").length,
-      value: jobs.reduce((sum, job) => sum + job.displayValue, 0),
-      demurrage: jobs
-        .filter((job) => job.status === "In Transit")
-        .reduce((sum, job) => sum + job.displayValue * 0.04, 0),
-    }),
-    [jobs],
-  );
-  const locations = useMemo(
-    () =>
-      [
-        ...new Set(
-          jobs.flatMap((job) => [job.origin, job.destination]).filter(Boolean),
-        ),
-      ].sort(),
-    [jobs],
-  );
-  const cargoTypes = useMemo(
-    () =>
-      [
-        ...new Set(
-          jobs.map((job) => job.cargoType || job.cargo).filter(Boolean),
-        ),
-      ].sort(),
-    [jobs],
-  );
-  const tabFilters = {
-    "All Jobs": () => true,
-    "Pending Approval": (job) => job.status === "Pending Approval",
-    Bidding: (job) => job.status === "Bidding",
-    Assigned: (job) => ["Awaiting Assignment", "Partially Assigned", "Assigned"].includes(job.status),
-    "In Transit": (job) => ["In Transit", "Partially Delivered", "Attention Required"].includes(job.status),
-    Delivered: (job) => job.status === "Delivered",
-    Cancelled: (job) => ["Cancelled", "Rejected"].includes(job.status),
-    Flagged: (job) => job.status === "Rejected",
-  };
-  const filtered = useMemo(
-    () =>
-      jobs.filter((job) => {
-        const matchDate =
-          dateFilter === "All Dates" ||
-          (dateFilter.startsWith("May 24")
-            ? /May (2[4-9]|30)/.test(job.displayCreated)
-            : /May (1[8-9]|2[0-3])/.test(job.displayCreated));
-        return (
-          tabFilters[tab]?.(job) &&
-          (statusFilter === "All Statuses" || job.status === statusFilter) &&
-          (typeFilter === "All Types" || job.displayType === typeFilter) &&
-          (cargoFilter === "All Cargo" ||
-            (job.cargoType || job.cargo) === cargoFilter) &&
-          (originFilter === "All Locations" || job.origin === originFilter) &&
-          (destinationFilter === "All Locations" ||
-            job.destination === destinationFilter) &&
-          matchDate &&
-          (!query ||
-            [
-              job.id,
-              job.displayForwarder,
-              job.displayRoute,
-              job.displayCargo,
-            ].some((value) =>
-              String(value || "")
-                .toLowerCase()
-                .includes(query.toLowerCase()),
-            ))
-        );
-      }),
-    [
-      jobs,
-      tab,
-      statusFilter,
-      typeFilter,
-      cargoFilter,
-      originFilter,
-      destinationFilter,
-      dateFilter,
-      query,
-    ],
-  );
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
-  const selectedJob = jobs.find((job) => job.id === selectedJobId) || null;
+  const counts = useMemo(() => Object.fromEntries(
+    JOB_TABS.map((t) => [t.value, t.value === 'all' ? jobs.length : jobs.filter((j) => j.status === t.value).length]),
+  ), [jobs]);
 
-  function resetFilters() {
-    setStatusFilter("All Statuses");
-    setTypeFilter("All Types");
-    setCargoFilter("All Cargo");
-    setOriginFilter("All Locations");
-    setDestinationFilter("All Locations");
-    setDateFilter("All Dates");
-    setQuery("");
-  }
-  function exportRows(rows) {
-    const data = [
-      [
-        "Job ID",
-        "Company",
-        "Trip Type",
-        "Route",
-        "Cargo",
-        "Value",
-        "Status",
-        "Created",
-      ],
-      ...rows.map((job) => [
-        job.id,
-        job.displayForwarder,
-        job.displayType,
-        job.displayRoute,
-        job.displayCargo,
-        job.displayValue,
-        job.status,
-        job.displayCreated,
-      ]),
-    ];
-    const csv = data
-      .map((row) =>
-        row
-          .map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`)
-          .join(","),
-      )
-      .join("\n");
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    link.download = `trukkas-jobs-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    setToast({
-      tone: "success",
-      title: `${rows.length} job${rows.length === 1 ? "" : "s"} exported.`,
-    });
-  }
-  async function handleAction(action, job) {
-    setMenu(null);
-    setRowMenu(null);
-    if (action === "view") return navigate(`/jobs/${job.id}`);
-    if (action === "export") return exportRows([job]);
-    if (action === "approve") await approveJob(job.id);
-    if (action === "deliver") await markJobDelivered(job.id);
-    if (action === "cancel") await cancelJob(job.id);
-    setToast({
-      tone: action === "cancel" ? "warning" : "success",
-      title: `${job.id} ${action === "approve" ? "approved" : action === "deliver" ? "marked delivered" : "cancelled"}.`,
-    });
-  }
-  async function submitJob(event) {
-    event.preventDefault();
-    const created = await createJob({
-      ...draft,
-      jobValue: Number(draft.jobValue),
-      amount: Number(draft.jobValue),
-      route: `${draft.origin} → ${draft.destination}`,
-      cargoType: draft.cargo,
-      cargoDetails: draft.cargo,
-      contactPerson: "Super Admin",
-    });
-    setCreateOpen(false);
-    setSelectedJobId(created.id);
-    setTab("All Jobs");
-    setDraft({
-      forwarder: "",
-      requestType: REQUEST_TYPES[0],
-      origin: "",
-      destination: "",
-      cargo: "",
-      jobValue: "",
-      requiredTrucks: 1,
-    });
-    setToast({
-      tone: "success",
-      title: `${created.id} created and sent for approval.`,
-    });
-  }
+  const filtered = useMemo(() => jobs
+    .filter((job) => tab === 'all' || job.status === tab)
+    .filter((job) => !query || [job.id, job.origin, job.destination, job.cargoType, posterName(job.postedBy)]
+      .some((v) => String(v).toLowerCase().includes(query.toLowerCase())))
+    .sort((a, b) => b.id.localeCompare(a.id)), [jobs, tab, query]);
 
-  const columns = [
-    {
-      key: "id",
-      header: "Job ID",
-      width: 92,
-      render: (job) => (
-        <Link
-          to={`/jobs/${job.id}`}
-          className={styles.jobLink}
-          onClick={(event) => event.stopPropagation()}
-        >
-          {job.id}
-        </Link>
-      ),
-    },
-    {
-      key: "company",
-      header: "Company / Requester",
-      width: 170,
-      render: (job) => (
-        <span className={styles.twoLine}>
-          <strong>{job.displayForwarder}</strong>
-          <small>{job.originCountry || "Lagos, Nigeria"}</small>
-        </span>
-      ),
-    },
-    {
-      key: "type",
-      header: "Trip Type",
-      width: 128,
-      render: (job) => (
-        <Badge tone={job.displayType === "Export" ? "success" : "purple"}>
-          {shortType(job.displayType)}
-        </Badge>
-      ),
-    },
-    {
-      key: "route",
-      header: "Route",
-      width: 165,
-      render: (job) => <span className={styles.route}>{job.displayRoute}</span>,
-    },
-    {
-      key: "cargo",
-      header: "Cargo",
-      width: 150,
-      render: (job) => <span className={styles.cargo}>{job.displayCargo}</span>,
-    },
-    {
-      key: "value",
-      header: "Value (₦)",
-      width: 106,
-      render: (job) => (
-        <strong className={styles.value}>{naira(job.displayValue)}</strong>
-      ),
-    },
-    {
-      key: "status",
-      header: "Status",
-      width: 112,
-      render: (job) => (
-        <Badge tone={statusTone(job.status)} dot>
-          {job.status}
-        </Badge>
-      ),
-    },
-    {
-      key: "assigned",
-      header: "Assigned To",
-      width: 130,
-      render: (job) =>
-        job.displayAssignee ? (
-          <span className={styles.assignee}>
-            <Avatar name={job.truckingCompany || job.truckCompany || job.displayAssignee} size={26} />
-            <span className={styles.twoLine}><strong>{job.tripCounts.assigned} of {job.tripCounts.required} trips</strong><small>{job.truckingCompany || job.truckCompany}</small></span>
-          </span>
-        ) : (
-          "—"
-        ),
-    },
-    {
-      key: "created",
-      header: "Dates",
-      width: 116,
-      render: (job) => (
-        <span className={styles.dateCell}>
-          {job.displayCreated.replace(" at ", ", ")}
-        </span>
-      ),
-    },
-    {
-      key: "actions",
-      header: "Actions",
-      width: 54,
-      render: (job) => (
-        <span className={styles.rowMenuWrap}>
-          <IconButton
-            icon="ellipsis"
-            label={`Actions for ${job.id}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              setRowMenu(rowMenu === job.id ? null : job.id);
-            }}
-          />
-          {rowMenu === job.id && (
-            <span
-              className={styles.rowMenu}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <DropdownMenu
-                width={210}
-                items={[
-                  {
-                    label: "View Job Details",
-                    icon: "eye",
-                    onClick: () => handleAction("view", job),
-                  },
-                  ...(job.status === "Pending Approval"
-                    ? [
-                        {
-                          label: "Approve Job",
-                          icon: "circle-check",
-                          onClick: () => handleAction("approve", job),
-                        },
-                      ]
-                    : []),
-                  ...(job.status === "In Transit"
-                    ? [
-                        {
-                          label: "Mark Delivered",
-                          icon: "circle-check",
-                          onClick: () => handleAction("deliver", job),
-                        },
-                      ]
-                    : []),
-                  {
-                    label: "Export Job Sheet",
-                    icon: "download",
-                    onClick: () => handleAction("export", job),
-                  },
-                  ...(job.status !== "Cancelled" && job.status !== "Delivered"
-                    ? [
-                        { divider: true },
-                        {
-                          label: "Cancel Job",
-                          icon: "ban",
-                          tone: "danger",
-                          onClick: () => handleAction("cancel", job),
-                        },
-                      ]
-                    : []),
-                ]}
-              />
-            </span>
-          )}
-        </span>
-      ),
-    },
-  ];
+  async function handleBid(jobId, amount, message) {
+    await placeBid(jobId, amount, message);
+    setBidJob(null);
+    setToast(`Bid submitted for ${jobId}.`);
+  }
 
   return (
     <div className={styles.page}>
-      <PageHeader
-        crumbs={["Jobs & Trips", "Jobs"]}
-        title="Jobs"
-        description="View, manage and monitor all logistics jobs across Trukkas."
-        actions={<span className={styles.headerActions}>
-          <button
-            className={styles.dateButton}
-            type="button"
-            onClick={() =>
-              setMenu(menu === "Header Date" ? null : "Header Date")
-            }
-          >
-            <Icon name="calendar-days" size={17} />
-            May 24, 2026 – May 30, 2026
-            <Icon name="chevron-down" size={14} />
-          </button>
-          {/* <Button icon="plus" onClick={() => setCreateOpen(true)}>
-            Create Job
-          </Button> */}
-          <FilterMenu
-            open={menu === "Header Date"}
-            options={DATE_OPTIONS}
-            value={dateFilter}
-            onChange={(value) => {
-              setDateFilter(value);
-              setMenu(null);
-            }}
-          />
-        </span>}
-      />
-      {toast && <Banner tone={toast.tone} title={toast.title} />}
+      <PageHeader title="Jobs & Trips" description="Manage all your job requests, quotes, and trips in one place." />
+
       <section className={styles.metrics} aria-label="Job summary">
-        <StatCard
-          icon="clipboard-list"
-          tint="blue"
-          label="Total Jobs"
-          value={counts.total.toLocaleString()}
-          delta="12%"
-          caption="vs last week"
-          style={{ minHeight: 92, padding: 13 }}
-        />
-        <StatCard
-          icon="clock-3"
-          tint="amber"
-          label="Pending Approval"
-          value={counts.pending}
-          delta="29%"
-          direction="down"
-          caption="vs last week"
-          style={{ minHeight: 92, padding: 13 }}
-        />
-        <StatCard
-          icon="truck"
-          tint="blue"
-          label="In Transit"
-          value={counts.inTransit}
-          delta="14%"
-          caption="vs last week"
-          style={{ minHeight: 92, padding: 13 }}
-        />
-        <StatCard
-          icon="circle-check"
-          tint="green"
-          label="Delivered"
-          value={counts.delivered}
-          delta="14%"
-          caption="vs last week"
-          style={{ minHeight: 92, padding: 13 }}
-        />
-        <StatCard
-          icon="circle-x"
-          tint="red"
-          label="Cancelled"
-          value={counts.cancelled}
-          delta="5%"
-          direction="down"
-          caption="vs last week"
-          style={{ minHeight: 92, padding: 13 }}
-        />
-        {/* <StatCard
-          icon="coins"
-          tint="amber"
-          label="Total Job Value"
-          value={naira(counts.value)}
-          delta="16%"
-          caption="vs last week"
-          style={{ minHeight: 92, padding: 13 }}
-        />
-        <StatCard
-          icon="clock-3"
-          tint="red"
-          label="Demurrage (Est.)"
-          value={naira(counts.demurrage)}
-          delta="22%"
-          caption="vs last week"
-          style={{ minHeight: 92, padding: 13 }}
-        /> */}
+        <StatCard icon="briefcase" label="All Jobs" value={counts.all} style={{ minHeight: 92, padding: 13 }} />
+        <StatCard icon="clock-3" tint="amber" label="Pending" value={counts.Pending} caption="Awaiting your action" style={{ minHeight: 92, padding: 13 }} />
+        <StatCard icon="send" tint="purple" label="Quoted" value={counts.Quoted} caption="Awaiting response" style={{ minHeight: 92, padding: 13 }} />
+        <StatCard icon="route" tint="blue" label="In Progress" value={counts['In Progress']} caption="Active trips" style={{ minHeight: 92, padding: 13 }} />
+        <StatCard icon="circle-check" tint="green" label="Completed" value={counts.Completed} style={{ minHeight: 92, padding: 13 }} />
       </section>
+
       <Card pad="none" className={styles.workspace}>
         <div className={styles.tabs}>
-          {[
-            ["All Jobs", counts.total],
-            ["Pending Approval", counts.pending],
-            ["Bidding", counts.bidding],
-            ["Assigned", counts.assigned],
-            ["In Transit", counts.inTransit],
-            ["Delivered", counts.delivered],
-            ["Cancelled", counts.cancelled],
-            ["Flagged", counts.flagged],
-          ].map(([name, count]) => (
-            <button
-              type="button"
-              className={tab === name ? styles.activeTab : ""}
-              key={name}
-              onClick={() => setTab(name)}
-            >
-              {name} <span>({count})</span>
+          {JOB_TABS.map((t) => (
+            <button type="button" key={t.value} className={tab === t.value ? styles.activeTab : ''} onClick={() => setTab(t.value)}>
+              {t.label} <span>({counts[t.value]})</span>
             </button>
           ))}
         </div>
-        <div className={styles.filterBar}>
-          <FilterControl
-            name="Job Status"
-            value={statusFilter}
-            options={[
-              "All Statuses",
-              "Pending Approval",
-              "Bidding",
-              "Awaiting Assignment",
-              "Partially Assigned",
-              "Assigned",
-              "In Transit",
-              "Partially Delivered",
-              "Attention Required",
-              "Delivered",
-              "Cancelled",
-              "Rejected",
-            ]}
-            menu={menu}
-            setMenu={setMenu}
-            onChange={setStatusFilter}
-          />
-          <FilterControl
-            name="Trip Type"
-            value={typeFilter}
-            options={["All Types", ...REQUEST_TYPES]}
-            menu={menu}
-            setMenu={setMenu}
-            onChange={setTypeFilter}
-          />
-          <FilterControl
-            name="Cargo Type"
-            value={cargoFilter}
-            options={["All Cargo", ...cargoTypes]}
-            menu={menu}
-            setMenu={setMenu}
-            onChange={setCargoFilter}
-          />
-          <FilterControl
-            name="Origin"
-            value={originFilter}
-            options={["All Locations", ...locations]}
-            menu={menu}
-            setMenu={setMenu}
-            onChange={setOriginFilter}
-          />
-          <FilterControl
-            name="Destination"
-            value={destinationFilter}
-            options={["All Locations", ...locations]}
-            menu={menu}
-            setMenu={setMenu}
-            onChange={setDestinationFilter}
-          />
-          <FilterControl
-            name="Date Range"
-            value={dateFilter}
-            options={DATE_OPTIONS}
-            menu={menu}
-            setMenu={setMenu}
-            onChange={setDateFilter}
-          />
-          <Button
-            variant="outline"
-            icon="list-filter"
-            onClick={() => setMenu(null)}
-          >
-            Filters
-          </Button>
-          <Button variant="ghost" icon="rotate-ccw" onClick={resetFilters}>
-            Reset
-          </Button>
+        <div style={{ padding: '13px 14px', borderBottom: '1px solid var(--tk-line)' }}>
+          <SearchField placeholder="Search by Job ID, route, cargo, or forwarder…" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
-        <div
-          className={`${styles.mainGrid} ${selectedJob ? "" : styles.noInspector}`}
-        >
-          <div className={styles.tableArea}>
-            <div className={styles.tableTools}>
-              <SearchField
-                placeholder="Search by Job ID, company, route, or cargo…"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              <Button
-                variant="outline"
-                icon="download"
-                onClick={() =>
-                  exportRows(
-                    selected.length
-                      ? jobs.filter((job) => selected.includes(job.id))
-                      : filtered,
-                  )
-                }
-              >
-                Export
-              </Button>
-              <IconButton icon="list" label="List view" tone="outline" />
-              <IconButton icon="grid-2x2" label="Grid view" tone="outline" />
-            </div>
-            {selected.length > 0 && (
-              <div className={styles.bulkBar}>
-                <strong>{selected.length} selected</strong>
-                <button
-                  type="button"
-                  onClick={() =>
-                    exportRows(jobs.filter((job) => selected.includes(job.id)))
-                  }
-                >
-                  Export selected
-                </button>
-                <button type="button" onClick={() => setSelected([])}>
-                  Clear
-                </button>
-              </div>
-            )}
-            <div className={styles.tableShell}>
-              <DataTable
-                selectable
-                selected={selected}
-                onSelect={setSelected}
-                rows={paged}
-                rowKey={(job) => job.id}
-                columns={columns}
-                tableLayout="fixed"
-                onRowClick={(job) => setSelectedJobId(job.id)}
-              />
-            </div>
-            {filtered.length === 0 && (
-              <div className={styles.empty}>
-                No jobs match the selected filters.
-              </div>
-            )}
-            <Pagination
-              page={page}
-              pageCount={Math.max(1, Math.ceil(filtered.length / pageSize))}
-              pageSize={pageSize}
-              total={filtered.length}
-              onPage={(next) =>
-                setPage(
-                  Math.min(
-                    Math.max(1, next),
-                    Math.max(1, Math.ceil(filtered.length / pageSize)),
-                  ),
-                )
-              }
-              onPageSize={setPageSize}
+
+        {filtered.length === 0 && (
+          <div style={{ padding: 40 }}>
+            <EmptyState icon="inbox" title="No jobs match this view" description="Try a different tab or clear your search." />
+          </div>
+        )}
+
+        {tab === 'Pending' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, padding: 16 }}>
+            {filtered.map((job) => <JobRequestCard key={job.id} job={job} onBid={setBidJob} />)}
+          </div>
+        ) : filtered.length > 0 && (
+          <div className={styles.tableShell}>
+            <DataTable
+              rows={filtered}
+              rowKey={(job) => job.id}
+              onRowClick={(job) => navigate(`/jobs-trips/${job.id}`)}
+              tableLayout="fixed"
+              columns={[
+                { key: 'id', header: 'Job ID', width: 120, render: (job) => <Link to={`/jobs-trips/${job.id}`} className={styles.jobLink} onClick={(e) => e.stopPropagation()}>{job.id}</Link> },
+                { key: 'route', header: 'Route & Type', render: (job) => <span className={styles.twoLine}><strong>{job.origin} → {job.destination}</strong><small>{job.jobType}</small></span> },
+                { key: 'cargo', header: 'Cargo Details', render: (job) => <span className={styles.twoLine}><strong>{job.cargoType}</strong><small>{job.equipment}</small></span> },
+                { key: 'poster', header: 'Requested By', render: (job) => posterName(job.postedBy) },
+                { key: 'status', header: 'Status', render: (job) => <Badge tone={jobStatusTone(job.status)}>{job.status}</Badge> },
+                { key: 'requestedOn', header: 'Requested On', render: (job) => job.postedOn?.split(' · ')[0] },
+                { key: 'nextStep', header: 'Next Step', render: (job) => <span className="tk-meta">{nextStepFor(job)}</span> },
+              ]}
             />
           </div>
-          {selectedJob && (
-            <Inspector
-              job={selectedJob}
-              onClose={() => setSelectedJobId(null)}
-              onAction={handleAction}
-              menu={menu}
-              setMenu={setMenu}
-            />
-          )}
-        </div>
+        )}
       </Card>
-      <Modal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="Create Job"
-        description="Add a logistics job for review."
-        width={580}
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
-            </Button>
-            <Button form="create-job-form" type="submit">
-              Create Job
-            </Button>
-          </>
-        }
-      >
-        <form
-          id="create-job-form"
-          className={styles.createForm}
-          onSubmit={submitJob}
-        >
-          <TextField
-            required
-            label="Company / Requester"
-            value={draft.forwarder}
-            onChange={(event) =>
-              setDraft({ ...draft, forwarder: event.target.value })
-            }
-            placeholder="e.g. Goodwill Forwarding Ltd."
-          />
-          <Select
-            label="Trip Type"
-            value={draft.requestType}
-            options={REQUEST_TYPES}
-            onChange={(event) =>
-              setDraft({ ...draft, requestType: event.target.value })
-            }
-          />
-          <TextField
-            required
-            label="Origin"
-            value={draft.origin}
-            onChange={(event) =>
-              setDraft({ ...draft, origin: event.target.value })
-            }
-            placeholder="Pickup location"
-          />
-          <TextField
-            required
-            label="Destination"
-            value={draft.destination}
-            onChange={(event) =>
-              setDraft({ ...draft, destination: event.target.value })
-            }
-            placeholder="Delivery location"
-          />
-          <TextField
-            required
-            label="Cargo"
-            value={draft.cargo}
-            onChange={(event) =>
-              setDraft({ ...draft, cargo: event.target.value })
-            }
-            placeholder="Cargo description"
-          />
-          <TextField
-            required
-            min="0"
-            type="number"
-            label="Job Value (₦)"
-            value={draft.jobValue}
-            onChange={(event) =>
-              setDraft({ ...draft, jobValue: event.target.value })
-            }
-            placeholder="0"
-          />
-          <TextField
-            required
-            min="1"
-            max="50"
-            type="number"
-            label="Trucks Required"
-            value={draft.requiredTrucks}
-            onChange={(event) => setDraft({ ...draft, requiredTrucks: Math.max(1, Number(event.target.value) || 1) })}
-            hint="Each truck will create its own trip and require a separate driver."
-          />
-        </form>
-      </Modal>
+
+      {toast && (
+        <div role="status" style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 200 }}>
+          <Card style={{ display: 'flex', alignItems: 'center', gap: 8, boxShadow: 'var(--tk-shadow-menu)' }}>
+            <Icon name="circle-check" size={16} color="var(--tk-success)" />
+            {toast}
+          </Card>
+        </div>
+      )}
+      <BidModal job={bidJob} open={!!bidJob} onClose={() => setBidJob(null)} onSubmit={handleBid} />
     </div>
   );
 }

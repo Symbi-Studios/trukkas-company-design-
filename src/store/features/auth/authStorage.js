@@ -1,7 +1,8 @@
-const AUTH_STORAGE_KEY = 'trukkas-admin-auth';
+const AUTH_STORAGE_KEY = 'trukkas-company-auth';
 
 const emptyAuth = {
-  admin: null,
+  account: null,
+  activeCompanyId: null,
   accessToken: null,
   refreshToken: null,
 };
@@ -20,14 +21,15 @@ export function readStoredAuth() {
     const parsed = JSON.parse(storedValue);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid auth data');
 
-    const admin = parsed.admin && typeof parsed.admin === 'object' && !Array.isArray(parsed.admin)
-      ? parsed.admin
+    const account = parsed.account && typeof parsed.account === 'object' && !Array.isArray(parsed.account)
+      ? parsed.account
       : null;
+    const activeCompanyId = nonEmptyString(parsed.activeCompanyId);
     const accessToken = nonEmptyString(parsed.accessToken);
     const refreshToken = nonEmptyString(parsed.refreshToken);
 
-    if (!admin || !accessToken || !refreshToken) throw new Error('Incomplete auth data');
-    return { admin, accessToken, refreshToken };
+    if (!account || !accessToken || !refreshToken) throw new Error('Incomplete auth data');
+    return { account, activeCompanyId, accessToken, refreshToken };
   } catch {
     try {
       window.localStorage.removeItem(AUTH_STORAGE_KEY);
@@ -42,12 +44,13 @@ export function persistAuth(auth = emptyAuth) {
   if (typeof window === 'undefined') return;
 
   try {
-    if (!auth.admin || !auth.accessToken || !auth.refreshToken) {
+    if (!auth.account || !auth.accessToken || !auth.refreshToken) {
       window.localStorage.removeItem(AUTH_STORAGE_KEY);
       return;
     }
     window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
-      admin: auth.admin,
+      account: auth.account,
+      activeCompanyId: auth.activeCompanyId,
       accessToken: auth.accessToken,
       refreshToken: auth.refreshToken,
     }));

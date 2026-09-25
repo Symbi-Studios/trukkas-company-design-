@@ -1,10 +1,42 @@
 'use client';
-import { useState } from 'react';
-import { useNavigate,useParams } from '../router.js';
-import { PageHeader,Button,Card,SectionCard,Badge,Icon,DropdownMenu,Modal } from '../ds.js';
+
+import { useEffect } from 'react';
+import { useNavigate, useParams } from '../router.js';
+import { Button, Card, Icon, PageHeader } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
-import { deleteNotification,updateNotification } from '../mock/api.js';
-import './Notifications.css';
-const tone={High:'danger',Medium:'warning',Low:'success'};
-export function NotificationDetail(){const navigate=useNavigate(),{notificationId}=useParams(),rows=useCollection('notifications')||[],n=rows.find(x=>x.id===notificationId),[menu,setMenu]=useState(false),[confirm,setConfirm]=useState(false),[toast,setToast]=useState('');if(!n)return <Card><p>Notification not found.</p><Button variant="outline" onClick={()=>navigate('/notifications')}>Back to Notifications</Button></Card>;const others=rows.filter(x=>x.category===n.category&&x.id!==n.id).slice(0,3);function notify(x){setToast(x);setTimeout(()=>setToast(''),1600)}async function setRead(read){await updateNotification(n.id,{read,readAt:read?'Just now':null});setMenu(false);notify(read?'Marked as read':'Marked as unread')}return <div className="notify-page"><PageHeader crumbs={['Home','Notification Center','View Notification']} title="View Notification" description="Detailed information about this notification." actions={<><Button variant="outline" icon="arrow-left" onClick={()=>navigate('/notifications')}>Back to Notifications</Button><span style={{position:'relative'}}><Button variant="outline" iconRight="chevron-down" onClick={()=>setMenu(!menu)}>Actions</Button>{menu&&<span className="notify-dropdown"><DropdownMenu width={210} items={[{label:n.read?'Mark as unread':'Mark as read',icon:n.read?'mail':'mail-check',onClick:()=>setRead(!n.read)},{label:'Copy Notification ID',icon:'copy',onClick:()=>{navigator.clipboard?.writeText(n.id);setMenu(false);notify('Notification ID copied')}},{label:'Print Notification',icon:'printer',onClick:()=>window.print()},{divider:true},{label:'Delete Notification',icon:'trash-2',tone:'danger',onClick:()=>{setMenu(false);setConfirm(true)}}]}/></span>}</span></>}/><div className="notify-detail-layout"><main className="notify-detail-main"><div className="notify-alert-hero"><span className="notify-alert-icon"><Icon name={n.icon} size={34}/></span><div className="notify-alert-title"><div><h2>{n.title}</h2><Badge tone={tone[n.priority]}>{n.priority} Priority</Badge></div><p>{n.message}</p><small>{n.category}</small></div><div className="notify-alert-meta"><span>{n.createdAt}</span><Badge dot tone={n.read?'neutral':'info'}>{n.read?'Read':'Unread'}</Badge></div></div><SectionCard title="Message"><div className="notify-message"><div><p>Hello {n.recipient},</p><p>Your truck <b>KJA-123-XD (40FT Trailer)</b> is overdue for scheduled maintenance by 5 days.<br/>The maintenance was due on May 25, 2026, but no service record has been logged.</p><p>Please schedule maintenance as soon as possible to keep your fleet safe, ensure compliance,<br/>and avoid unexpected breakdowns or additional repair costs.</p><div className="notify-warning"><Icon name="shield-alert" size={18}/><span>Continuing to operate this vehicle may lead to safety risks, higher repair costs,<br/>and possible job delays.</span></div><p style={{marginTop:12}}>Thank you,<br/>Trukkas System</p></div><div className="notify-illustration"><span><Icon name="truck" size={38}/></span><span><Icon name="wrench" size={35}/></span><span><Icon name="calendar" size={35}/></span></div></div></SectionCard><SectionCard title="What You Can Do"><div className="notify-action-grid"><Action icon="calendar-days" title="Schedule Maintenance" hint="Book a service appointment with a service center." label="Schedule Now" primary onClick={()=>navigate('/maintenance')}/><Action icon="clipboard-check" title="View Maintenance" hint="View maintenance details, history, and service requirements." label="View Details" onClick={()=>navigate('/maintenance/MTN-2026-00156')}/><Action icon="headphones" title="Contact Support" hint="Need help? Contact our support team for assistance." label="Contact Support" onClick={()=>navigate('/tickets')}/></div></SectionCard><SectionCard title="Notification History"><div className="notify-history"><History icon="mail" title="Sent" date="May 20, 2026 · 10:24 AM" text={`Notification sent to ${n.recipientEmail}`}/><History icon="mail-check" title="Delivered" date="May 20, 2026 · 10:24 AM" text="Email delivered successfully"/><History icon="circle" title="Opened" date={n.read?'Just now':'—'} text={n.read?'Opened in Notification Center':'Not yet opened'}/><History icon="circle" title="Read" date={n.readAt||'—'} text={n.read?'Notification was read':'Not yet read'}/></div></SectionCard></main><aside className="notify-detail-rail"><SectionCard title="Notification Details">{Info('Notification ID',n.id)}{Info('Type',n.type)}{Info('Priority',<><i style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:'var(--tk-danger)',marginRight:6}}/> {n.priority}</>)}{Info('Status',<Badge tone={n.read?'neutral':'info'}>{n.read?'Read':'Unread'}</Badge>)}{Info('Category',n.category)}{Info('Created At',n.createdAt)}{Info('Read At',n.readAt||'—')}{Info('Expires At',n.expiresAt)}</SectionCard><SectionCard title="Related Items"><Related icon="truck" title="Truck" value="KJA-123-XD" hint="40FT Trailer" onClick={()=>navigate('/fleet/KJA-123-XD')}/><Related icon="wrench" title="Maintenance Due" value="May 25, 2026" hint="5 days overdue" danger onClick={()=>navigate('/maintenance/MTN-2026-00156')}/><Related icon="calendar-days" title="Last Job" value="TRK-2026-000412" hint="Lagos → Onne Port · Completed on May 18, 2026" onClick={()=>navigate('/jobs')}/></SectionCard><SectionCard title="Other Notifications from This Category" action={<button className="notify-link" onClick={()=>navigate('/notifications')}>View all</button>}>{others.map(x=><button className="notify-other" key={x.id} onClick={()=>navigate('/notifications/'+x.id)}><span className={'notify-icon '+x.tone} style={{width:30,height:30}}><Icon name={x.icon} size={14}/></span><span><strong>{x.title}</strong><small>{x.message}</small></span><time>{x.time}</time><Icon name="chevron-right" size={12}/></button>)}</SectionCard></aside></div><Modal open={confirm} onClose={()=>setConfirm(false)} title="Delete Notification" description="This notification will be removed from your notification center." footer={<><Button variant="outline" onClick={()=>setConfirm(false)}>Cancel</Button><Button variant="danger" onClick={async()=>{await deleteNotification(n.id);navigate('/notifications')}}>Delete</Button></>}/>{toast&&<div className="notify-toast">{toast}</div>}</div>}
-function Info(label,value){return <div className="notify-info"><span>{label}</span><strong>{value}</strong></div>}function History({icon,title,date,text}){return <div className="notify-history-step"><span className="ico"><Icon name={icon} size={12}/></span><span><strong>{title}</strong><small>{date}</small><small>{text}</small></span></div>}function Action({icon,title,hint,label,onClick,primary}){return <div className="notify-action-card"><span className="ico"><Icon name={icon} size={22}/></span><div><strong>{title}</strong><small>{hint}</small><Button size="sm" variant={primary?'primary':'outline'} onClick={onClick}>{label}</Button></div></div>}function Related({icon,title,value,hint,onClick,danger}){return <button className="notify-related" onClick={onClick}><span className="ico"><Icon name={icon} size={16}/></span><span><strong>{title}</strong><small style={{color:danger?'var(--tk-danger)':'var(--tk-blue)'}}>{value}</small><small>{hint}</small></span><Icon name="chevron-right" size={13}/></button>}
+import { markNotificationRead } from '../mock/api.js';
+
+export function NotificationDetail() {
+  const { notificationId } = useParams();
+  const navigate = useNavigate();
+  const notifications = useCollection('notifications') || [];
+  const notification = notifications.find((n) => n.id === notificationId);
+
+  useEffect(() => {
+    if (notification && !notification.read) markNotificationRead(notification.id);
+  }, [notification]);
+
+  if (!notification) {
+    return (
+      <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
+        <PageHeader title="Notification not found" />
+        <Button variant="outline" onClick={() => navigate('/notifications')}>Back to Notifications</Button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
+      <PageHeader
+        crumbs={[{ label: 'Notifications', onClick: () => navigate('/notifications') }, notification.title]}
+        title={notification.title}
+        description={notification.createdAt}
+      />
+      <Card style={{ display: 'flex', gap: 14 }}>
+        <Icon name={notification.icon} size={22} color="var(--tk-blue)" />
+        <p style={{ margin: 0, font: '400 14px/22px var(--tk-font-sans)', color: 'var(--tk-ink-700)' }}>{notification.body}</p>
+      </Card>
+      {notification.link && <Button onClick={() => navigate(notification.link)}>Open related item</Button>}
+    </div>
+  );
+}

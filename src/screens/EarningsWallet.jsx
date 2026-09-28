@@ -1,7 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { Badge, Button, Card, DataTable, LineChart, Modal, PageHeader, StatCard, TextField } from '../ds.js';
+import { useMemo, useState } from 'react';
+import { useNavigate } from '../router.js';
+import { Badge, Button, Card, DataTable, IconButton, LineChart, Modal, PageHeader, StatCard, TextField } from '../ds.js';
+import { jobEarnings, jobReceipt, payoutReceipt } from '../domain/payouts.js';
+import { jobTitle } from '../domain/jobs.js';
+import { tripsForJob } from '../domain/trips.js';
+import { ReceiptModal } from '../components/Receipt.jsx';
+import { posterFor } from './Jobs.jsx';
 import { useCollection } from '../mock/useCollection.js';
 import { requestWithdrawal } from '../mock/api.js';
 import { formatNaira } from '../mock/format.js';
@@ -40,11 +46,24 @@ export function EarningsWallet() {
   const wallet = useCollection('walletSummary')?.[0];
   const transactions = useCollection('walletTransactions') || [];
   const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [receipt, setReceipt] = useState(null);
+  const navigate = useNavigate();
+  const payouts = useCollection('payoutRequests') || [];
+  const trips = useCollection('trips') || [];
+  const jobs = useCollection('jobs') || [];
+  const company = useCollection('companyProfile')?.[0];
+  const jobRows = useMemo(() => jobs
+    .map((job) => ({ job, earnings: jobEarnings(job, tripsForJob(trips, job.id), payouts) }))
+    .filter((r) => r.earnings.rows.length > 0), [jobs, trips, payouts]);
   if (!wallet) return null;
+  const openPayoutReceipt = (payoutId) => {
+    const payout = payouts.find((p) => p.id === payoutId);
+    if (payout) setReceipt(payoutReceipt(payout, { trips, jobs, company, bank: wallet.bankAccount }));
+  };
 
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
-      <PageHeader title="Earnings & Wallet" description="Track your wallet balance, pending payouts, and monthly earnings." actions={<Button icon="banknote" onClick={() => setWithdrawOpen(true)}>Withdraw Funds</Button>} />
+      <PageHeader title="Earnings & Wallet" description="Track your wallet balance, pending payouts, and monthly earnings." actions={<><Button variant="outline" icon="hand-coins" onClick={() => navigate('/payouts')}>Request Payout</Button><Button icon="banknote" onClick={() => setWithdrawOpen(true)}>Withdraw Funds</Button></>} />
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 16 }}>
         <StatCard icon="wallet" tint="green" label="Wallet Balance" value={formatNaira(wallet.balance)} caption="Available balance" />
         <StatCard icon="hourglass" tint="amber" label="Pending Payout" value={formatNaira(wallet.pendingPayout)} caption="In review" />
@@ -61,6 +80,22 @@ export function EarningsWallet() {
         <strong>{wallet.bankAccount.bankName} •••• {wallet.bankAccount.last4} ({wallet.bankAccount.accountName})</strong>
       </Card>
       <Card pad="none">
+        <h3 className="tk-title" style={{ margin: 0, padding: '16px 16px 0' }}>Earnings by Job</h3>
+        <DataTable
+          rows={jobRows}
+          rowKey={(r) => r.job.id}
+          onRowClick={(r) => navigate(`/jobs/${r.job.id}`)}
+          columns={[
+            { key: 'job', header: 'Job', render: ({ job }) => <span style={{ display: 'grid' }}><strong style={{ color: 'var(--tk-ink-900)' }}>{jobTitle(job)}</strong><span className="tk-meta">{job.id} · {posterFor(job.postedBy).name}</span></span> },
+            { key: 'trips', header: 'Trips Delivered', render: ({ job, earnings }) => `${earnings.rows.length} of ${job.trucksRequired || 1}` },
+            { key: 'gross', header: 'Gross', align: 'right', render: ({ earnings }) => formatNaira(earnings.totals.gross) },
+            { key: 'net', header: 'Net Earnings', align: 'right', render: ({ earnings }) => <strong>{formatNaira(earnings.totals.net)}</strong> },
+            { key: 'status', header: 'Payout', render: ({ earnings }) => (earnings.unpaid ? <Badge tone="warning">{formatNaira(earnings.unpaid)} unpaid</Badge> : <Badge tone="success">Paid / processing</Badge>) },
+            { key: 'receipt', header: 'Receipt', align: 'center', width: 80, render: (r) => <IconButton icon="receipt" tone="outline" size={30} label={`Earnings receipt for ${r.job.id}`} onClick={(e) => { e.stopPropagation(); setReceipt(jobReceipt(r.job, r.earnings, { company, poster: posterFor(r.job.postedBy) })); }} /> },
+          ]}
+        />
+      </Card>
+      <Card pad="none">
         <h3 className="tk-title" style={{ margin: 0, padding: '16px 16px 0' }}>Transaction History</h3>
         <DataTable
           rows={transactions}
@@ -72,9 +107,11 @@ export function EarningsWallet() {
             { key: 'amount', header: 'Amount', align: 'right', render: (t) => <strong style={{ color: t.amount >= 0 ? 'var(--tk-success)' : 'var(--tk-ink-900)' }}>{formatNaira(t.amount)}</strong> },
             { key: 'balance', header: 'Balance After', align: 'right', render: (t) => formatNaira(t.balanceAfter) },
             { key: 'status', header: 'Status', render: (t) => <Badge tone={t.status === 'Completed' ? 'success' : 'info'}>{t.status}</Badge> },
+            { key: 'receipt', header: 'Receipt', align: 'center', width: 80, render: (t) => (t.payoutId ? <IconButton icon="receipt" tone="outline" size={30} label={`Receipt for ${t.payoutId}`} onClick={() => openPayoutReceipt(t.payoutId)} /> : <span className="tk-meta">—</span>) },
           ]}
         />
       </Card>
+      <ReceiptModal receipt={receipt} open={!!receipt} onClose={() => setReceipt(null)} />
       <WithdrawModal open={withdrawOpen} onClose={() => setWithdrawOpen(false)} available={wallet.balance} />
     </div>
   );

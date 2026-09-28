@@ -1,0 +1,419 @@
+.page {
+  display: grid;
+  gap: var(--tk-section-gap);
+  min-width: 0;
+}
+
+/* ---- Filter bar ---------------------------------------------------------- */
+.filterCard {
+  overflow: visible;
+}
+.filterBar {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.1fr) 40px minmax(130px, 1.1fr) repeat(3, minmax(120px, 1fr)) auto auto auto;
+  gap: 10px;
+  align-items: center;
+}
+.filterField {
+  position: relative;
+  height: 52px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--tk-line-strong);
+  border-radius: var(--tk-r-md);
+  background: var(--tk-surface);
+  cursor: pointer;
+}
+.filterField:focus-within {
+  border-color: var(--tk-blue);
+  box-shadow: var(--tk-focus-ring);
+}
+.filterCopy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.filterCopy > span {
+  color: var(--tk-ink-400);
+  font: 500 12px/14px var(--tk-font-sans);
+}
+.filterCopy select {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  appearance: none;
+  background: transparent;
+  color: var(--tk-ink-900);
+  font: 500 14px/18px var(--tk-font-sans);
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+.resetLink {
+  border: 0;
+  background: transparent;
+  padding: 0 6px;
+  color: var(--tk-blue);
+  font: 600 14px/1 var(--tk-font-sans);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.moreFilters {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--tk-line);
+}
+
+/* ---- List + inspector ---------------------------------------------------- */
+.mainGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 430px;
+  gap: var(--tk-grid-gap);
+  align-items: start;
+}
+.mainGrid.noInspector {
+  grid-template-columns: minmax(0, 1fr);
+}
+.listCard {
+  min-width: 0;
+  overflow: hidden;
+}
+.listHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px var(--tk-card-pad);
+  color: var(--tk-ink-700);
+  font: 500 14px/20px var(--tk-font-sans);
+}
+.sort {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.jobList {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+.jobRow {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) 118px 130px auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--tk-line);
+  border-radius: var(--tk-r-lg);
+  background: var(--tk-surface);
+  cursor: pointer;
+  transition: var(--tk-transition);
+}
+.jobRow:hover {
+  border-color: var(--tk-line-strong);
+  background: var(--tk-surface-soft);
+}
+.jobRowActive,
+.jobRowActive:hover {
+  border-color: var(--tk-blue);
+  background: var(--tk-blue-soft);
+  box-shadow: 0 0 0 1px var(--tk-blue);
+}
+.jobMain {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.jobTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.jobTitleRow strong {
+  color: var(--tk-ink-900);
+  font: 600 16px/22px var(--tk-font-sans);
+}
+.route {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--tk-ink-700);
+  font: 400 13px/18px var(--tk-font-sans);
+}
+.jobMeta {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  color: var(--tk-ink-400);
+  font: 400 13px/18px var(--tk-font-sans);
+}
+.underline {
+  text-decoration: underline;
+  text-decoration-color: var(--tk-line-strong);
+  text-underline-offset: 3px;
+}
+.trucks {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--tk-blue);
+  font-weight: 600;
+}
+.jobFact {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.jobFact span {
+  color: var(--tk-ink-400);
+  font: 400 12px/16px var(--tk-font-sans);
+}
+.jobFact strong {
+  color: var(--tk-ink-900);
+  font: 600 15px/20px var(--tk-font-sans);
+  white-space: nowrap;
+}
+.jobActions {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+.closes {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 500 12px/16px var(--tk-font-sans);
+}
+.jobButtons {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---- Inspector ----------------------------------------------------------- */
+.inspector {
+  position: sticky;
+  top: 16px;
+  min-width: 0;
+  overflow: hidden;
+}
+.inspectorHead {
+  display: flex;
+  gap: 12px;
+  padding: 16px 16px 0;
+}
+.inspectorTools {
+  flex: 1;
+  display: grid;
+  justify-items: end;
+  align-content: space-between;
+  gap: 12px;
+}
+.inspectorAmount {
+  display: grid;
+  justify-items: end;
+}
+.inspectorAmount strong {
+  color: var(--tk-ink-900);
+  font: 700 22px/28px var(--tk-font-sans);
+}
+.inspectorAmount small {
+  color: var(--tk-ink-400);
+  font: 400 12px/16px var(--tk-font-sans);
+}
+.inspectorTitle {
+  padding: 14px 16px 6px;
+}
+.inspectorTitle h2 {
+  margin: 0;
+  color: var(--tk-ink-900);
+  font: 700 20px/26px var(--tk-font-sans);
+}
+.inspectorTitle > span {
+  color: var(--tk-ink-400);
+  font: 400 14px/20px var(--tk-font-sans);
+}
+.inspectorBody {
+  padding: 14px 16px;
+  display: grid;
+  gap: 14px;
+}
+.factGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 12px;
+}
+.factGrid :global(.tk-meta) {
+  font-size: 12px;
+}
+.inspectorSection {
+  padding-top: 14px;
+  border-top: 1px solid var(--tk-line);
+}
+.inspectorSection h3 {
+  margin: 0 0 6px;
+  color: var(--tk-ink-900);
+  font: 600 14px/20px var(--tk-font-sans);
+}
+.inspectorSection p {
+  margin: 0;
+  color: var(--tk-ink-500);
+  font: 400 13px/20px var(--tk-font-sans);
+}
+.requirements {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.requirements li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--tk-ink-700);
+  font: 400 13px/18px var(--tk-font-sans);
+}
+.notes {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: var(--tk-ink-700);
+  font: 400 13px/18px var(--tk-font-sans);
+}
+.companyRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--tk-line);
+}
+.companyRow strong {
+  color: var(--tk-ink-900);
+  font: 600 14px/20px var(--tk-font-sans);
+}
+.stars {
+  display: inline-flex;
+  gap: 1px;
+}
+.inspectorActions {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+/* ---- How it works -------------------------------------------------------- */
+.howSteps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 16px;
+}
+.howSteps li {
+  display: flex;
+  gap: 12px;
+}
+.howSteps li > span {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: var(--tk-r-md);
+  background: var(--tk-blue-soft);
+  color: var(--tk-blue);
+}
+.howSteps strong {
+  color: var(--tk-ink-900);
+  font: 600 14px/20px var(--tk-font-sans);
+}
+.howSteps p {
+  margin: 2px 0 0;
+  color: var(--tk-ink-500);
+  font: 400 13px/19px var(--tk-font-sans);
+}
+
+@media (max-width: 1440px) {
+  .filterBar {
+    grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr) repeat(3, minmax(0, 1fr));
+  }
+  .mainGrid {
+    grid-template-columns: minmax(0, 1fr) 400px;
+  }
+  .jobRow {
+    grid-template-columns: 88px minmax(0, 1fr) 118px auto;
+  }
+  .pickupFact {
+    display: none !important;
+  }
+}
+@media (max-width: 1199px) {
+  .mainGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .inspector {
+    position: static;
+  }
+}
+@media (max-width: 1023px) {
+  .filterBar {
+    grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr);
+  }
+  .jobRow {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+  .jobRow > :global(span[aria-hidden]) {
+    width: 72px !important;
+    height: 60px !important;
+  }
+  .jobFact {
+    display: none !important;
+  }
+  .jobActions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+@media (max-width: 639px) {
+  .filterBar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .filterBar > button[aria-label] {
+    display: none;
+  }
+  .listHead {
+    flex-wrap: wrap;
+  }
+  .factGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .inspectorActions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .inspectorHead {
+    flex-direction: column;
+  }
+  .inspectorTools {
+    justify-items: start;
+  }
+  .inspectorAmount {
+    justify-items: start;
+  }
+}

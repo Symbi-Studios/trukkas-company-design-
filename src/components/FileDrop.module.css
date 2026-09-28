@@ -1,0 +1,113 @@
+.wrap {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.label {
+  color: var(--tk-ink-500);
+  font: 500 13px/18px var(--tk-font-sans);
+}
+.zone {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px;
+  border: 1.5px dashed var(--tk-line-strong);
+  border-radius: var(--tk-r-lg);
+  background: var(--tk-surface-soft, var(--tk-surface));
+  cursor: pointer;
+  transition: var(--tk-transition);
+}
+.zone:hover,
+.zone:focus-visible,
+.over {
+  border-color: var(--tk-blue);
+  background: var(--tk-blue-soft);
+  outline: none;
+}
+.compact {
+  padding: 10px 12px;
+}
+.zoneIcon {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: var(--tk-r-md);
+  background: var(--tk-blue-soft);
+  color: var(--tk-blue);
+}
+.compact .zoneIcon {
+  width: 32px;
+  height: 32px;
+}
+.zoneCopy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.zoneCopy strong {
+  color: var(--tk-ink-700);
+  font: 500 13px/18px var(--tk-font-sans);
+}
+.zoneCopy strong span {
+  color: var(--tk-blue);
+  font-weight: 600;
+}
+.zoneCopy small {
+  color: var(--tk-ink-400);
+  font: 400 12px/16px var(--tk-font-sans);
+}
+.error {
+  color: var(--tk-danger);
+  font: 500 12px/16px var(--tk-font-sans);
+}
+.files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.files li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--tk-line);
+  border-radius: var(--tk-r-md);
+  background: var(--tk-surface);
+}
+.thumb,
+.fileIcon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border-radius: var(--tk-r-sm);
+}
+.thumb {
+  object-fit: cover;
+}
+.fileIcon {
+  display: grid;
+  place-items: center;
+  background: var(--tk-blue-soft);
+  color: var(--tk-blue);
+}
+.fileMain {
+  flex: 1;
+  display: grid;
+  min-width: 0;
+}
+.fileMain strong {
+  color: var(--tk-ink-900);
+  font: 600 13px/18px var(--tk-font-sans);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fileMain small {
+  color: var(--tk-ink-400);
+  font: 400 12px/16px var(--tk-font-sans);
+}

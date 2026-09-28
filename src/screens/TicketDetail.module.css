@@ -1,0 +1,99 @@
+.attachments {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.media {
+  display: block;
+  width: 220px;
+  max-width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--tk-r-md);
+  border: 1px solid var(--tk-line);
+  overflow: hidden;
+  background: var(--tk-surface-sunk);
+}
+.media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.composer {
+  display: grid;
+  gap: 10px;
+  padding: var(--tk-card-pad);
+  border-top: 1px solid var(--tk-line);
+  transition: var(--tk-transition);
+}
+.dragging {
+  background: var(--tk-blue-soft);
+  outline: 2px dashed var(--tk-blue);
+  outline-offset: -8px;
+}
+.pending {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  padding: 6px 6px 6px 8px;
+  border: 1px solid var(--tk-line);
+  border-radius: var(--tk-r-md);
+  background: var(--tk-surface);
+}
+.chip img,
+.chipIcon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: var(--tk-r-sm);
+  object-fit: cover;
+}
+.chipIcon {
+  display: grid;
+  place-items: center;
+  background: var(--tk-blue-soft);
+  color: var(--tk-blue);
+  font: 700 9px/1 var(--tk-font-sans);
+}
+.chip > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+}
+.chip strong {
+  color: var(--tk-ink-900);
+  font: 600 12px/16px var(--tk-font-sans);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip small {
+  color: var(--tk-ink-400);
+  font: 400 11px/14px var(--tk-font-sans);
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.actions > button:last-child {
+  margin-left: auto;
+}
+.error {
+  color: var(--tk-danger);
+  font: 500 12px/16px var(--tk-font-sans);
+}
+@media (max-width: 639px) {
+  .actions {
+    flex-wrap: wrap;
+  }
+  .actions > :global(.tk-meta) {
+    display: none;
+  }
+}

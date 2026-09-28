@@ -12,7 +12,7 @@ export const supportTickets = [
     id: 'TCK-2026-0052', subject: 'Cannot upload ADR certificate for TKR 987 EF', category: 'Documents',
     status: 'Open', createdAt: 'May 29, 2026', updatedAt: 'May 30, 2026',
     messages: [
-      { author: 'SpeedLine Admin', role: 'You', time: 'May 29, 2026 · 11:12 AM', agent: false, body: 'The upload keeps failing at 90% for the ADR certificate PDF.' },
+      { author: 'SpeedLine Admin', role: 'You', time: 'May 29, 2026 · 11:12 AM', agent: false, body: 'The upload keeps failing at 90% for the ADR certificate PDF. Screenshot of the error attached.', attachments: [{ name: 'upload-error.png', size: '184 KB', type: 'image/png' }, { name: 'ADR_Certificate_TKR987EF.pdf', size: '12.4 MB', type: 'application/pdf' }] },
       { author: 'Tunde (Trukkas Support)', role: 'Support Agent', time: 'May 30, 2026 · 8:30 AM', agent: true, body: 'Could you confirm the file size? Uploads are capped at 10MB per document.' },
     ],
   },

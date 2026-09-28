@@ -1,0 +1,9 @@
+/* MapPanel ships a 20px title; route maps sit beside 16px SectionCards, so
+   match their heading size. The hook span marks the panel this applies to. */
+:global(.tk-card):has(> div > .hook) h3:global(.tk-title) {
+  font-size: var(--tk-section-size);
+  line-height: var(--tk-section-lh);
+}
+.hook {
+  display: none;
+}

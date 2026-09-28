@@ -4,7 +4,9 @@ export const NAV = [
     section: 'Operations',
     items: [
       { id: 'dashboard', icon: 'layout-dashboard', label: 'Dashboard' },
-      { id: 'jobs-trips', icon: 'briefcase', label: 'Jobs & Trips' },
+      { id: 'jobs', icon: 'search', label: 'Find Jobs' },
+      { id: 'my-jobs', icon: 'briefcase', label: 'My Jobs' },
+      { id: 'trips', icon: 'route', label: 'My Trips' },
       { id: 'fleet', icon: 'truck', label: 'Fleet' },
       { id: 'drivers', icon: 'user', label: 'Drivers' },
       { id: 'maintenance', icon: 'wrench', label: 'Maintenance' },
@@ -41,7 +43,9 @@ export const NAV = [
 
 export const SEARCH_PLACEHOLDER = {
   dashboard: 'Search jobs, trips, trucks, drivers...',
-  'jobs-trips': 'Search by Job ID, route, cargo, forwarder...',
+  jobs: 'Search jobs by ID, route, cargo, forwarder...',
+  'my-jobs': 'Search your jobs by ID, trip, route, forwarder...',
+  trips: 'Search trips by ID, job, truck, driver...',
   fleet: 'Search trucks, trailers, registration no...',
   drivers: 'Search drivers by name, license, phone...',
   maintenance: 'Search maintenance records, trucks, service type...',

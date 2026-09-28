@@ -41,7 +41,11 @@ export function CompanyShell({ children }) {
   const unreadCount = notifications.filter((n) => !n.read).length;
   const router = useRouter();
   const pathname = usePathname();
-  const activeId = pathname.split("/")[1] || "dashboard";
+  const jobs = useCollection("jobs") || [];
+  const [section, detailId] = pathname.split("/").slice(1);
+  // A won/past job's detail page belongs to My Jobs; open requests to Find Jobs.
+  const wonJob = section === "jobs" && detailId && jobs.find((j) => j.id === detailId && j.status !== "Pending" && j.status !== "Quoted");
+  const activeId = wonJob ? "my-jobs" : section || "dashboard";
 
   React.useEffect(() => {
     setMounted(true);

@@ -3,43 +3,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from '../router.js';
 import {
-  Badge, Button, Card, DataTable, DonutChart, EmptyState, Icon, LegendList,
-  Modal, PageHeader, SearchField, Select, StatCard, TextField,
+  ActivityFeed, Badge, Button, Card, DataTable, DonutChart, DropdownMenu, EmptyState, Icon, LegendList,
+  PageHeader, SearchField, StatCard,
 } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
-import { addTruck } from '../mock/api.js';
-import { plateSlug } from '../domain/vehicles.js';
+import { setTruckStatus } from '../mock/api.js';
+import { plateSlug, VEHICLE_CLASSES, vehicleStatusTone } from '../domain/vehicles.js';
 
 const VEHICLE_TABS = ['All Vehicles', 'Trucks', 'Trailers', 'Others'];
 
-function typeGroup(type) {
-  if (type === 'Trailer') return 'Trailers';
-  if (type === 'Truck (Head)') return 'Trucks';
+function typeGroup(vehicleClass) {
+  if (vehicleClass === 'Trailer') return 'Trailers';
+  if (vehicleClass === 'Head') return 'Trucks';
   return 'Others';
-}
-
-function AddVehicleModal({ open, onClose }) {
-  const [draft, setDraft] = useState({ plate: '', type: 'Truck (Head)', makeModel: '' });
-  const [busy, setBusy] = useState(false);
-  async function submit(event) {
-    event.preventDefault();
-    if (!draft.plate.trim()) return;
-    setBusy(true);
-    await addTruck(draft);
-    setBusy(false);
-    setDraft({ plate: '', type: 'Truck (Head)', makeModel: '' });
-    onClose();
-  }
-  return (
-    <Modal open={open} onClose={onClose} title="Add Vehicle" width={460}
-      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button form="add-vehicle-form" type="submit" disabled={busy}>{busy ? 'Adding…' : 'Add Vehicle'}</Button></>}>
-      <form id="add-vehicle-form" onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
-        <TextField label="Registration No." required value={draft.plate} onChange={(e) => setDraft({ ...draft, plate: e.target.value })} placeholder="e.g. ABJ 555 XY" />
-        <Select label="Vehicle Type" value={draft.type} options={['Truck (Head)', 'Trailer']} onChange={(e) => setDraft({ ...draft, type: e.target.value })} />
-        <TextField label="Make & Model" value={draft.makeModel} onChange={(e) => setDraft({ ...draft, makeModel: e.target.value })} placeholder="e.g. Mercedes Actros 2022" />
-      </form>
-    </Modal>
-  );
 }
 
 export function Fleet() {
@@ -47,7 +23,7 @@ export function Fleet() {
   const trucks = useCollection('trucks') || [];
   const [tab, setTab] = useState('All Vehicles');
   const [query, setQuery] = useState('');
-  const [addOpen, setAddOpen] = useState(false);
+  const [rowMenu, setRowMenu] = useState(null);
 
   useEffect(() => {
     const onSearch = (event) => setQuery(event.detail || '');
@@ -56,7 +32,7 @@ export function Fleet() {
   }, []);
 
   const filtered = useMemo(() => trucks
-    .filter((t) => tab === 'All Vehicles' || typeGroup(t.type) === tab)
+    .filter((t) => tab === 'All Vehicles' || typeGroup(t.vehicleClass) === tab)
     .filter((t) => !query || [t.plate, t.makeModel, t.driver].some((v) => String(v || '').toLowerCase().includes(query.toLowerCase()))),
   [trucks, tab, query]);
 
@@ -66,17 +42,18 @@ export function Fleet() {
     { label: 'In Maintenance', value: trucks.filter((t) => t.status === 'In Maintenance').length, color: 'var(--tk-warning)' },
     { label: 'Inactive', value: trucks.filter((t) => t.status === 'Inactive').length, color: 'var(--tk-danger)' },
   ];
-  const typeBreakdown = [
-    { label: 'Trucks (Head)', value: trucks.filter((t) => t.type === 'Truck (Head)').length },
-    { label: 'Trailers', value: trucks.filter((t) => t.type === 'Trailer').length },
-  ];
+  const recentActivity = useMemo(() => trucks
+    .flatMap((t) => (t.activityLog || []).map((a) => ({ ...a, plate: t.plate })))
+    .slice(0, 5)
+    .map((a) => ({ text: `${a.plate} ${a.title.charAt(0).toLowerCase() + a.title.slice(1)}`, time: a.time })),
+  [trucks]);
 
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
       <PageHeader
         title="My Fleet"
         description="Manage your trucks, trailers, and other fleet assets."
-        actions={<Button icon="plus" onClick={() => setAddOpen(true)}>Add Vehicle</Button>}
+        actions={<Button icon="plus" onClick={() => navigate('/fleet/new')}>Add Vehicle</Button>}
       />
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 16 }}>
         <StatCard icon="truck" label="Total Vehicles" value={trucks.length} />
@@ -93,7 +70,7 @@ export function Fleet() {
                 height: 46, border: 0, borderBottom: '2px solid ' + (tab === t ? 'var(--tk-blue)' : 'transparent'),
                 background: 'transparent', color: tab === t ? 'var(--tk-blue)' : 'var(--tk-ink-400)',
                 font: (tab === t ? 600 : 500) + ' 14px/1 var(--tk-font-sans)', cursor: 'pointer', whiteSpace: 'nowrap',
-              }}>{t} ({t === 'All Vehicles' ? trucks.length : trucks.filter((v) => typeGroup(v.type) === t).length})</button>
+              }}>{t} ({t === 'All Vehicles' ? trucks.length : trucks.filter((v) => typeGroup(v.vehicleClass) === t).length})</button>
             ))}
           </div>
           <div style={{ padding: 14, borderBottom: '1px solid var(--tk-line)' }}>
@@ -107,12 +84,42 @@ export function Fleet() {
               rowKey={(t) => t.plate}
               onRowClick={(t) => navigate(`/fleet/${plateSlug(t.plate)}`)}
               columns={[
-                { key: 'vehicle', header: 'Vehicle', render: (t) => <Link to={`/fleet/${plateSlug(t.plate)}`} onClick={(e) => e.stopPropagation()} style={{ display: 'block' }}><strong style={{ display: 'block', color: 'var(--tk-ink-900)' }}>{t.plate}</strong><span className="tk-meta">{t.makeModel}</span></Link> },
+                {
+                  key: 'vehicle', header: 'Vehicle', render: (t) => (
+                    <Link to={`/fleet/${plateSlug(t.plate)}`} onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ width: 40, height: 40, borderRadius: 'var(--tk-r-sm)', background: 'var(--tk-surface-sunk)', color: 'var(--tk-ink-400)', display: 'grid', placeItems: 'center', flex: '0 0 auto' }}>
+                        <Icon name={VEHICLE_CLASSES.find((c) => c.value === t.vehicleClass)?.icon || 'truck'} size={18} />
+                      </span>
+                      <span>
+                        <strong style={{ display: 'block', color: 'var(--tk-ink-900)' }}>{t.plate}</strong>
+                        <span className="tk-meta">{t.makeModel}</span>
+                      </span>
+                    </Link>
+                  ),
+                },
                 { key: 'type', header: 'Type', render: (t) => t.type },
                 { key: 'reg', header: 'Registration No.', render: (t) => t.plate },
-                { key: 'status', header: 'Status', render: (t) => <Badge tone={t.status === 'Active' ? 'success' : t.status === 'On Trip' ? 'info' : t.status === 'In Maintenance' ? 'warning' : 'danger'} dot>{t.status}</Badge> },
+                { key: 'status', header: 'Status', render: (t) => <Badge tone={vehicleStatusTone(t.status)} dot>{t.status}</Badge> },
                 { key: 'driver', header: 'Driver', render: (t) => t.driver || '—' },
                 { key: 'lastActive', header: 'Last Active', render: (t) => t.odometerUpdated },
+                {
+                  key: 'actions', header: 'Actions', width: 56, render: (t) => (
+                    <span style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+                      <Button size="sm" variant="outline" icon="ellipsis" onClick={() => setRowMenu(rowMenu === t.plate ? null : t.plate)} />
+                      {rowMenu === t.plate && (
+                        <span style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20 }}>
+                          <DropdownMenu width={200} items={[
+                            { label: 'View Details', icon: 'eye', onClick: () => { setRowMenu(null); navigate(`/fleet/${plateSlug(t.plate)}`); } },
+                            { label: 'View Documents', icon: 'file-text', onClick: () => { setRowMenu(null); navigate(`/fleet/${plateSlug(t.plate)}/documents`); } },
+                            { label: 'Mark for Maintenance', icon: 'wrench', onClick: () => { setRowMenu(null); setTruckStatus(t.plate, 'In Maintenance'); } },
+                            { divider: true },
+                            { label: t.status === 'Inactive' ? 'Activate Truck' : 'Deactivate Truck', icon: 'power', tone: 'danger', onClick: () => { setRowMenu(null); setTruckStatus(t.plate, t.status === 'Inactive' ? 'Active' : 'Inactive'); } },
+                          ]} />
+                        </span>
+                      )}
+                    </span>
+                  ),
+                },
               ]}
             />
           )}
@@ -128,7 +135,22 @@ export function Fleet() {
           </Card>
           <Card style={{ display: 'grid', gap: 10 }}>
             <h3 className="tk-title" style={{ margin: 0 }}>Vehicle Types</h3>
-            <LegendList showShare={false} items={typeBreakdown} />
+            {VEHICLE_CLASSES.map((c) => {
+              const count = trucks.filter((t) => t.vehicleClass === c.value).length;
+              return (
+                <div key={c.value} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Icon name={c.icon} size={15} color="var(--tk-blue)" />
+                  <span style={{ flex: 1, font: '400 13px/20px var(--tk-font-sans)', color: 'var(--tk-ink-500)' }}>{c.label}</span>
+                  <strong>{count}</strong>
+                </div>
+              );
+            })}
+          </Card>
+          <Card style={{ display: 'grid', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 className="tk-title" style={{ margin: 0 }}>Recent Activity</h3>
+            </div>
+            {recentActivity.length ? <ActivityFeed items={recentActivity} /> : <span className="tk-meta">No recent activity.</span>}
           </Card>
           <Card style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <Icon name="headphones" size={18} color="var(--tk-blue)" />
@@ -140,7 +162,6 @@ export function Fleet() {
           </Card>
         </div>
       </div>
-      <AddVehicleModal open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   );
 }

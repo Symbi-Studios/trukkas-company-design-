@@ -7,7 +7,7 @@ import {
   ProgressBar, SectionCard, StatCard,
 } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
-import { tripStatusTone } from '../domain/jobs.js';
+import { tripPhase, tripStatusTone, withJobs } from '../domain/trips.js';
 import { formatNaira } from '../mock/format.js';
 import { myCompany } from '../mock/fixtures/companies.js';
 import styles from './Dashboard.module.css';
@@ -42,6 +42,7 @@ export function Dashboard() {
   const trucks = useCollection('trucks') || [];
   const drivers = useCollection('drivers') || [];
   const jobs = useCollection('jobs') || [];
+  const trips = useCollection('trips') || [];
   const documents = useCollection('documents') || [];
   const maintenance = useCollection('maintenance') || [];
   const wallet = useCollection('walletSummary')?.[0];
@@ -50,6 +51,7 @@ export function Dashboard() {
   const data = useMemo(() => {
     const pendingJobs = jobs.filter((job) => job.status === 'Pending');
     const activeJobs = jobs.filter((job) => job.status === 'In Progress');
+    const activeTrips = withJobs(trips, jobs).filter((trip) => tripPhase(trip) === 'Active');
     const completedThisMonth = jobs.filter((job) => job.status === 'Completed');
     const maintenanceDue = maintenance.filter((record) => ['Upcoming', 'Overdue', 'In Progress'].includes(record.status));
     const activityFeed = [
@@ -64,8 +66,8 @@ export function Dashboard() {
       { label: 'In Maintenance', value: trucks.filter((t) => t.status === 'In Maintenance').length, color: 'var(--tk-warning)' },
       { label: 'Inactive', value: trucks.filter((t) => t.status === 'Inactive').length, color: 'var(--tk-danger)' },
     ];
-    return { pendingJobs, activeJobs, completedThisMonth, maintenanceDue, activityFeed, fleetStatus };
-  }, [trucks, maintenance]);
+    return { pendingJobs, activeJobs, activeTrips, completedThisMonth, maintenanceDue, activityFeed, fleetStatus };
+  }, [trucks, maintenance, jobs, trips]);
 
   const expiringDocs = documents.filter((d) => d.status === 'Expiring Soon' || d.status === 'Expired').length;
 
@@ -94,14 +96,14 @@ export function Dashboard() {
         <SectionCard
           title="Jobs Requiring Your Action"
           count={data.pendingJobs.length}
-          action={<button className={styles.linkButton} onClick={() => router.push('/jobs-trips')}>View all</button>}
+          action={<button className={styles.linkButton} onClick={() => router.push('/jobs')}>View all</button>}
           pad="none"
         >
           <div className={styles.compactTable}>
             <DataTable
               rows={data.pendingJobs.slice(0, 5)}
               rowKey={(job) => job.id}
-              onRowClick={(job) => router.push(`/jobs-trips/${job.id}`)}
+              onRowClick={(job) => router.push(`/jobs/${job.id}`)}
               columns={[
                 { key: 'id', header: 'Job ID', render: (job) => job.id },
                 { key: 'route', header: 'Route & Type', render: (job) => <span>{job.origin} → {job.destination}<br /><span className="tk-meta">{job.jobType}</span></span> },
@@ -113,20 +115,20 @@ export function Dashboard() {
         </SectionCard>
         <SectionCard
           title="Active Trips"
-          count={data.activeJobs.length}
-          action={<button className={styles.linkButton} onClick={() => router.push('/jobs-trips')}>View all active trips</button>}
+          count={data.activeTrips.length}
+          action={<button className={styles.linkButton} onClick={() => router.push('/trips')}>View all active trips</button>}
           pad="none"
         >
           <div className={styles.compactTable}>
             <DataTable
-              rows={data.activeJobs.slice(0, 5)}
-              rowKey={(job) => job.id}
-              onRowClick={(job) => router.push(`/jobs-trips/${job.id}`)}
+              rows={data.activeTrips.slice(0, 5)}
+              rowKey={(trip) => trip.id}
+              onRowClick={(trip) => router.push(`/trips/${trip.id}`)}
               columns={[
-                { key: 'driver', header: 'Driver', render: (job) => job.trip?.driverName || '—' },
-                { key: 'truck', header: 'Truck', render: (job) => job.trip?.truckPlate || '—' },
-                { key: 'route', header: 'Route', render: (job) => `${job.origin} → ${job.destination}` },
-                { key: 'status', header: 'Status', render: (job) => <Badge tone={tripStatusTone(job.trip?.status)}>{job.trip?.status}</Badge> },
+                { key: 'driver', header: 'Driver', render: (trip) => trip.driverName || '—' },
+                { key: 'truck', header: 'Truck', render: (trip) => trip.truckPlate || '—' },
+                { key: 'route', header: 'Route', render: (trip) => `${trip.job?.origin} → ${trip.job?.destination}` },
+                { key: 'status', header: 'Status', render: (trip) => <Badge tone={tripStatusTone(trip.status)}>{trip.status}</Badge> },
               ]}
             />
           </div>
@@ -172,7 +174,7 @@ export function Dashboard() {
           {expiringDocs > 0 && (
             <div style={{ padding: '0 var(--tk-card-pad)' }}>
               <Card tone="sunk" style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '4px 0 8px' }}>
-                <Icon name="alert-triangle" size={16} color="var(--tk-warning)" />
+                <Icon name="triangle-alert" size={16} color="var(--tk-warning)" />
                 <span className="tk-meta">{expiringDocs} document{expiringDocs === 1 ? '' : 's'} expiring or expired across your fleet.</span>
               </Card>
             </div>

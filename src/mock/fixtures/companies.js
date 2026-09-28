@@ -16,6 +16,8 @@ export const myCompany = {
   reviewCount: 128,
   walletBalance: 2_450_000,
   logoTone: 'var(--tk-navy)',
+  // The director who operates the account ("front person") for KYB checks.
+  frontPerson: { name: 'Adekunle Adebayo', role: 'Managing Director', email: 'adekunle@speedlinelogistics.com', phone: '+234 803 555 0142' },
 };
 
 export const posters = [

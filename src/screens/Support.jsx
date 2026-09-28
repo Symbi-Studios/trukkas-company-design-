@@ -5,19 +5,23 @@ import { Link, useNavigate } from '../router.js';
 import { Badge, Button, Card, DataTable, EmptyState, Icon, Modal, PageHeader, TextField, Textarea } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
 import { createSupportTicket } from '../mock/api.js';
+import { FileDrop } from '../components/FileDrop.jsx';
 
 const STATUS_TONE = { Open: 'info', Pending: 'warning', Resolved: 'success' };
 
 function NewTicketModal({ open, onClose }) {
   const [draft, setDraft] = useState({ subject: '', category: 'General', body: '' });
+  const [files, setFiles] = useState([]);
   const [busy, setBusy] = useState(false);
   async function submit(event) {
     event.preventDefault();
     if (!draft.subject.trim()) return;
     setBusy(true);
-    await createSupportTicket({ subject: draft.subject, category: draft.category, messages: draft.body ? [{ author: 'You', role: 'You', time: 'Just now', agent: false, body: draft.body }] : [] });
+    const attachments = files.map(({ name, size, type, url }) => ({ name, size, type, url }));
+    await createSupportTicket({ subject: draft.subject, category: draft.category, messages: draft.body || attachments.length ? [{ author: 'You', role: 'You', time: 'Just now', agent: false, body: draft.body, attachments }] : [] });
     setBusy(false);
     setDraft({ subject: '', category: 'General', body: '' });
+    setFiles([]);
     onClose();
   }
   return (
@@ -26,6 +30,8 @@ function NewTicketModal({ open, onClose }) {
       <form id="new-ticket-form" onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
         <TextField label="Subject" required value={draft.subject} onChange={(e) => setDraft({ ...draft, subject: e.target.value })} />
         <Textarea label="How can we help?" rows={4} value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} />
+        <FileDrop label="Attachments (optional)" multiple preview files={files} onChange={setFiles} maxBytes={25 * 1024 * 1024}
+          accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" hint="Screenshots, photos, videos or documents · up to 25 MB each" />
       </form>
     </Modal>
   );

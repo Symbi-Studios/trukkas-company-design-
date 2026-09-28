@@ -62,7 +62,7 @@ export function Maintenance() {
         <StatCard icon="wrench" label="Total Records" value={records.length} />
         <StatCard icon="circle-check" tint="green" label="Completed" value={records.filter((r) => r.status === 'Completed').length} />
         <StatCard icon="clock-3" tint="amber" label="Upcoming" value={records.filter((r) => r.status === 'Upcoming' || r.status === 'In Progress').length} />
-        <StatCard icon="alert-triangle" tint="red" label="Overdue" value={records.filter((r) => r.status === 'Overdue').length} />
+        <StatCard icon="triangle-alert" tint="red" label="Overdue" value={records.filter((r) => r.status === 'Overdue').length} />
       </section>
       <Card pad="none">
         <div style={{ padding: 14, borderBottom: '1px solid var(--tk-line)' }}>

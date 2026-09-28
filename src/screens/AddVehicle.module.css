@@ -1,0 +1,295 @@
+.page {
+  display: grid;
+  gap: var(--tk-grid-gap);
+  min-width: 0;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr) 280px;
+  gap: var(--tk-grid-gap);
+  align-items: start;
+}
+.main,
+.summary {
+  display: grid;
+  gap: var(--tk-grid-gap);
+  min-width: 0;
+}
+.summary {
+  position: sticky;
+  top: 16px;
+}
+
+/* ---- Stepper ------------------------------------------------------------- */
+.stepper {
+  position: sticky;
+  top: 16px;
+}
+.stepper ol {
+  margin: 0;
+  padding: 12px;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+.stepper button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 0;
+  border-radius: var(--tk-r-md);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.stepper button:disabled {
+  cursor: default;
+}
+.stepper button > span:last-child {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.stepper strong {
+  color: var(--tk-ink-700);
+  font: 600 13px/18px var(--tk-font-sans);
+}
+.stepper small {
+  color: var(--tk-ink-400);
+  font: 400 12px/16px var(--tk-font-sans);
+}
+.stepDot {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1.5px solid var(--tk-line-strong);
+  color: var(--tk-ink-400);
+  font: 600 12px/1 var(--tk-font-sans);
+}
+.current button {
+  background: var(--tk-blue-soft);
+}
+.current .stepDot {
+  border-color: var(--tk-blue);
+  background: var(--tk-blue);
+  color: #fff;
+}
+.current strong {
+  color: var(--tk-blue);
+}
+.done .stepDot {
+  border-color: var(--tk-success);
+  background: var(--tk-success);
+  color: #fff;
+}
+.done button:hover {
+  background: var(--tk-surface-sunk);
+}
+
+/* ---- Step card ----------------------------------------------------------- */
+.stepHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px var(--tk-card-pad);
+  border-bottom: 1px solid var(--tk-line);
+}
+.stepHead small {
+  color: var(--tk-ink-400);
+  font: 500 12px/16px var(--tk-font-sans);
+}
+.stepHead h2 {
+  margin: 0;
+  color: var(--tk-ink-900);
+  font: 700 18px/24px var(--tk-font-sans);
+}
+.stepIcon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--tk-r-md);
+  background: var(--tk-blue-soft);
+  color: var(--tk-blue);
+}
+.stepBody {
+  display: grid;
+  gap: 20px;
+  padding: var(--tk-card-pad);
+}
+.stepFoot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px var(--tk-card-pad);
+  border-top: 1px solid var(--tk-line);
+}
+.label {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  color: var(--tk-ink-500);
+  font: 500 13px/18px var(--tk-font-sans);
+}
+.lead {
+  margin: 0;
+  color: var(--tk-ink-500);
+  font: 400 13px/20px var(--tk-font-sans);
+}
+.error {
+  grid-column: 1 / -1;
+  color: var(--tk-danger);
+  font: 500 12px/16px var(--tk-font-sans);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.typeGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+/* ---- Documents ------------------------------------------------------------ */
+.docList {
+  display: grid;
+  gap: 12px;
+}
+.docRow {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--tk-line);
+  border-radius: var(--tk-r-lg);
+}
+.docHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.docHead strong {
+  color: var(--tk-ink-900);
+  font: 600 14px/20px var(--tk-font-sans);
+}
+.docHead small {
+  flex-basis: 100%;
+  color: var(--tk-ink-400);
+  font: 400 12px/16px var(--tk-font-sans);
+}
+.docInputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  gap: 12px;
+  align-items: end;
+}
+.docInputs > :only-child {
+  grid-column: 1 / -1;
+}
+
+/* ---- Photos --------------------------------------------------------------- */
+.photoGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.photoSlot {
+  min-width: 0;
+}
+.photoPreview {
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+.photoPreview img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--tk-r-md);
+  border: 1px solid var(--tk-line);
+}
+.driverTools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+/* ---- Review --------------------------------------------------------------- */
+.review {
+  display: grid;
+  gap: 14px;
+}
+.reviewSection {
+  padding: 12px 16px;
+  border: 1px solid var(--tk-line);
+  border-radius: var(--tk-r-lg);
+}
+.reviewHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.reviewHead h3 {
+  margin: 0;
+  color: var(--tk-ink-900);
+  font: 600 14px/20px var(--tk-font-sans);
+}
+.reviewPhotos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+.reviewPhotos figure {
+  margin: 0;
+}
+.reviewPhotos img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--tk-r-sm);
+}
+.reviewPhotos figcaption {
+  color: var(--tk-ink-500);
+  font: 400 12px/16px var(--tk-font-sans);
+}
+
+@media (max-width: 1320px) {
+  .layout {
+    grid-template-columns: 230px minmax(0, 1fr);
+  }
+  .summary {
+    display: none;
+  }
+}
+@media (max-width: 1023px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .stepper {
+    position: static;
+  }
+  .stepper ol {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(150px, 1fr);
+    overflow-x: auto;
+  }
+}
+@media (max-width: 639px) {
+  .grid,
+  .docInputs,
+  .photoGrid,
+  .driverTools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .typeGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

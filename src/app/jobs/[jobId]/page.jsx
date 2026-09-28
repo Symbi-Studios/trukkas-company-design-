@@ -6,9 +6,9 @@ export async function generateMetadata({ params }) {
   const { jobId } = await params;
   return {
     title: jobId,
-    description: 'Job details, bidding, trip status, documents, and activity.',
-    openGraph: { title: jobId, description: 'Trukkas job and trip detail.', images: [] },
-    twitter: { title: jobId, description: 'Trukkas job and trip detail.', images: [] },
+    description: 'Job details, bidding, and truck dispatch.',
+    openGraph: { title: jobId, description: 'Trukkas job detail.', images: [] },
+    twitter: { title: jobId, description: 'Trukkas job detail.', images: [] },
   };
 }
 

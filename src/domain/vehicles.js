@@ -9,3 +9,18 @@ export function plateSlug(plate) {
 export function findTruckBySlug(trucks, slug) {
   return trucks.find((t) => plateSlug(t.plate) === slug);
 }
+
+export const VEHICLE_CLASSES = [
+  { value: 'Head', label: 'Trucks (Head)', icon: 'truck' },
+  { value: 'Trailer', label: 'Trailers', icon: 'container' },
+  { value: 'Tanker', label: 'Tankers', icon: 'fuel' },
+  { value: 'Specialized', label: 'Specialized', icon: 'wrench' },
+  { value: 'Other', label: 'Others', icon: 'ellipsis' },
+];
+
+export function vehicleStatusTone(status) {
+  if (status === 'Active') return 'success';
+  if (status === 'On Trip') return 'info';
+  if (status === 'In Maintenance') return 'warning';
+  return 'danger';
+}

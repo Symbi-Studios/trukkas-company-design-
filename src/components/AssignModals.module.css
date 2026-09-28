@@ -1,0 +1,88 @@
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  max-height: 46vh;
+  overflow: auto;
+}
+.option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--tk-line-strong);
+  border-radius: var(--tk-r-lg);
+  background: var(--tk-surface);
+  text-align: left;
+  cursor: pointer;
+  transition: var(--tk-transition);
+}
+.option:hover:not(:disabled) {
+  border-color: var(--tk-blue);
+}
+.option:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.selected {
+  border-color: var(--tk-blue);
+  background: var(--tk-surface-cool);
+}
+.radio {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1.5px solid var(--tk-line-strong);
+}
+.selected .radio {
+  border-color: var(--tk-blue);
+}
+.radio span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--tk-blue);
+}
+.main {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.main strong {
+  color: var(--tk-ink-900);
+  font: 600 14px/20px var(--tk-font-sans);
+}
+.main small {
+  color: var(--tk-ink-400);
+  font: 400 12px/16px var(--tk-font-sans);
+}
+.main em {
+  font: normal 500 12px/16px var(--tk-font-sans);
+}
+.warning {
+  color: var(--tk-warning);
+}
+.blocked,
+.error {
+  color: var(--tk-danger);
+}
+.error {
+  font: 500 13px/18px var(--tk-font-sans);
+}
+.truckIcon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: var(--tk-r-sm);
+  background: var(--tk-surface-sunk);
+  color: var(--tk-ink-500);
+}

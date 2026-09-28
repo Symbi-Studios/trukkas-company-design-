@@ -12,39 +12,33 @@ import { jobTitle } from '../domain/jobs.js';
 import { formatNaira } from '../mock/format.js';
 import { ReceiptModal } from '../components/Receipt.jsx';
 import { Toast, useToast } from '../components/Toast.jsx';
+import { PinPrompt } from '../components/SecurityInputs.jsx';
 
 function RequestPayoutModal({ open, onClose, eligible, bank, onDone }) {
   const [selected, setSelected] = useState([]);
   const [destination, setDestination] = useState('Bank');
-  const [busy, setBusy] = useState(false);
+  const [pinOpen, setPinOpen] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (open) { setSelected(eligible.map((row) => row.trip.id)); setDestination('Bank'); setError(''); }
+    if (open) { setSelected(eligible.map((row) => row.trip.id)); setDestination('Bank'); setError(''); setPinOpen(false); }
   }, [open, eligible]);
 
   const chosen = eligible.filter((row) => selected.includes(row.trip.id));
   const totals = payoutTotals(chosen);
   const toggle = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
-  async function submit() {
-    setBusy(true);
-    setError('');
-    try {
-      const payout = await requestPayout(selected, destination);
-      onDone(payout);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
+  async function submitWithPin(pin) {
+    const payout = await requestPayout(selected, destination, pin);
+    setPinOpen(false);
+    onDone(payout);
   }
 
   return (
     <Modal
       open={open} onClose={onClose} width={620} title="Request Payout"
       description="Choose completed trips to be paid out by Trukkas. Payouts are usually processed within 1–3 business days."
-      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button icon="banknote" disabled={busy || chosen.length === 0} onClick={submit}>{busy ? 'Requesting…' : `Request ${formatNaira(totals.net)}`}</Button></>}
+      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button icon="banknote" disabled={chosen.length === 0 || (destination === 'Bank' && !bank)} onClick={() => { setError(''); setPinOpen(true); }}>{`Request ${formatNaira(totals.net)}`}</Button></>}
     >
       <div style={{ display: 'grid', gap: 16 }}>
         {eligible.length === 0 ? (
@@ -71,7 +65,7 @@ function RequestPayoutModal({ open, onClose, eligible, bank, onDone }) {
         <div>
           <span style={{ display: 'block', marginBottom: 8, font: '500 13px/18px var(--tk-font-sans)', color: 'var(--tk-ink-500)' }}>Pay to</span>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <ChoiceCard icon="landmark" title="Bank Account" description={`${bank?.bankName} •••• ${bank?.last4} · ${bank?.accountName}`} selected={destination === 'Bank'} onSelect={() => setDestination('Bank')} />
+            <ChoiceCard icon="landmark" title="Bank Account" description={bank ? `${bank.bankName} •••• ${bank.last4} · ${bank.accountName}` : 'No bank account yet — add one in Company Settings.'} selected={destination === 'Bank'} onSelect={() => setDestination('Bank')} />
             <ChoiceCard icon="wallet" title="Trukkas Wallet" description="Credited to your wallet balance once approved." selected={destination === 'Wallet'} onSelect={() => setDestination('Wallet')} />
           </div>
         </div>
@@ -82,6 +76,11 @@ function RequestPayoutModal({ open, onClose, eligible, bank, onDone }) {
         </Card>
         {error && <span style={{ color: 'var(--tk-danger)', font: '500 13px/18px var(--tk-font-sans)' }}>{error}</span>}
       </div>
+      <PinPrompt
+        open={pinOpen} onClose={() => setPinOpen(false)} confirmLabel="Approve Payout"
+        description={`Approve a payout of ${formatNaira(totals.net)} to your ${destination === 'Wallet' ? 'Trukkas wallet' : 'bank account'}.`}
+        onConfirm={submitWithPin}
+      />
     </Modal>
   );
 }

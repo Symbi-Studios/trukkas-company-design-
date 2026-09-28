@@ -18,14 +18,14 @@ import { setActiveCompany, clearSession } from "./store/features/auth/authSlice.
 import { baseApi } from "./store/api/baseApi.js";
 import { AppLoadingScreen } from "./components/AppLoadingScreen.jsx";
 import { useCollection } from "./mock/useCollection.js";
-import { myCompany } from "./mock/fixtures/companies.js";
-import "./mock/api.js";
+import { setActiveAccount, startCompanyWorkspace } from "./mock/api.js";
 
 const PUBLIC_ROUTES = new Set([
   "/login",
   "/forgot-password",
   "/reset-password",
   "/signed-out",
+  "/signup",
 ]);
 
 export function CompanyShell({ children }) {
@@ -38,6 +38,8 @@ export function CompanyShell({ children }) {
   const dispatch = useDispatch();
   const [logoutAccount] = useLogoutAccountMutation();
   const notifications = useCollection("notifications") || [];
+  const company = useCollection("companyProfile")?.[0];
+  const profile = (useCollection("adminProfile") || [])[0];
   const unreadCount = notifications.filter((n) => !n.read).length;
   const router = useRouter();
   const pathname = usePathname();
@@ -50,6 +52,17 @@ export function CompanyShell({ children }) {
   React.useEffect(() => {
     setMounted(true);
   }, []);
+
+  // The mock store is in-memory: after a reload it re-seeds the demo company.
+  // Point the mock "server" at the signed-in account and, for accounts created
+  // via /signup, rebuild their (empty) company workspace.
+  React.useEffect(() => {
+    if (!account) return;
+    setActiveAccount(account.id);
+    if (account.isNewCompany && company?.id !== account.companyIds?.[0]) {
+      startCompanyWorkspace(account, { name: account.companyName });
+    }
+  }, [account, company?.id]);
 
   React.useEffect(() => {
     if (!mounted || PUBLIC_ROUTES.has(pathname) || account || loggingOut) return;
@@ -102,8 +115,8 @@ export function CompanyShell({ children }) {
       header={
         <CompanySwitcher
           collapsed={collapsed}
-          company={myCompany}
-          companies={[myCompany]}
+          company={company}
+          companies={company ? [company] : []}
           onSelect={(company) => dispatch(setActiveCompany(company.id))}
         />
       }
@@ -120,7 +133,7 @@ export function CompanyShell({ children }) {
               background: "var(--tk-surface-sunk)",
             }}
           >
-            <Avatar name={account.name} size={32} tone="var(--tk-navy)" />
+            <Avatar name={account.name} src={profile?.photoUrl || undefined} size={32} tone="var(--tk-navy)" />
             <span style={{ minWidth: 0 }}>
               <span
                 style={{
@@ -189,7 +202,8 @@ export function CompanyShell({ children }) {
           }}
           health={null}
           onNotifications={() => router.push("/notifications")}
-          onViewProfile={() => router.push("/company-settings")}
+          onViewProfile={() => router.push("/profile")}
+          avatarSrc={profile?.photoUrl || undefined}
           onLogout={handleLogout}
           user={account.name || account.email || "Trukkas Company"}
           role={account.role}

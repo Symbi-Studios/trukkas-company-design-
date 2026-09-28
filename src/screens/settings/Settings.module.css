@@ -1,0 +1,281 @@
+.page {
+  display: grid;
+  gap: var(--tk-grid-gap);
+  min-width: 0;
+}
+.shell {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--tk-grid-gap);
+  align-items: start;
+}
+.nav {
+  position: sticky;
+  top: 16px;
+  padding: 8px;
+}
+.nav button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--tk-r-md);
+  background: transparent;
+  color: var(--tk-ink-700);
+  font: 500 14px/20px var(--tk-font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+.nav button:hover {
+  background: var(--tk-surface-sunk);
+}
+.nav button.active {
+  background: var(--tk-blue-soft);
+  color: var(--tk-blue);
+  font-weight: 600;
+}
+.navLabel {
+  flex: 1;
+}
+.content {
+  display: grid;
+  gap: var(--tk-grid-gap);
+  min-width: 0;
+}
+.form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 760px;
+}
+.full {
+  grid-column: 1 / -1;
+}
+.formActions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-start;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-top: 1px solid var(--tk-line);
+}
+.row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.rowMain {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.rowMain strong {
+  color: var(--tk-ink-900);
+  font: 600 14px/20px var(--tk-font-sans);
+}
+.rowMain small {
+  color: var(--tk-ink-400);
+  font: 400 13px/18px var(--tk-font-sans);
+}
+.iconTile {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: var(--tk-r-md);
+  background: var(--tk-blue-soft);
+  color: var(--tk-blue);
+}
+.iconTile[data-tone="green"] {
+  background: var(--tk-success-soft);
+  color: var(--tk-success);
+}
+.iconTile[data-tone="amber"] {
+  background: var(--tk-warning-soft);
+  color: var(--tk-warning);
+}
+.iconTile[data-tone="neutral"] {
+  background: var(--tk-surface-sunk);
+  color: var(--tk-ink-500);
+}
+.bankCard {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  border-radius: var(--tk-r-lg);
+  background: linear-gradient(135deg, var(--tk-navy), #1d3b8f);
+  color: #fff;
+  max-width: 460px;
+}
+.bankCard strong {
+  display: block;
+  font: 700 16px/22px var(--tk-font-sans);
+}
+.bankCard small {
+  display: block;
+  color: rgba(255, 255, 255, 0.72);
+  font: 400 13px/18px var(--tk-font-sans);
+}
+.resolved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--tk-r-md);
+  background: var(--tk-success-soft);
+  color: var(--tk-success);
+  font: 600 13px/18px var(--tk-font-sans);
+}
+.member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.member > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+.member strong {
+  color: var(--tk-ink-900);
+  font: 600 13px/18px var(--tk-font-sans);
+}
+.member small {
+  color: var(--tk-ink-400);
+  font: 400 12px/16px var(--tk-font-sans);
+}
+.rolesGrid {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--tk-grid-gap);
+  align-items: start;
+}
+.roleList {
+  display: grid;
+  gap: 6px;
+}
+.roleList button {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--tk-line);
+  border-radius: var(--tk-r-md);
+  background: var(--tk-surface);
+  text-align: left;
+  cursor: pointer;
+}
+.roleList button.active {
+  border-color: var(--tk-blue);
+  background: var(--tk-surface-cool);
+}
+.roleList strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tk-ink-900);
+  font: 600 13px/18px var(--tk-font-sans);
+}
+.roleList small {
+  color: var(--tk-ink-400);
+  font: 400 12px/16px var(--tk-font-sans);
+}
+.permGroup {
+  padding: 14px 0;
+  border-top: 1px solid var(--tk-line);
+}
+.permGroup h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  color: var(--tk-ink-900);
+  font: 600 13px/18px var(--tk-font-sans);
+}
+.permList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 20px;
+}
+.secretBox {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px dashed var(--tk-line-strong);
+  border-radius: var(--tk-r-md);
+  background: var(--tk-surface-sunk);
+  font: 600 15px/20px var(--tk-font-mono, ui-monospace, monospace);
+  letter-spacing: 0.06em;
+  color: var(--tk-ink-900);
+  overflow-wrap: anywhere;
+}
+.codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--tk-r-md);
+  background: var(--tk-surface-sunk);
+  font: 600 14px/20px var(--tk-font-mono, ui-monospace, monospace);
+  color: var(--tk-ink-900);
+}
+.codes .used {
+  color: var(--tk-ink-300);
+  text-decoration: line-through;
+}
+.steps {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  color: var(--tk-ink-700);
+  font: 400 13px/19px var(--tk-font-sans);
+}
+.pinForm {
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+  max-width: 420px;
+}
+.hint {
+  margin: 0;
+  color: var(--tk-ink-400);
+  font: 400 12px/17px var(--tk-font-sans);
+}
+.error {
+  margin: 0;
+  color: var(--tk-danger);
+  font: 500 13px/18px var(--tk-font-sans);
+}
+@media (max-width: 1023px) {
+  .shell,
+  .rolesGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .nav {
+    position: static;
+    display: flex;
+    overflow-x: auto;
+  }
+  .nav button {
+    width: auto;
+    white-space: nowrap;
+  }
+}
+@media (max-width: 639px) {
+  .form,
+  .permList,
+  .codes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

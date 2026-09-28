@@ -14,6 +14,7 @@ import { RatingsReviews } from './screens/RatingsReviews.jsx';
 import { NotificationCenter } from './screens/NotificationCenter.jsx';
 import { Support } from './screens/Support.jsx';
 import { CompanySettings } from './screens/CompanySettings.jsx';
+import { Profile } from './screens/Profile.jsx';
 import { SignedOut } from './screens/SignedOut.jsx';
 import { ScreenPlaceholder } from './screens/ScreenPlaceholder.jsx';
 import { NAV } from './nav.js';
@@ -33,6 +34,7 @@ const screens = {
   notifications: NotificationCenter,
   support: Support,
   'company-settings': CompanySettings,
+  profile: Profile,
   'signed-out': SignedOut,
 };
 

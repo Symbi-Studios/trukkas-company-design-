@@ -139,6 +139,34 @@ mock-vs-real opinion — keep using them after a domain moves to a real API.
   with client-side navigation, but have no pre-rendered page in a static build, so a
   hard refresh on their URL 404s (and the in-memory store re-seeds anyway).
 
+### Sign-up, security and team access (contracts)
+
+- **Sign-up** (`/signup`, public): account → email code → phone code → company
+  details → company documents* → trucks* → payout account & PIN* → done (*skippable).
+  `signUpAccount` (authApi, mock-gated) registers the account in `src/mock/accounts.js`
+  (salted SHA-256 password hash, in memory only) and calls `startCompanyWorkspace()`,
+  which swaps the demo company for an empty workspace. Accounts created this way carry
+  `isNewCompany`; `CompanyShell` rebuilds their empty workspace after a reload.
+  Email/SMS codes come from `sendVerificationCode()`; the prototype shows them as a
+  labelled "Demo code" because nothing is actually sent.
+- **2FA**: authenticator-app (real RFC 6238 TOTP via Web Crypto, `domain/security.js`)
+  or SMS, plus 8 single-use backup codes. When enabled, `loginAccount` returns
+  `{ twoFactorRequired, challenge }` and issues no tokens until `verifyTwoFactorLogin`
+  succeeds. There's no QR code (that needs a library or a third-party image API, which
+  would leak the secret) — users enter the setup key or tap the `otpauth://` link.
+- **Transaction PIN**: 6 digits, stored as a salted hash in the `security` collection,
+  5 wrong attempts → 15-minute lock, reset via SMS code. The mock API itself
+  (`assertPin`) checks it for `requestPayout`, `requestWithdrawal`, `updateBankAccount`
+  and for granting roles with finance permissions — the UI's `PinPrompt` only collects it.
+- **Roles & permissions**: catalogue in `src/domain/access.js`; team members and roles
+  live in the `teamMembers` / `roles` collections. Client checks are presentation only;
+  the backend must enforce every permission and the PIN.
+- **Admin profile** (`/profile`): the `adminProfile` collection; email/phone changes
+  are confirmed with a code. Profile photos are local object URLs in the prototype.
+- A real backend owns all of the above: password and PIN hashing, TOTP secrets,
+  OTP delivery and rate limiting, session revocation, and NIBSS name enquiry for
+  bank accounts (`resolveAccountName` is a stub that echoes the company name).
+
 ## Screen coverage
 
 Every nav destination in `src/nav.js` has a bespoke screen — there's no

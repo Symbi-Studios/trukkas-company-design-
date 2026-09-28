@@ -9,11 +9,15 @@ import {
   useForgotAccountPasswordMutation,
   useLoginAccountMutation,
   useResetAccountPasswordMutation,
+  useVerifyTwoFactorLoginMutation,
 } from '../store/features/auth/authApi.js';
 import { clearSession } from '../store/features/auth/authSlice.js';
 import { baseApi } from '../store/api/baseApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { MOCK_CREDENTIALS } from '../mock/fixtures/account.js';
+import { sendVerificationCode } from '../mock/api.js';
+import { maskPhone } from '../domain/security.js';
+import { CodeInput } from '../components/SecurityInputs.jsx';
 import styles from './AuthScreens.module.css';
 
 function AuthFrame({ eyebrow, title, description, children }) {
@@ -48,7 +52,7 @@ function destinationAfterLogin() {
   try {
     const destination = new URL(next, window.location.origin);
     if (destination.origin !== window.location.origin) return '/dashboard';
-    if (['/login', '/forgot-password', '/reset-password'].includes(destination.pathname)) {
+    if (['/login', '/forgot-password', '/reset-password', '/signup'].includes(destination.pathname)) {
       return '/dashboard';
     }
     return destination.pathname + destination.search + destination.hash;
@@ -65,6 +69,11 @@ export function LoginScreen() {
   const account = useSelector((state) => state.auth.account);
   const [error, setError] = React.useState('');
   const [notice, setNotice] = React.useState('');
+  const [challenge, setChallenge] = React.useState(null);
+  const [code, setCode] = React.useState('');
+  const [useBackup, setUseBackup] = React.useState(false);
+  const [demoCode, setDemoCode] = React.useState('');
+  const [verifyTwoFactorLogin, { isLoading: verifying }] = useVerifyTwoFactorLoginMutation();
 
   React.useEffect(() => {
     if (account) {
@@ -84,10 +93,56 @@ export function LoginScreen() {
       return;
     }
     try {
-      await loginAccount({ email: email.trim(), password }).unwrap();
+      const result = await loginAccount({ email: email.trim(), password }).unwrap();
+      if (result.twoFactorRequired) {
+        setChallenge(result.challenge);
+        setCode('');
+        if (result.challenge.method === 'sms') {
+          const sent = await sendVerificationCode('sms', result.challenge.phone);
+          setDemoCode(sent.demoCode);
+        }
+      }
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
     }
+  }
+
+  async function handleVerify(event, value = code) {
+    event?.preventDefault();
+    setError('');
+    try {
+      await verifyTwoFactorLogin({ email: email.trim(), password, code: value }).unwrap();
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError));
+      setCode('');
+    }
+  }
+
+  if (challenge) {
+    return (
+      <AuthFrame
+        eyebrow="TWO-FACTOR AUTHENTICATION"
+        title="Enter your code"
+        description={useBackup ? 'Enter one of your 8-character backup codes.'
+          : challenge.method === 'app' ? 'Open your authenticator app and enter the 6-digit code for Trukkas.'
+            : `We texted a 6-digit code to ${maskPhone(challenge.phone)}.`}
+      >
+        <Notice message={error} error />
+        <form className={styles.form} onSubmit={handleVerify}>
+          {useBackup ? (
+            <TextField label="Backup code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="XXXX-XXXX" autoFocus autoComplete="one-time-code" />
+          ) : (
+            <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => handleVerify(null, v)} disabled={verifying} />
+          )}
+          {demoCode && !useBackup && <p className={styles.success}>Prototype only — no SMS is sent. Demo code: {demoCode}</p>}
+          <Button type="submit" fullWidth disabled={verifying || code.length < 6}>{verifying ? 'Verifying…' : 'Verify & Sign in'}</Button>
+        </form>
+        <div className={styles.bottomLinks}>
+          <a href="#" onClick={(e) => { e.preventDefault(); setUseBackup((v) => !v); setCode(''); }}>{useBackup ? 'Use verification code' : 'Use a backup code'}</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); setChallenge(null); setPassword(''); setError(''); }}>Back to sign in</a>
+        </div>
+      </AuthFrame>
+    );
   }
 
   return (
@@ -131,6 +186,7 @@ export function LoginScreen() {
           {busy ? 'Signing in…' : 'Sign in'}
         </Button>
       </form>
+      <p className={styles.signupPrompt}>New to Trukkas? <Link href="/signup">Create a company account</Link></p>
     </AuthFrame>
   );
 }

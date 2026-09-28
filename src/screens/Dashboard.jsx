@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Badge, Card, DataTable, DonutChart, Icon, LegendList, LineChart, PageHeader,
@@ -9,7 +9,7 @@ import {
 import { useCollection } from '../mock/useCollection.js';
 import { tripPhase, tripStatusTone, withJobs } from '../domain/trips.js';
 import { formatNaira } from '../mock/format.js';
-import { myCompany } from '../mock/fixtures/companies.js';
+import { COMPANY_REQUIREMENTS, complianceFor, documentsFor } from '../domain/documents.js';
 import styles from './Dashboard.module.css';
 
 function StarRating({ rating, reviews, trend, breakdown }) {
@@ -37,6 +37,31 @@ function StarRating({ rating, reviews, trend, breakdown }) {
   );
 }
 
+/** "Finish setting up" card: stays until every onboarding item is done (or dismissed for the session). */
+function SetupChecklist({ items, onGo }) {
+  const [hidden, setHidden] = useState(false);
+  const done = items.filter((i) => i.done).length;
+  if (hidden || done === items.length) return null;
+  return (
+    <SectionCard
+      title="Finish setting up your account"
+      description={`${done} of ${items.length} complete. Finish these to start bidding on jobs and receiving payouts.`}
+      action={<button className={styles.linkButton} onClick={() => setHidden(true)}>Hide for now</button>}
+    >
+      <ProgressBar value={done} max={items.length} height={8} color="var(--tk-success)" />
+      <div className={styles.setupGrid}>
+        {items.map((item) => (
+          <button key={item.label} type="button" className={`${styles.setupItem} ${item.done ? styles.setupDone : ''}`} onClick={() => !item.done && onGo(item.to)} disabled={item.done}>
+            <Icon name={item.done ? 'circle-check' : item.icon} size={18} />
+            <span><strong>{item.label}</strong><small>{item.done ? 'Done' : item.hint}</small></span>
+            {!item.done && <Icon name="chevron-right" size={16} />}
+          </button>
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
 export function Dashboard() {
   const router = useRouter();
   const trucks = useCollection('trucks') || [];
@@ -47,6 +72,19 @@ export function Dashboard() {
   const maintenance = useCollection('maintenance') || [];
   const wallet = useCollection('walletSummary')?.[0];
   const reviewSummary = useCollection('reviewSummary')?.[0];
+  const company = useCollection('companyProfile')?.[0];
+  const security = (useCollection('security') || [])[0];
+  const profile = (useCollection('adminProfile') || [])[0];
+  const companyCompliance = complianceFor(COMPANY_REQUIREMENTS, documentsFor(documents, 'company')).summary;
+  const setupItems = [
+    { label: 'Verify email & phone', hint: 'Confirm your contact details', icon: 'badge-check', done: !!(profile?.emailVerified && profile?.phoneVerified), to: '/profile' },
+    { label: 'Company documents', hint: `${companyCompliance.requiredMet}/${companyCompliance.requiredTotal} required uploaded`, icon: 'file-check', done: companyCompliance.complete, to: '/documents' },
+    { label: 'Add your first truck', hint: 'Papers, photos and specs', icon: 'truck', done: trucks.length > 0, to: '/fleet/new' },
+    { label: 'Onboard a driver', hint: 'Licence and ID', icon: 'user-round', done: drivers.length > 0, to: '/drivers' },
+    { label: 'Payout bank account', hint: 'Where we send your money', icon: 'landmark', done: !!wallet?.bankAccount, to: '/company-settings?tab=payout' },
+    { label: 'Transaction PIN', hint: 'Approves payouts & withdrawals', icon: 'lock-keyhole', done: !!security?.pin?.set, to: '/company-settings?tab=pin' },
+    { label: 'Two-factor authentication', hint: 'Protect your sign-in', icon: 'shield-check', done: !!security?.twoFactor?.enabled, to: '/company-settings?tab=security' },
+  ];
 
   const data = useMemo(() => {
     const pendingJobs = jobs.filter((job) => job.status === 'Pending');
@@ -54,7 +92,10 @@ export function Dashboard() {
     const activeTrips = withJobs(trips, jobs).filter((trip) => tripPhase(trip) === 'Active');
     const completedThisMonth = jobs.filter((job) => job.status === 'Completed');
     const maintenanceDue = maintenance.filter((record) => ['Upcoming', 'Overdue', 'In Progress'].includes(record.status));
-    const activityFeed = [
+    const activityFeed = trips.length === 0 ? [
+      { text: 'Company workspace created', time: 'Just now', tone: 'var(--tk-success)' },
+      ...trucks.slice(0, 3).map((t) => ({ text: `${t.plate} added to your fleet`, time: 'Just now', tone: 'var(--tk-blue)' })),
+    ] : [
       { text: 'Payment received for TRP-0037', time: '1 day ago', tone: 'var(--tk-success)' },
       { text: 'TK-2026-000041 marked In Transit', time: '2 days ago', tone: 'var(--tk-blue)' },
       { text: 'Maintenance scheduled for LSD 123 XY', time: '3 days ago', tone: 'var(--tk-warning)' },
@@ -67,16 +108,18 @@ export function Dashboard() {
       { label: 'Inactive', value: trucks.filter((t) => t.status === 'Inactive').length, color: 'var(--tk-danger)' },
     ];
     return { pendingJobs, activeJobs, activeTrips, completedThisMonth, maintenanceDue, activityFeed, fleetStatus };
-  }, [trucks, maintenance, jobs, trips]);
+  }, [trucks, maintenance, jobs, trips, drivers]);
 
   const expiringDocs = documents.filter((d) => d.status === 'Expiring Soon' || d.status === 'Expired').length;
 
   return (
     <div className={styles.dashboard}>
       <PageHeader
-        title={<>Good morning, {myCompany.shortName} <span aria-hidden="true">👋</span></>}
+        title={<>Good morning, {company?.shortName || 'there'} <span aria-hidden="true">👋</span></>}
         description="Here's what's happening with your operations today."
       />
+
+      <SetupChecklist items={setupItems} onGo={(to) => router.push(to)} />
 
       <section className={styles.stats} aria-label="Operations summary">
         <StatCard icon="truck" label="Available Trucks" value={trucks.filter((t) => t.status === 'Active').length} caption={`of ${trucks.length} total`} />
@@ -88,7 +131,7 @@ export function Dashboard() {
         <StatCard icon="check-check" tint="green" label="Completed Jobs" value={data.completedThisMonth.length} caption="This month" />
         <StatCard icon="wallet" tint="teal" label="Wallet Balance" value={formatNaira(wallet?.balance ?? 0)} caption="Available balance" />
         <StatCard icon="hourglass" tint="amber" label="Pending Payout" value={formatNaira(wallet?.pendingPayout ?? 0)} caption="In review" />
-        <StatCard icon="banknote" tint="green" label="Total Earnings (May)" value={formatNaira(wallet?.earningsThisMonth ?? 0)} delta="18%" caption="vs last month" />
+        <StatCard icon="banknote" tint="green" label="Total Earnings (May)" value={formatNaira(wallet?.earningsThisMonth ?? 0)} delta={wallet?.earningsThisMonth ? '18%' : undefined} caption={wallet?.earningsThisMonth ? 'vs last month' : 'No earnings yet'} />
         <StatCard icon="star" tint="purple" label="Average Rating" value={reviewSummary ? reviewSummary.average.toFixed(1) : '—'} caption={reviewSummary ? `(${reviewSummary.total} reviews)` : undefined} />
       </section>
 
@@ -125,6 +168,7 @@ export function Dashboard() {
               rowKey={(trip) => trip.id}
               onRowClick={(trip) => router.push(`/trips/${trip.id}`)}
               columns={[
+                { key: 'driver', header: 'Trip ID', render: (trip) => trip.id || '—' },
                 { key: 'driver', header: 'Driver', render: (trip) => trip.driverName || '—' },
                 { key: 'truck', header: 'Truck', render: (trip) => trip.truckPlate || '—' },
                 { key: 'route', header: 'Route', render: (trip) => `${trip.job?.origin} → ${trip.job?.destination}` },

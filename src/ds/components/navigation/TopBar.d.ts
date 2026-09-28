@@ -10,6 +10,8 @@ export interface TopBarProps {
   notifications?: number;
   user?: string;
   role?: string;
+  /** optional photo URL for the account avatar; initials are shown when omitted */
+  avatarSrc?: string;
   style?: React.CSSProperties;
 }
 export declare function TopBar(props: TopBarProps): JSX.Element;

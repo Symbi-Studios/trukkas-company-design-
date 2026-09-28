@@ -11,33 +11,35 @@ import { posterFor } from './Jobs.jsx';
 import { useCollection } from '../mock/useCollection.js';
 import { requestWithdrawal } from '../mock/api.js';
 import { formatNaira } from '../mock/format.js';
+import { PinPrompt } from '../components/SecurityInputs.jsx';
 
-function WithdrawModal({ open, onClose, available }) {
+function WithdrawModal({ open, onClose, available, bank }) {
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  async function submit(event) {
+  const [pinOpen, setPinOpen] = useState(false);
+  function submit(event) {
     event.preventDefault();
     setError('');
     const value = Number(amount);
     if (!value || value <= 0) { setError('Enter a valid amount.'); return; }
-    setBusy(true);
-    try {
-      await requestWithdrawal(value);
-      setAmount('');
-      onClose();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
+    if (value > available) { setError('Amount exceeds your available balance.'); return; }
+    if (!bank) { setError('Add a payout bank account in Company Settings first.'); return; }
+    setPinOpen(true);
+  }
+  async function withdraw(pin) {
+    await requestWithdrawal(Number(amount), pin);
+    setPinOpen(false);
+    setAmount('');
+    onClose();
   }
   return (
-    <Modal open={open} onClose={onClose} title="Withdraw Funds" description="Funds are sent to the bank account on file in Company Settings." width={420}
-      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button form="withdraw-form" type="submit" disabled={busy}>{busy ? 'Processing…' : 'Withdraw'}</Button></>}>
+    <Modal open={open} onClose={onClose} title="Withdraw Funds" description={bank ? `Funds go to ${bank.bankName} •••• ${bank.last4} (${bank.accountName}).` : 'Add a payout bank account in Company Settings first.'} width={420}
+      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button form="withdraw-form" type="submit" disabled={!bank}>Withdraw</Button></>}>
       <form id="withdraw-form" onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
         <TextField label="Amount (₦)" type="number" min="0" required value={amount} onChange={(e) => setAmount(e.target.value)} hint={`Available balance: ${formatNaira(available)}`} error={error} />
       </form>
+      <PinPrompt open={pinOpen} onClose={() => setPinOpen(false)} confirmLabel="Approve Withdrawal"
+        description={`Withdraw ${formatNaira(Number(amount) || 0)} to your bank account.`} onConfirm={withdraw} />
     </Modal>
   );
 }
@@ -77,7 +79,7 @@ export function EarningsWallet() {
       </Card>
       <Card style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span className="tk-meta">Payout bank account</span>
-        <strong>{wallet.bankAccount.bankName} •••• {wallet.bankAccount.last4} ({wallet.bankAccount.accountName})</strong>
+        <strong>{wallet.bankAccount ? `${wallet.bankAccount.bankName} •••• ${wallet.bankAccount.last4} (${wallet.bankAccount.accountName})` : 'Not set — add one in Company Settings'}</strong>
       </Card>
       <Card pad="none">
         <h3 className="tk-title" style={{ margin: 0, padding: '16px 16px 0' }}>Earnings by Job</h3>
@@ -112,7 +114,7 @@ export function EarningsWallet() {
         />
       </Card>
       <ReceiptModal receipt={receipt} open={!!receipt} onClose={() => setReceipt(null)} />
-      <WithdrawModal open={withdrawOpen} onClose={() => setWithdrawOpen(false)} available={wallet.balance} />
+      <WithdrawModal open={withdrawOpen} onClose={() => setWithdrawOpen(false)} available={wallet.balance} bank={wallet.bankAccount} />
     </div>
   );
 }

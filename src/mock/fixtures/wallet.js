@@ -4,7 +4,7 @@ export const walletSummary = {
   earningsThisMonth: 2322750,
   earningsLastMonth: 1168500,
   completedTripsThisMonth: 5,
-  bankAccount: { bankName: 'GTBank', accountName: 'SpeedLine Logistics Limited', last4: '4821' },
+  bankAccount: { bankCode: '058', bankName: 'GTBank', accountName: 'SPEEDLINE LOGISTICS LIMITED', last4: '4821', updatedOn: 'Mar 3, 2021' },
 };
 
 // Oldest first; `balanceAfter` is the running balance once each transaction lands.

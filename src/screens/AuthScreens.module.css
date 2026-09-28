@@ -89,6 +89,21 @@
   background: var(--tk-success-soft);
 }
 
+.signupPrompt {
+  margin: 22px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--tk-line);
+  color: var(--tk-ink-500);
+  font: 400 13px/18px var(--tk-font-sans);
+  text-align: center;
+}
+
+.signupPrompt a {
+  color: var(--tk-blue);
+  font-weight: 600;
+  text-decoration: none;
+}
+
 .footer {
   margin: 0;
   color: var(--tk-ink-400);

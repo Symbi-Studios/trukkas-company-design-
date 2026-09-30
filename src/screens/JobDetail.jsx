@@ -4,12 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from '../router.js';
 import {
   Avatar, Badge, Button, Card, DataTable, DropdownMenu, EmptyState, Icon, IconButton, LabelValue, Modal,
-  PageHeader, ProgressBar, SectionCard, Select, Tabs, Textarea, TextField,
+  Banner, PageHeader, ProgressBar, SectionCard, Select, Tabs, Textarea, TextField,
 } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
 import { assignTruckToJob, placeBid, toggleSaveJob, withdrawBid } from '../mock/api.js';
 import {
-  closesInTone, isMarketplaceJob, jobRate, jobStatusTone, jobTitle, suggestedBidRange,
+  JOB_TYPES, closesInTone, hasCargoPhotos, isHijack, isMarketplaceJob, jobRate, jobStatusTone, jobTitle, suggestedBidRange,
 } from '../domain/jobs.js';
 import {
   dispatchSummary, estimateDuration, isDriverFree, isTruckFree, tripHealth, tripHealthTone, tripsForJob, shortPlace,
@@ -220,6 +220,23 @@ function EarningsCard({ earnings, onReceipt }) {
   );
 }
 
+function JobRatingCard({ review }) {
+  return (
+    <SectionCard title="Forwarder Rating" description="How the forwarder rated this job once it was completed.">
+      {review ? (
+        <div style={{ display: 'grid', gap: 8 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <strong style={{ font: '700 22px/28px var(--tk-font-sans)', color: 'var(--tk-ink-900)' }}>{review.rating.toFixed(1)}</strong>
+            <Stars rating={review.rating} />
+          </span>
+          {review.comment && <p className={styles.body} style={{ margin: 0 }}>“{review.comment}”</p>}
+          <span className="tk-meta">{review.poster} · {review.date}</span>
+        </div>
+      ) : <span className="tk-meta">The forwarder hasn’t rated this job yet.</span>}
+    </SectionCard>
+  );
+}
+
 function CompanyModal({ poster, open, onClose }) {
   return (
     <Modal open={open} onClose={onClose} title={poster.name} width={440} footer={<Button onClick={onClose}>Close</Button>}>
@@ -239,6 +256,7 @@ export function JobDetail() {
   const allTrips = useCollection('trips') || [];
   const payouts = useCollection('payoutRequests') || [];
   const company = useCollection('companyProfile')?.[0];
+  const reviews = useCollection('reviews') || [];
   const job = jobs.find((j) => j.id === jobId);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [infoTab, setInfoTab] = useState('requirements');
@@ -317,17 +335,25 @@ export function JobDetail() {
       <div className={styles.layout}>
         <div className={styles.main}>
           <div className={styles.intro}>
-            <span>{job.cargoType}</span>
+            <span>{job.jobType} · {job.cargoType}</span>
             <p>{job.description || job.cargoDescription}</p>
           </div>
 
-          <div className={styles.gallery} aria-label="Cargo photos">
-            <CargoThumb category={job.category} width="100%" height="100%" iconSize={56} />
-            {[0, 1, 2].map((i) => <CargoThumb key={i} category={job.category} width="100%" height="100%" iconSize={30} />)}
-            <CargoThumb category={job.category} width="100%" height="100%" iconSize={30}>
-              {job.photos > 4 && <span className={styles.morePhotos}><strong>+{job.photos - 4}</strong>more photos</span>}
-            </CargoThumb>
-          </div>
+          {hasCargoPhotos(job) && (
+            <div className={styles.gallery} aria-label="Cargo photos from the forwarder">
+              <CargoThumb category={job.category} width="100%" height="100%" iconSize={56} />
+              {[0, 1, 2].map((i) => <CargoThumb key={i} category={job.category} width="100%" height="100%" iconSize={30} />)}
+              <CargoThumb category={job.category} width="100%" height="100%" iconSize={30}>
+                {job.photos > 4 && <span className={styles.morePhotos}><strong>+{job.photos - 4}</strong>more photos</span>}
+              </CargoThumb>
+            </div>
+          )}
+
+          {isHijack(job) && job.hijack && (
+            <Banner tone="info" title={`Hijack job · ${job.hijack.shippingLine} ${job.hijack.containerSize} empty`}>
+              {JOB_TYPES.find((t) => t.value === 'Hijack').description} You can only take this job if one of your trucks is carrying an empty {job.hijack.shippingLine} {job.hijack.containerSize} container due back at {job.hijack.returnTerminal}.
+            </Banner>
+          )}
 
           <SectionCard title="Key Information">
             <div className={styles.keyGrid}>
@@ -440,6 +466,7 @@ export function JobDetail() {
               {infoTab === 'additional' && (
                 <div className={styles.additional}>
                   <LabelValue label="Job Type" value={job.jobType} />
+                  {isHijack(job) && job.hijack && <LabelValue label="Shipping Line" value={job.hijack.shippingLine} />}
                   <LabelValue label="Equipment" value={job.equipment} />
                   <LabelValue label="Payment Terms" value={job.paymentTerms} />
                   <LabelValue label="Negotiable" value={job.negotiable ? 'Yes' : 'No'} />
@@ -456,6 +483,7 @@ export function JobDetail() {
           {job.status === 'Quoted' && <MyBidCard job={job} onToast={showToast} />}
           {!marketplace && <DispatchCard job={job} summary={summary} onDispatch={() => setDispatchOpen(true)} />}
           {!marketplace && job.status !== 'Cancelled' && <EarningsCard earnings={earnings} onReceipt={() => setReceiptOpen(true)} />}
+          {job.status === 'Completed' && <JobRatingCard review={reviews.find((r) => r.jobId === job.id)} />}
 
           <SectionCard title="Posted by">
             <div className={styles.poster}>

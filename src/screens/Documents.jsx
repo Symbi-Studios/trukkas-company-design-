@@ -7,7 +7,7 @@ import {
 } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
 import {
-  COMPANY_REQUIREMENTS, DRIVER_REQUIREMENTS, VEHICLE_REQUIREMENTS, complianceFor, documentsFor,
+  COMPANY_REQUIREMENTS, DRIVER_REQUIREMENTS, VEHICLE_REQUIREMENTS, complianceFor, documentsFor, formatDisplayDate,
 } from '../domain/documents.js';
 import { VEHICLE_CLASSES, plateSlug } from '../domain/vehicles.js';
 import { ComplianceChecklist, UploadDocumentModal } from '../components/DocumentCompliance.jsx';
@@ -113,12 +113,13 @@ export function Documents() {
                 <LabelValue label="RC Number" value={company?.rcNumber} />
                 <LabelValue label="Verification" value={<Badge tone={company?.verification === 'Verified' ? 'success' : 'warning'}>{company?.verification}</Badge>} />
               </SectionCard>
-              {company?.frontPerson && (
-                <SectionCard title="Account Front Person" description="The director whose NIN, BVN and ID are on file.">
+              {company?.director && (
+                <SectionCard title="Director" description="The director whose NIN, BVN and ID are on file.">
                   <div className={styles.person}>
-                    <Avatar name={company.frontPerson.name} size={40} />
-                    <span><strong>{company.frontPerson.name}</strong><small>{company.frontPerson.role}</small></span>
+                    <Avatar name={company.director.name} size={40} />
+                    <span><strong>{company.director.name}</strong><small>{company.director.role}</small></span>
                   </div>
+                  <LabelValue label="Date of Birth" value={company.director.dob ? formatDisplayDate(company.director.dob) : 'Not provided'} />
                   <LabelValue label="NIN" value={companyDocs.find((d) => d.type === 'NIN')?.number || 'Not provided'} />
                   <LabelValue label="BVN" value={companyDocs.find((d) => d.type === 'BVN')?.number || 'Not provided'} />
                 </SectionCard>

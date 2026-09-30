@@ -19,10 +19,11 @@ function job(entry) {
     featured: false,
     urgent: false,
     saved: false,
-    photos: 3,
     closesInDays: null,
     myBid: null,
     ...entry,
+    // Forwarders only attach cargo photos to break-bulk jobs.
+    photos: entry.category === 'Break-bulk' ? entry.photos ?? 6 : 0,
   };
 }
 
@@ -34,7 +35,7 @@ export const jobs = [
     weightKg: 40000, equipment: 'Container (40ft)', quantity: '1 Container (40ft)', budget: 1450000, negotiable: true,
     pickupDate: 'May 30, 2026', deliveryDate: 'Jun 2, 2026',
     postedBy: 'ORG-BRIGHTWAY', postedOn: 'May 26, 2026 · 8:10 AM', postedAgo: '2 hours ago', closesAt: 'Closes in 2 days', closesInDays: 2,
-    status: 'Pending', requirement: 'Truck Required', featured: true, photos: 6,
+    status: 'Pending', requirement: 'Truck Required', featured: true,
     cargoValue: 25000000,
     cargoDescription: 'General goods in a 40ft container. Proper handling and secure transit required. Ensure the container is sealed and delivered on time.',
     description: 'Transport a 40ft container of general goods from Apapa Port, Lagos to Kano. The cargo is properly stuffed and sealed. Looking for reliable hauliers with good track record.',
@@ -43,7 +44,7 @@ export const jobs = [
     documents: [{ name: 'Bill of Lading', size: '1.2 MB' }, { name: 'Container Release Order', size: '860 KB' }, { name: 'Packing List', size: '420 KB' }],
   }),
   job({
-    id: 'TK-2026-000066', title: 'Cement (Bulk)', category: 'Break-bulk', jobType: 'Break Bulk', cargoType: 'Cement',
+    id: 'TK-2026-000066', title: 'Cement (Bulk)', category: 'Break-bulk', jobType: 'Port-to-Destination', cargoType: 'Cement',
     origin: 'Ewekoro, Ogun', destination: 'Ibadan, Oyo State', distanceKm: 95,
     weightKg: 28000, equipment: 'Bulk Cargo', quantity: '560 Bags', budget: 950000, negotiable: true,
     pickupDate: 'May 29, 2026', deliveryDate: 'May 30, 2026',
@@ -65,7 +66,7 @@ export const jobs = [
     cargoDescription: 'Consumer electronics in two sealed 20ft containers. Handle with care.',
   }),
   job({
-    id: 'TK-2026-000015', title: 'Steel Coils', category: 'Break-bulk', jobType: 'Break Bulk', cargoType: 'Steel',
+    id: 'TK-2026-000015', title: 'Steel Coils', category: 'Break-bulk', jobType: 'Port-to-Destination', cargoType: 'Steel',
     origin: 'Lagos, Lagos', destination: 'Benin City, Edo State', distanceKm: 320,
     weightKg: 22000, equipment: 'Break-bulk', quantity: '8 Coils', budget: 1100000, negotiable: true,
     pickupDate: 'May 28, 2026', deliveryDate: 'May 29, 2026',
@@ -102,13 +103,15 @@ export const jobs = [
     cargoDescription: 'General goods, palletised. Standard handling.',
   }),
   job({
-    id: 'TK-2026-000065', title: 'Empty Container Return', category: 'Return Trip', jobType: 'Return Trip', cargoType: 'Empty Container',
-    origin: 'Kano, Kano State', destination: 'Apapa Port, Lagos', distanceKm: 1020,
-    weightKg: 3800, equipment: 'Container (40ft)', quantity: '1 Container (40ft)', budget: 520000, negotiable: true,
-    pickupDate: 'Jun 3, 2026', deliveryDate: 'Jun 5, 2026',
+    id: 'TK-2026-000065', title: 'Empty Container Hijack (1 x 40ft)', category: 'Container', jobType: 'Hijack', cargoType: 'Empty Container',
+    origin: 'Kano, Kano State', destination: 'Sharada Export Warehouse, Kano', distanceKm: 18,
+    weightKg: 3800, equipment: 'Container (40ft)', quantity: '1 Container (40ft)', budget: 180000, negotiable: true,
+    pickupDate: 'Jun 3, 2026', deliveryDate: 'Jun 3, 2026',
     postedBy: 'ORG-KANOGLOBAL', postedOn: 'May 23, 2026 · 11:00 AM', postedAgo: '4 days ago', closesAt: 'Closes in 6 days', closesInDays: 6,
     status: 'Pending', requirement: 'Truck Required',
-    cargoDescription: 'Return an empty 40ft container to the Apapa terminal. Ideal backhaul after a Kano delivery.',
+    hijack: { shippingLine: 'Maersk', containerSize: '40ft', returnTerminal: 'Apapa Port, Lagos' },
+    requirements: ['Must be carrying an empty Maersk 40ft container due for return', 'Container must be clean and cargo-worthy', 'Shipping line interchange (EIR) available on request'],
+    cargoDescription: 'Exporter needs an empty Maersk 40ft container for stuffing in Kano. Deliver the empty you would otherwise return to Apapa and skip the long empty run south.',
   }),
 
   // ---- Quoted: bid submitted, awaiting the forwarder's decision -------
@@ -157,7 +160,7 @@ export const jobs = [
     myBid: { amount: 1450000, message: 'Reliable haulier with a strong track record on this corridor.', submittedAt: 'May 26, 2026 · 5:10 PM' },
   }),
   job({
-    id: 'TK-2026-000044', title: 'Cement (Bulk)', category: 'Break-bulk', jobType: 'Break Bulk', cargoType: 'Cement',
+    id: 'TK-2026-000044', title: 'Cement (Bulk)', category: 'Break-bulk', jobType: 'Port-to-Destination', cargoType: 'Cement',
     origin: 'Ewekoro, Ogun', destination: 'Abuja, FCT', distanceKm: 690,
     weightKg: 150000, equipment: 'Bulk Cargo', quantity: '3,000 Bags', budget: 980000, negotiable: false,
     pickupDate: 'Jun 3, 2026', deliveryDate: 'Jun 5, 2026',
@@ -168,7 +171,7 @@ export const jobs = [
     myBid: { amount: 980000, message: 'We can field five covered trucks for this run.', submittedAt: 'May 25, 2026 · 1:20 PM' },
   }),
   job({
-    id: 'TK-2026-000038', title: 'Containers (2 x 40ft)', category: 'Container', jobType: 'Port Discharge', cargoType: 'Consumer Goods',
+    id: 'TK-2026-000038', title: 'Containers (2 x 40ft)', category: 'Container', jobType: 'Port-to-Destination', cargoType: 'Consumer Goods',
     origin: 'Apapa Port, Lagos', destination: 'Kano, Kano State', distanceKm: 1024,
     weightKg: 38000, equipment: 'Container (40ft)', quantity: '2 Containers (40ft)', budget: 900000, negotiable: false,
     pickupDate: 'May 28, 2026', deliveryDate: 'Jun 1, 2026',
@@ -178,7 +181,7 @@ export const jobs = [
     cargoDescription: 'Two 40ft containers of consumer goods.',
   }),
   job({
-    id: 'TK-2026-000032', title: 'Container (1 x 20ft)', category: 'Container', jobType: 'Door Delivery', cargoType: 'Textiles',
+    id: 'TK-2026-000032', title: 'Container (1 x 20ft)', category: 'Container', jobType: 'Port-to-Destination', cargoType: 'Textiles',
     origin: 'Onne Port, Rivers', destination: 'Aba, Abia State', distanceKm: 90,
     weightKg: 8000, equipment: 'Container (20ft)', quantity: '1 Container (20ft)', budget: 420000, negotiable: false,
     pickupDate: 'May 27, 2026', deliveryDate: 'May 27, 2026',
@@ -188,7 +191,7 @@ export const jobs = [
     cargoDescription: 'Bolts of fabric, palletised.',
   }),
   job({
-    id: 'TK-2026-000026', title: 'Machinery (35,000 kg)', category: 'Break-bulk', jobType: 'Port Discharge', cargoType: 'Industrial Equipment',
+    id: 'TK-2026-000026', title: 'Machinery (35,000 kg)', category: 'Break-bulk', jobType: 'Port-to-Destination', cargoType: 'Industrial Equipment',
     origin: 'Tin Can Port, Lagos', destination: 'Warri, Delta State', distanceKm: 180,
     weightKg: 35000, equipment: 'Container (40ft HC)', quantity: '1 Container (40ft HC)', budget: 780000, negotiable: false,
     pickupDate: 'May 29, 2026', deliveryDate: 'May 31, 2026',
@@ -200,7 +203,7 @@ export const jobs = [
 
   // ---- Completed ---------------------------------------------------------
   job({
-    id: 'TK-2026-000012', title: 'Steel Coils (2 trucks)', category: 'Break-bulk', jobType: 'Transfer', cargoType: 'Steel',
+    id: 'TK-2026-000012', title: 'Steel Coils (2 trucks)', category: 'Break-bulk', jobType: 'Port-to-Port', cargoType: 'Steel',
     origin: 'Lagos, Lagos', destination: 'Port Harcourt, Rivers', distanceKm: 610,
     weightKg: 40000, equipment: 'Flatbed Trailer', quantity: '12 Coils', budget: 610000, negotiable: false,
     pickupDate: 'May 15, 2026', deliveryDate: 'May 18, 2026',
@@ -210,7 +213,7 @@ export const jobs = [
     cargoDescription: 'Cold-rolled steel coils, 12 coils split across two flatbeds.',
   }),
   job({
-    id: 'TK-2026-000028', title: 'Cement (2 x 28,000 kg)', category: 'Break-bulk', jobType: 'Transfer', cargoType: 'Bulk Cargo',
+    id: 'TK-2026-000028', title: 'Cement (2 x 28,000 kg)', category: 'Break-bulk', jobType: 'Port-to-Port', cargoType: 'Bulk Cargo',
     origin: 'Lagos, Lagos', destination: 'Kaduna, Kaduna State', distanceKm: 800,
     weightKg: 56000, equipment: 'Flatbed Trailer', quantity: '1,120 Bags', budget: 480000, negotiable: false,
     pickupDate: 'May 12, 2026', deliveryDate: 'May 14, 2026',
@@ -230,7 +233,7 @@ export const jobs = [
     cargoDescription: 'Consumer goods, 22,000 kg.',
   }),
   job({
-    id: 'TK-2026-000018', title: 'Food Items (20,000 kg)', category: 'General Cargo', jobType: 'Door Delivery', cargoType: 'Sacks',
+    id: 'TK-2026-000018', title: 'Food Items (20,000 kg)', category: 'General Cargo', jobType: 'Port-to-Destination', cargoType: 'Sacks',
     origin: 'Ibadan, Oyo State', destination: 'Sokoto, Sokoto State', distanceKm: 890,
     weightKg: 20000, equipment: 'Box Trailer', quantity: '400 Sacks', budget: 950000, negotiable: false,
     pickupDate: 'Apr 26, 2026', deliveryDate: 'Apr 29, 2026',
@@ -240,7 +243,7 @@ export const jobs = [
     cargoDescription: 'Packaged food items, 20,000 kg.',
   }),
   job({
-    id: 'TK-2026-000019', title: 'Container (1 x 40ft)', category: 'Container', jobType: 'Port Discharge', cargoType: 'General Goods',
+    id: 'TK-2026-000019', title: 'Container (1 x 40ft)', category: 'Container', jobType: 'Port-to-Destination', cargoType: 'General Goods',
     origin: 'Apapa Port, Lagos', destination: 'Kaduna, Kaduna State', distanceKm: 800,
     weightKg: 28000, equipment: 'Container (40ft)', quantity: '1 Container (40ft)', budget: 1250000, negotiable: false,
     pickupDate: 'Apr 18, 2026', deliveryDate: 'Apr 21, 2026',
@@ -252,7 +255,7 @@ export const jobs = [
 
   // ---- Cancelled -----------------------------------------------------
   job({
-    id: 'TK-2026-000008', title: 'Machinery (35,000 kg)', category: 'Break-bulk', jobType: 'Transfer', cargoType: 'Industrial Equipment',
+    id: 'TK-2026-000008', title: 'Machinery (35,000 kg)', category: 'Break-bulk', jobType: 'Port-to-Port', cargoType: 'Industrial Equipment',
     origin: 'Onne Port, Rivers', destination: 'Abuja, FCT', distanceKm: 610,
     weightKg: 35000, equipment: 'Low-bed Trailer', quantity: '1 Excavator', budget: 390000, negotiable: false,
     pickupDate: 'May 18, 2026', deliveryDate: 'May 21, 2026',

@@ -233,7 +233,7 @@ function CostsSection({ trip, job, onToast }) {
   );
 }
 
-function CommunicationSection({ trip, job, onToast }) {
+function CommunicationSection({ trip, onToast }) {
   const [body, setBody] = useState('');
   async function submit(event) {
     event.preventDefault();
@@ -243,11 +243,11 @@ function CommunicationSection({ trip, job, onToast }) {
     onToast('Message sent.');
   }
   return (
-    <SectionCard title="Communication" description={`Messages with ${trip.driverName || 'the driver'} and the forwarder about ${trip.id}.`}>
+    <SectionCard title="Communication" description={`Private messages between your company and ${trip.driverName || 'the driver'} about ${trip.id}. Forwarders can’t see or join this conversation.`}>
       {trip.messages.length === 0 ? <EmptyState icon="messages-square" title="No messages yet" description="Start the conversation with your driver." /> : (
         <div>
           {trip.messages.map((m, i) => (
-            <MessageBubble key={i} author={m.author} role={m.role} roleTone={m.role === 'Driver' ? 'orange' : m.role === 'Forwarder' ? 'purple' : 'blue'} time={m.time}>
+            <MessageBubble key={i} author={m.author} role={m.role} roleTone={m.role === 'Driver' ? 'orange' : 'blue'} time={m.time}>
               {m.body}
             </MessageBubble>
           ))}
@@ -255,7 +255,7 @@ function CommunicationSection({ trip, job, onToast }) {
       )}
       {isOpenTrip(trip) && (
         <form onSubmit={submit} className={styles.composer}>
-          <Textarea rows={3} maxLength={500} value={body} onChange={(e) => setBody(e.target.value)} placeholder={`Message ${trip.driverName || 'driver'} and ${job ? 'the forwarder' : 'team'}...`} />
+          <Textarea rows={3} maxLength={500} value={body} onChange={(e) => setBody(e.target.value)} placeholder={`Message ${trip.driverName || 'your driver'}...`} />
           <Button type="submit" icon="send" disabled={!body.trim()}>Send</Button>
         </form>
       )}
@@ -471,7 +471,7 @@ export function TripDetail({ section = 'overview' }) {
           {section === 'documents' && <DocumentsSection trip={trip} job={job} onToast={showToast} />}
           {section === 'costs' && <CostsSection trip={trip} job={job} onToast={showToast} />}
           {section === 'notes' && <NotesCard trip={trip} onToast={showToast} />}
-          {section === 'communication' && <CommunicationSection trip={trip} job={job} onToast={showToast} />}
+          {section === 'communication' && <CommunicationSection trip={trip} onToast={showToast} />}
 
           {section !== 'overview' && section !== 'timeline' && (
             <Card className={styles.jobContext}>

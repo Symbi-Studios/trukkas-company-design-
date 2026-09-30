@@ -12,7 +12,7 @@ import { jobEarnings, jobReceipt } from '../domain/payouts.js';
 import { formatNaira } from '../mock/format.js';
 import { CargoThumb } from '../components/CargoThumb.jsx';
 import { ReceiptModal } from '../components/Receipt.jsx';
-import { posterFor } from './Jobs.jsx';
+import { Stars, posterFor } from './Jobs.jsx';
 import styles from './MyJobs.module.css';
 
 const TABS = [
@@ -37,6 +37,7 @@ export function MyJobs() {
   const trips = useCollection('trips') || [];
   const payouts = useCollection('payoutRequests') || [];
   const company = useCollection('companyProfile')?.[0];
+  const reviews = useCollection('reviews') || [];
   const [tab, setTab] = useState('all');
   const [query, setQuery] = useState('');
   const [forwarder, setForwarder] = useState('');
@@ -135,7 +136,17 @@ export function MyJobs() {
                     </span>
                   ),
                 },
-                { key: 'status', header: 'Status', width: 120, render: ({ job }) => <Badge tone={jobStatusTone(job.status)} dot>{job.status === 'Quoted' ? 'Bid Placed' : job.status}</Badge> },
+                {
+                  key: 'status', header: 'Status', width: 120, render: ({ job }) => {
+                    const review = job.status === 'Completed' && reviews.find((r) => r.jobId === job.id);
+                    return (
+                      <span className={styles.twoLine} style={{ justifyItems: 'start', gap: 4 }}>
+                        <Badge tone={jobStatusTone(job.status)} dot>{job.status === 'Quoted' ? 'Bid Placed' : job.status}</Badge>
+                        {review && <Stars rating={review.rating} />}
+                      </span>
+                    );
+                  },
+                },
                 {
                   key: 'actions', header: '', width: 84, align: 'right', render: (r) => (
                     <span className={styles.actions}>

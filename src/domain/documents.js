@@ -10,12 +10,13 @@
 export const COMPANY_REQUIREMENTS = [
   { type: 'CAC Certificate', label: 'CAC Certificate of Incorporation', required: true, file: true, number: 'RC Number', hint: 'Issued by the Corporate Affairs Commission.' },
   { type: 'CAC Status Report', label: 'CAC Status Report (Directors & Shareholders)', required: true, file: true, hint: 'Form CAC 1.1 or a recent status report listing directors.' },
+  { type: 'Memorandum of Association', label: 'Memorandum of Association', required: true, file: true, hint: 'Memorandum (and Articles) of Association filed with the CAC.' },
   { type: 'TIN', label: 'Tax Identification Number (TIN) Certificate', required: true, file: true, number: 'TIN' },
-  { type: 'NIN', label: "Front Person's NIN", required: true, file: false, number: 'NIN', sensitive: true, hint: 'National Identification Number of the director operating the account.' },
-  { type: 'BVN', label: "Front Person's BVN", required: true, file: false, number: 'BVN', sensitive: true, hint: 'Bank Verification Number, used for payout verification.' },
-  { type: 'Government ID', label: "Front Person's Government ID", required: true, file: true, expires: true, hint: 'International passport, driver’s licence or voter’s card.' },
+  { type: 'NIN', label: "Director's NIN", required: true, file: false, number: 'NIN', sensitive: true, hint: 'National Identification Number of the director operating the account.' },
+  { type: 'BVN', label: "Director's BVN", required: true, file: false, number: 'BVN', sensitive: true, hint: 'Bank Verification Number, used for payout verification.' },
+  { type: 'Government ID', label: "Director's Government ID", required: true, file: true, expires: true, hint: 'International passport, driver’s licence or voter’s card.' },
   { type: 'Proof of Address', label: 'Proof of Business Address', required: true, file: true, hint: 'Utility bill or tenancy agreement dated within the last 3 months.' },
-  { type: 'Bank Verification', label: 'Company Bank Account Letter', required: true, file: true, hint: 'Bank reference or account confirmation letter for payouts.' },
+  { type: 'Bank Verification', label: 'Corporate Bank Account', required: true, file: true, number: 'Corporate Account Number', sensitive: true, hint: 'Corporate account number plus a bank reference or account confirmation letter.' },
   { type: 'Goods-in-Transit Insurance', label: 'Goods-in-Transit Insurance', required: false, file: true, expires: true, hint: 'Recommended: many forwarders require it for high-value cargo.' },
   { type: 'Haulage Permit', label: 'Haulage / Transport Operator Permit', required: false, file: true, expires: true, hint: 'State or federal operator permit, where applicable.' },
 ];

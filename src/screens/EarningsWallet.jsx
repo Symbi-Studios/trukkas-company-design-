@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from 'react';
 import { useNavigate } from '../router.js';
-import { Badge, Button, Card, DataTable, IconButton, LineChart, Modal, PageHeader, StatCard, TextField } from '../ds.js';
+import { Badge, Button, Card, DataTable, IconButton, Modal, PageHeader, StatCard, TextField } from '../ds.js';
 import { jobEarnings, jobReceipt, payoutReceipt } from '../domain/payouts.js';
 import { jobTitle } from '../domain/jobs.js';
 import { tripsForJob } from '../domain/trips.js';
 import { ReceiptModal } from '../components/Receipt.jsx';
+import { EarningsExpensesChart } from '../components/EarningsExpensesChart.jsx';
 import { posterFor } from './Jobs.jsx';
 import { useCollection } from '../mock/useCollection.js';
 import { requestWithdrawal } from '../mock/api.js';
@@ -73,9 +74,8 @@ export function EarningsWallet() {
         <StatCard icon="calendar" label="Earnings Last Month" value={formatNaira(wallet.earningsLastMonth)} caption={`${wallet.completedTripsThisMonth} trips this month`} />
       </section>
       <Card>
-        <h3 className="tk-title" style={{ margin: '0 0 12px' }}>Earnings Trend</h3>
-        <LineChart height={180} labels={['Jan', 'Feb', 'Mar', 'Apr', 'May']} area
-          series={[{ name: 'Earnings', color: 'var(--tk-blue)', points: [2.1, 2.8, 3.4, 1.2, wallet.earningsThisMonth / 1_000_000].map((v) => Math.round(v * 10) / 10) }]} />
+        <h3 className="tk-title" style={{ margin: '0 0 12px' }}>Earnings vs Expenses</h3>
+        <EarningsExpensesChart trend={wallet.monthlyTrend} />
       </Card>
       <Card style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span className="tk-meta">Payout bank account</span>

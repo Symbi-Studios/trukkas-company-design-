@@ -9,7 +9,7 @@ import {
 import { useCollection } from '../mock/useCollection.js';
 import { placeBid, toggleSaveJob } from '../mock/api.js';
 import {
-  JOB_CATEGORIES, JOB_SORTS, closesInLabel, closesInTone, isMarketplaceJob, jobTitle, suggestedBidRange,
+  JOB_CATEGORIES, JOB_SORTS, JOB_TYPES, closesInLabel, closesInTone, isMarketplaceJob, jobTitle, suggestedBidRange,
 } from '../domain/jobs.js';
 import { posters } from '../mock/fixtures/companies.js';
 import { formatNaira } from '../mock/format.js';
@@ -19,7 +19,7 @@ import { RouteMap } from '../components/RouteMap.jsx';
 import { Toast, copyLink, useToast } from '../components/Toast.jsx';
 import styles from './Jobs.module.css';
 
-const EMPTY_FILTERS = { from: '', to: '', cargo: '', month: '', weight: '', savedOnly: false, multiTruck: false };
+const EMPTY_FILTERS = { from: '', to: '', cargo: '', jobType: '', month: '', weight: '', savedOnly: false, multiTruck: false };
 const WEIGHTS = [
   { value: 'light', label: 'Under 20,000 kg', test: (kg) => kg < 20000 },
   { value: 'medium', label: '20,000 – 30,000 kg', test: (kg) => kg >= 20000 && kg <= 30000 },
@@ -90,6 +90,7 @@ function JobRow({ job, selected, onSelect, onOpen, onSave }) {
         </div>
         <div className={styles.jobMeta}>
           <span>{job.weightKg.toLocaleString()} kg</span>
+          <span>{job.jobType}</span>
           <span>{job.equipment}</span>
           <span className={styles.underline}>{job.cargoType}</span>
           {job.trucksRequired > 1 && <span className={styles.trucks}><Icon name="truck" size={13} /> {job.trucksRequired} trucks</span>}
@@ -155,6 +156,7 @@ function JobInspector({ job, onClose, onBid, onContact, onOpen, onShare }) {
         {tab === 'details' && (
           <>
             <div className={styles.factGrid}>
+              <LabelValue layout="stack" label="Job Type" value={job.jobType} />
               <LabelValue layout="stack" label="Cargo Type" value={job.category} />
               <LabelValue layout="stack" label="Quantity" value={job.quantity} />
               <LabelValue layout="stack" label="Weight" value={`${job.weightKg.toLocaleString()} kg`} />
@@ -336,7 +338,7 @@ export function Jobs() {
     const rows = market
       .filter((job) => !bidsOnly || job.status === 'Quoted')
       .filter((job) => (!filters.from || job.origin === filters.from) && (!filters.to || job.destination === filters.to))
-      .filter((job) => (!filters.cargo || job.cargoType === filters.cargo) && (!filters.month || monthOf(job.pickupDate) === filters.month))
+      .filter((job) => (!filters.cargo || job.cargoType === filters.cargo) && (!filters.jobType || job.jobType === filters.jobType) && (!filters.month || monthOf(job.pickupDate) === filters.month))
       .filter((job) => (!weight || weight.test(job.weightKg)) && (!filters.savedOnly || job.saved) && (!filters.multiTruck || job.trucksRequired > 1))
       .filter((job) => !q || [job.id, jobTitle(job), job.origin, job.destination, job.cargoType, posterFor(job.postedBy).name]
         .some((v) => String(v).toLowerCase().includes(q)));
@@ -408,6 +410,7 @@ export function Jobs() {
         </div>
         {moreOpen && (
           <div className={styles.moreFilters}>
+            <FilterField label="Job Type" value={draft.jobType} onChange={setField('jobType')} options={JOB_TYPES.map((t) => t.value)} placeholder="All Job Types" />
             <Checkbox label="Saved jobs only" checked={draft.savedOnly} onChange={setField('savedOnly')} />
             <Checkbox label="Multi-truck jobs only" checked={draft.multiTruck} onChange={setField('multiTruck')} />
           </div>

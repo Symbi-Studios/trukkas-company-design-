@@ -57,7 +57,7 @@ export const trips = [
     messages: [
       { author: 'Chinedu Okafor', role: 'Driver', time: 'May 31, 2026, 9:58 AM', body: 'Passed Abuja, heading to Kaduna now. Road is clear.' },
       { author: 'Adekunle Adebayo', role: 'You', time: 'May 31, 2026, 10:02 AM', body: 'Great, keep us posted at the next stop.' },
-      { author: 'Brightway Logistics Ltd', role: 'Forwarder', time: 'May 31, 2026, 10:20 AM', body: 'Consignee confirmed they will receive on Jun 2 from 9 AM.' },
+      { author: 'Chinedu Okafor', role: 'Driver', time: 'May 31, 2026, 10:20 AM', body: 'Will do. Stopping for fuel at Zaria in about 2 hours.' },
     ],
   }),
   trip({

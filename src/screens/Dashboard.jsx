@@ -3,13 +3,14 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Badge, Card, DataTable, DonutChart, Icon, LegendList, LineChart, PageHeader,
+  Badge, Card, DataTable, DonutChart, Icon, LegendList, PageHeader,
   ProgressBar, SectionCard, StatCard,
 } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
 import { tripPhase, tripStatusTone, withJobs } from '../domain/trips.js';
 import { formatNaira } from '../mock/format.js';
 import { COMPANY_REQUIREMENTS, complianceFor, documentsFor } from '../domain/documents.js';
+import { EarningsExpensesChart } from '../components/EarningsExpensesChart.jsx';
 import styles from './Dashboard.module.css';
 
 function StarRating({ rating, reviews, trend, breakdown }) {
@@ -191,12 +192,7 @@ export function Dashboard() {
             <strong>{formatNaira(wallet?.earningsThisMonth ?? 0)}</strong>
             <span>↑ 18.6% vs last month</span>
           </div>
-          <LineChart
-            height={170}
-            labels={['Jan', 'Feb', 'Mar', 'Apr', 'May']}
-            series={[{ name: 'Earnings', color: 'var(--tk-blue)', points: [3.1, 3.6, 4.0, 3.8, (wallet?.earningsThisMonth ?? 0) / 1_000_000].map((v) => Math.round(v * 10) / 10) }]}
-            area
-          />
+          <EarningsExpensesChart trend={wallet?.monthlyTrend} height={170} />
         </SectionCard>
       </section>
 

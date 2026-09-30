@@ -1,7 +1,25 @@
 // Pure helpers for the job marketplace and the company's won jobs. A job is the
 // forwarder's booking; the haulage runs as trips (see ./trips.js) — one per
 // dispatched truck, up to `job.trucksRequired`.
-export const JOB_CATEGORIES = ['Container', 'Break-bulk', 'General Cargo', 'Return Trip'];
+export const JOB_CATEGORIES = ['Container', 'Break-bulk', 'General Cargo'];
+
+// A hijack replaces an empty-container return: instead of taking the empty back
+// to the shipping line, the haulier delivers it to an exporter who books it.
+// Only hauliers already carrying an empty from that shipping line can accept.
+export const JOB_TYPES = [
+  { value: 'Port-to-Port', description: 'Pickup and delivery are both port terminals.' },
+  { value: 'Port-to-Destination', description: 'Pickup at a port, delivery to the consignee’s location.' },
+  { value: 'Hijack', description: 'Deliver an empty container you are returning to an exporter instead of the shipping line.' },
+];
+
+export function isHijack(job) {
+  return job?.jobType === 'Hijack';
+}
+
+// Only break-bulk cargo comes with forwarder photos; containers are sealed.
+export function hasCargoPhotos(job) {
+  return job?.category === 'Break-bulk' && job.photos > 0;
+}
 
 export const JOB_SORTS = [
   { value: 'newest', label: 'Newest First' },

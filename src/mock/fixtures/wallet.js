@@ -4,6 +4,15 @@ export const walletSummary = {
   earningsThisMonth: 2322750,
   earningsLastMonth: 1168500,
   completedTripsThisMonth: 5,
+  // Oldest first; the last two months match earningsLastMonth / earningsThisMonth.
+  // Expenses are trip costs (fuel, tolls, driver allowances) plus fleet maintenance.
+  monthlyTrend: [
+    { month: 'Jan', earnings: 3100000, expenses: 1420000 },
+    { month: 'Feb', earnings: 3600000, expenses: 1680000 },
+    { month: 'Mar', earnings: 4000000, expenses: 1910000 },
+    { month: 'Apr', earnings: 1168500, expenses: 820000 },
+    { month: 'May', earnings: 2322750, expenses: 1215000 },
+  ],
   bankAccount: { bankCode: '058', bankName: 'GTBank', accountName: 'SPEEDLINE LOGISTICS LIMITED', last4: '4821', updatedOn: 'Mar 3, 2021' },
 };
 

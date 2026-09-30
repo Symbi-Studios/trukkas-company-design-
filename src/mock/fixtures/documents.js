@@ -54,12 +54,13 @@ export const documents = [
   // ---- Company (business onboarding / KYB) --------------------------------
   companyDoc({ name: 'CAC Certificate of Incorporation.pdf', type: 'CAC Certificate', number: 'RC 1483920', expiryDate: '—', status: 'Verified', uploadedOn: 'Mar 2, 2021', fileSize: '1.4 MB' }),
   companyDoc({ name: 'CAC Status Report.pdf', type: 'CAC Status Report', expiryDate: '—', status: 'Verified', uploadedOn: 'Mar 2, 2021', fileSize: '860 KB' }),
+  companyDoc({ name: 'Memorandum of Association.pdf', type: 'Memorandum of Association', expiryDate: '—', status: 'Verified', uploadedOn: 'Mar 2, 2021', fileSize: '1.1 MB' }),
   companyDoc({ name: 'FIRS TIN Certificate.pdf', type: 'TIN', number: '21874503-0001', expiryDate: '—', status: 'Verified', uploadedOn: 'Mar 2, 2021', fileSize: '420 KB' }),
   companyDoc({ name: 'NIN — Adekunle Adebayo', type: 'NIN', number: '•••••••4417', expiryDate: '—', status: 'Verified', uploadedOn: 'Mar 2, 2021' }),
   companyDoc({ name: 'BVN — Adekunle Adebayo', type: 'BVN', number: '•••••••9082', expiryDate: '—', status: 'Verified', uploadedOn: 'Mar 2, 2021' }),
   companyDoc({ name: 'International Passport — Adekunle Adebayo.pdf', type: 'Government ID', expiryDate: 'Aug 14, 2029', status: 'Verified', uploadedOn: 'Mar 2, 2021', fileSize: '1.9 MB' }),
   companyDoc({ name: 'Utility Bill (Apr 2026).pdf', type: 'Proof of Address', expiryDate: 'Jul 30, 2026', status: 'Expiring Soon', uploadedOn: 'May 2, 2026', fileSize: '640 KB' }),
-  companyDoc({ name: 'GTBank Account Confirmation Letter.pdf', type: 'Bank Verification', expiryDate: '—', status: 'Verified', uploadedOn: 'Mar 3, 2021', fileSize: '310 KB' }),
+  companyDoc({ name: 'GTBank Account Confirmation Letter.pdf', type: 'Bank Verification', number: '•••••••4821', expiryDate: '—', status: 'Verified', uploadedOn: 'Mar 3, 2021', fileSize: '310 KB' }),
   companyDoc({ name: 'Goods-in-Transit Insurance Policy.pdf', type: 'Goods-in-Transit Insurance', expiryDate: 'Dec 31, 2026', status: 'Valid', uploadedOn: 'Jan 4, 2026', fileSize: '2.2 MB' }),
 
   // ---- Drivers ---------------------------------------------------------------

@@ -738,11 +738,11 @@ export function startCompanyWorkspace(account, company = {}) {
     industry: 'Haulage & Freight', rcNumber: company.rcNumber || '', email: company.email || account.email, phone: company.phone || account.phone,
     address: company.address || '', founded: company.founded || '', verification: 'Pending Verification', rating: null, reviewCount: 0,
     walletBalance: 0, logoTone: 'var(--tk-blue)', fleetSize: company.fleetSize || '', regions: company.regions || [],
-    frontPerson: { name: account.name, role: company.frontPersonRole || account.title || 'Director', email: account.email, phone: account.phone },
+    director: { name: account.name, role: account.title || 'Director', dob: '', email: account.email, phone: account.phone },
   }]);
   ['trucks', 'drivers', 'trips', 'payoutRequests', 'walletTransactions', 'maintenance', 'reviews', 'supportTickets', 'documents'].forEach((d) => setRows(d, []));
   setRows('jobs', getSnapshot('jobs').filter((j) => j.status === 'Pending' || j.status === 'Quoted').map((j) => ({ ...j, status: 'Pending', myBid: null, saved: false })));
-  setRows('walletSummary', [{ balance: 0, pendingPayout: 0, earningsThisMonth: 0, earningsLastMonth: 0, completedTripsThisMonth: 0, bankAccount: null }]);
+  setRows('walletSummary', [{ balance: 0, pendingPayout: 0, earningsThisMonth: 0, earningsLastMonth: 0, completedTripsThisMonth: 0, monthlyTrend: [], bankAccount: null }]);
   setRows('reviewSummary', []);
   setRows('notifications', [{ id: 'NTF-WELCOME', type: 'account', icon: 'party-popper', tone: 'success', title: 'Welcome to Trukkas', body: 'Finish verifying your company to start bidding on jobs.', read: false, createdAt: 'Just now', link: '/dashboard' }]);
   setRows('teamMembers', [{ id: 'USR-OWNER', accountId: account.id, name: account.name, email: account.email, phone: account.phone, roleId: 'owner', status: 'Active', twoFactor: false, lastActive: 'Now', joined: today() }]);

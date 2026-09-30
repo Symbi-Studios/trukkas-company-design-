@@ -99,7 +99,7 @@ export function Onboarding() {
   const [step, setStep] = useState(0);
   const [created, setCreated] = useState(false);
   const [form, setForm] = useState({ name: '', email: SIGNUP_DEMO_EMAIL, password: '', confirm: '', terms: false, phone: '+234 ' });
-  const [biz, setBiz] = useState({ name: '', rcNumber: '', entity: 'Limited Liability Company', founded: '', email: '', phone: '', address: '', state: 'Lagos', fleetSize: '', regions: [], role: 'Director' });
+  const [biz, setBiz] = useState({ name: '', rcNumber: '', entity: 'Limited Liability Company', founded: '', email: '', phone: '', address: '', state: 'Lagos', fleetSize: '', regions: [], role: 'Director', directorName: '', directorDob: '' });
   const [truck, setTruck] = useState({ plate: '', vehicleClass: 'Head', make: '', model: '', year: '' });
   const [uploadType, setUploadType] = useState(null);
   const [error, setError] = useState('');
@@ -129,7 +129,7 @@ export function Onboarding() {
     const result = await signUpAccount({ name: form.name, email: form.email, phone: form.phone.trim(), password: form.password }).unwrap().catch((err) => { throw new Error(getApiErrorMessage(err)); });
     setCreated(true);
     setForm((f) => ({ ...f, password: '', confirm: '' }));
-    setBiz((b) => ({ ...b, email: result.account.email, phone: result.account.phone }));
+    setBiz((b) => ({ ...b, email: result.account.email, phone: result.account.phone, directorName: result.account.name }));
     go(3);
   }
 
@@ -137,13 +137,14 @@ export function Onboarding() {
     event.preventDefault();
     setError('');
     if (!biz.name.trim() || !biz.rcNumber.trim() || !biz.address.trim()) { setError('Company name, RC/BN number and address are required.'); return; }
+    if (!biz.directorName.trim() || !biz.directorDob) { setError('Enter the director’s full name and date of birth.'); return; }
     setBusy(true);
     await updateCompanyProfile({
       name: biz.name.trim(), shortName: biz.name.trim().split(' ')[0], rcNumber: biz.rcNumber.trim().toUpperCase(), entityType: biz.entity,
       founded: biz.founded, email: biz.email, phone: biz.phone, address: `${biz.address.trim()}, ${biz.state}, Nigeria`, fleetSize: biz.fleetSize, regions: biz.regions,
-      frontPerson: { name: account.name, role: biz.role, email: account.email, phone: account.phone },
+      director: { name: biz.directorName.trim(), role: biz.role, dob: biz.directorDob, email: account.email, phone: account.phone },
     });
-    dispatch(setCredentials({ account: { ...account, companyName: biz.name.trim(), title: biz.role } }));
+    dispatch(setCredentials({ account: { ...account, companyName: biz.name.trim(), title: biz.directorName.trim() === account.name ? biz.role : account.title } }));
     setBusy(false);
     go(4);
   }
@@ -258,7 +259,15 @@ export function Onboarding() {
               <div className={styles.two}>
                 <Select label="State" value={biz.state} options={STATES} onChange={(e) => setBiz({ ...biz, state: e.target.value })} />
                 <Select label="Fleet Size" value={biz.fleetSize} placeholder="How many trucks?" options={FLEET_SIZES} onChange={(e) => setBiz({ ...biz, fleetSize: e.target.value })} />
-                <Select label="Your Role" value={biz.role} options={['Director', 'Managing Director', 'CEO / Founder', 'Operations Manager', 'Fleet Manager']} onChange={(e) => setBiz({ ...biz, role: e.target.value })} />
+              </div>
+              <div>
+                <span className={styles.label}>Director details</span>
+                <p className={styles.lead} style={{ marginBottom: 12 }}>The director operating this account. Their NIN, BVN and government ID are verified in the next step.</p>
+                <div className={styles.two}>
+                  <TextField label="Director’s Full Name" required value={biz.directorName} onChange={(e) => setBiz({ ...biz, directorName: e.target.value })} placeholder="As on their government ID" />
+                  <TextField label="Date of Birth" type="date" required value={biz.directorDob} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setBiz({ ...biz, directorDob: e.target.value })} />
+                  <Select label="Director’s Role" value={biz.role} options={['Director', 'Managing Director', 'CEO / Founder', 'Executive Director']} onChange={(e) => setBiz({ ...biz, role: e.target.value })} />
+                </div>
               </div>
               <div>
                 <span className={styles.label}>Where do you operate?</span>

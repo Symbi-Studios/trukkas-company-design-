@@ -102,17 +102,6 @@ export const jobs = [
     cargoValue: 12500000,
     cargoDescription: 'General goods, palletised. Standard handling.',
   }),
-  job({
-    id: 'TK-2026-000065', title: 'Empty Container Hijack (1 x 40ft)', category: 'Container', jobType: 'Hijack', cargoType: 'Empty Container',
-    origin: 'Kano, Kano State', destination: 'Sharada Export Warehouse, Kano', distanceKm: 18,
-    weightKg: 3800, equipment: 'Container (40ft)', quantity: '1 Container (40ft)', budget: 180000, negotiable: true,
-    pickupDate: 'Jun 3, 2026', deliveryDate: 'Jun 3, 2026',
-    postedBy: 'ORG-KANOGLOBAL', postedOn: 'May 23, 2026 · 11:00 AM', postedAgo: '4 days ago', closesAt: 'Closes in 6 days', closesInDays: 6,
-    status: 'Pending', requirement: 'Truck Required',
-    hijack: { shippingLine: 'Maersk', containerSize: '40ft', returnTerminal: 'Apapa Port, Lagos' },
-    requirements: ['Must be carrying an empty Maersk 40ft container due for return', 'Container must be clean and cargo-worthy', 'Shipping line interchange (EIR) available on request'],
-    cargoDescription: 'Exporter needs an empty Maersk 40ft container for stuffing in Kano. Deliver the empty you would otherwise return to Apapa and skip the long empty run south.',
-  }),
 
   // ---- Quoted: bid submitted, awaiting the forwarder's decision -------
   job({

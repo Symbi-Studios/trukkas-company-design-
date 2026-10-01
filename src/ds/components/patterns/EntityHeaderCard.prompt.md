@@ -1,4 +1,4 @@
-Opens a company, verification, demurrage or triangulation record. Facts are separated by vertical hairlines, never boxed.
+Opens a company, verification, or demurrage record. Facts are separated by vertical hairlines, never boxed.
 
 ```jsx
 <EntityHeaderCard name="Global Haulage Ltd" badges={<Badge>Active</Badge>}

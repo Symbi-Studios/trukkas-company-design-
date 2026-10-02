@@ -7,6 +7,7 @@ import {
   PageHeader, SearchField, StatCard,
 } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
+import { syncTopBarSearch } from '../pageSearch.js';
 import { setTruckStatus } from '../mock/api.js';
 import { plateSlug, VEHICLE_CLASSES, vehicleStatusTone } from '../domain/vehicles.js';
 
@@ -74,7 +75,7 @@ export function Fleet() {
             ))}
           </div>
           <div style={{ padding: 14, borderBottom: '1px solid var(--tk-line)' }}>
-            <SearchField placeholder="Search vehicles..." value={query} onChange={(e) => setQuery(e.target.value)} />
+            <SearchField placeholder="Search vehicles..." value={query} onChange={(e) => { setQuery(e.target.value); syncTopBarSearch(e.target.value); }} />
           </div>
           {filtered.length === 0 ? (
             <EmptyState icon="truck" title="No vehicles found" description="Try a different tab or search term." />

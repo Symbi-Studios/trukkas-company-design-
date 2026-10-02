@@ -114,12 +114,12 @@ export function VehicleMaintenance() {
         </>
       }
     >
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 12, marginBottom: 16 }}>
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 16 }}>
         <StatCard icon="wrench" label="Total Services" value={records.length} labelPosition="bottom" />
         <StatCard icon="circle-check" tint="green" label="Completed" value={completed} caption={`${records.length ? Math.round((completed / records.length) * 100) : 0}%`} />
         <StatCard icon="clock-3" tint="amber" label="Upcoming" value={upcoming} caption={`${records.length ? Math.round((upcoming / records.length) * 100) : 0}%`} />
         <StatCard icon="triangle-alert" tint="red" label="Overdue" value={overdue} caption={`${records.length ? Math.round((overdue / records.length) * 100) : 0}%`} />
-        <StatCard icon="banknote" tint="blue" label="Total Maintenance Cost" value={<span style={{ fontSize: 18, whiteSpace: 'nowrap' }}>{formatNaira(totalCost)}</span>} caption="All time" />
+        <StatCard icon="banknote" tint="blue" label="Total Maintenance Cost" value={formatNaira(totalCost)} caption="All time" />
       </section>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h3 className="tk-title" style={{ margin: 0 }}>Maintenance Records</h3>

@@ -30,7 +30,7 @@ const TABS = [
 function Stars({ rating, size = 13 }) {
   return (
     <span className={styles.stars} aria-label={`${rating} out of 5`}>
-      {[1, 2, 3, 4, 5].map((n) => <Icon key={n} name="star" size={size} color={n <= Math.round(rating) ? 'var(--tk-warning)' : 'var(--tk-line-strong)'} />)}
+      {[1, 2, 3, 4, 5].map((n) => <Icon key={n} name="star" filled size={size} color={n <= Math.round(rating) ? 'var(--tk-warning)' : 'var(--tk-line-strong)'} />)}
     </span>
   );
 }

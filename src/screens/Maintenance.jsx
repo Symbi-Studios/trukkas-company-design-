@@ -7,6 +7,7 @@ import {
   Select, StatCard, TextField,
 } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
+import { syncTopBarSearch } from '../pageSearch.js';
 import { createMaintenance, updateMaintenance } from '../mock/api.js';
 import { plateSlug } from '../domain/vehicles.js';
 import { formatNaira } from '../mock/format.js';
@@ -66,7 +67,7 @@ export function Maintenance() {
       </section>
       <Card pad="none">
         <div style={{ padding: 14, borderBottom: '1px solid var(--tk-line)' }}>
-          <SearchField placeholder="Search maintenance, trucks, service type..." value={query} onChange={(e) => setQuery(e.target.value)} />
+          <SearchField placeholder="Search maintenance, trucks, service type..." value={query} onChange={(e) => { setQuery(e.target.value); syncTopBarSearch(e.target.value); }} />
         </div>
         {filtered.length === 0 ? (
           <EmptyState icon="wrench" title="No maintenance records" />

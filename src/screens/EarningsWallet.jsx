@@ -11,6 +11,7 @@ import { EarningsExpensesChart } from '../components/EarningsExpensesChart.jsx';
 import { posterFor } from './Jobs.jsx';
 import { useCollection } from '../mock/useCollection.js';
 import { requestWithdrawal } from '../mock/api.js';
+import { useTopBarSearch } from '../pageSearch.js';
 import { formatNaira } from '../mock/format.js';
 import { PinPrompt } from '../components/SecurityInputs.jsx';
 
@@ -55,9 +56,15 @@ export function EarningsWallet() {
   const trips = useCollection('trips') || [];
   const jobs = useCollection('jobs') || [];
   const company = useCollection('companyProfile')?.[0];
+  const [query, setQuery] = useState('');
+  useTopBarSearch(setQuery);
+  const q = query.trim().toLowerCase();
+  const matches = (...values) => !q || values.some((v) => String(v || '').toLowerCase().includes(q));
   const jobRows = useMemo(() => jobs
     .map((job) => ({ job, earnings: jobEarnings(job, tripsForJob(trips, job.id), payouts) }))
     .filter((r) => r.earnings.rows.length > 0), [jobs, trips, payouts]);
+  const visibleJobRows = jobRows.filter(({ job }) => matches(job.id, jobTitle(job), posterFor(job.postedBy).name));
+  const visibleTransactions = transactions.filter((t) => matches(t.id, t.desc, t.date, t.type, t.status, t.payoutId));
   if (!wallet) return null;
   const openPayoutReceipt = (payoutId) => {
     const payout = payouts.find((p) => p.id === payoutId);
@@ -67,7 +74,7 @@ export function EarningsWallet() {
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
       <PageHeader title="Earnings & Wallet" description="Track your wallet balance, pending payouts, and monthly earnings." actions={<><Button variant="outline" icon="hand-coins" onClick={() => navigate('/payouts')}>Request Payout</Button><Button icon="banknote" onClick={() => setWithdrawOpen(true)}>Withdraw Funds</Button></>} />
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 16 }}>
+      <section className="tk-money-stats">
         <StatCard icon="wallet" tint="green" label="Wallet Balance" value={formatNaira(wallet.balance)} caption="Available balance" />
         <StatCard icon="hourglass" tint="amber" label="Pending Payout" value={formatNaira(wallet.pendingPayout)} caption="In review" />
         <StatCard icon="banknote" tint="blue" label="Earnings This Month" value={formatNaira(wallet.earningsThisMonth)} delta="18%" caption="vs last month" />
@@ -84,7 +91,7 @@ export function EarningsWallet() {
       <Card pad="none">
         <h3 className="tk-title" style={{ margin: 0, padding: '16px 16px 0' }}>Earnings by Job</h3>
         <DataTable
-          rows={jobRows}
+          rows={visibleJobRows}
           rowKey={(r) => r.job.id}
           onRowClick={(r) => navigate(`/jobs/${r.job.id}`)}
           columns={[
@@ -96,11 +103,12 @@ export function EarningsWallet() {
             { key: 'receipt', header: 'Receipt', align: 'center', width: 80, render: (r) => <IconButton icon="receipt" tone="outline" size={30} label={`Earnings receipt for ${r.job.id}`} onClick={(e) => { e.stopPropagation(); setReceipt(jobReceipt(r.job, r.earnings, { company, poster: posterFor(r.job.postedBy) })); }} /> },
           ]}
         />
+        {q && visibleJobRows.length === 0 && <p className="tk-meta" style={{ margin: 0, padding: 16 }}>No jobs match your search.</p>}
       </Card>
       <Card pad="none">
         <h3 className="tk-title" style={{ margin: 0, padding: '16px 16px 0' }}>Transaction History</h3>
         <DataTable
-          rows={transactions}
+          rows={visibleTransactions}
           rowKey={(t) => t.id}
           columns={[
             { key: 'date', header: 'Date', render: (t) => t.date },
@@ -112,6 +120,7 @@ export function EarningsWallet() {
             { key: 'receipt', header: 'Receipt', align: 'center', width: 80, render: (t) => (t.payoutId ? <IconButton icon="receipt" tone="outline" size={30} label={`Receipt for ${t.payoutId}`} onClick={() => openPayoutReceipt(t.payoutId)} /> : <span className="tk-meta">—</span>) },
           ]}
         />
+        {q && visibleTransactions.length === 0 && <p className="tk-meta" style={{ margin: 0, padding: 16 }}>No transactions match your search.</p>}
       </Card>
       <ReceiptModal receipt={receipt} open={!!receipt} onClose={() => setReceipt(null)} />
       <WithdrawModal open={withdrawOpen} onClose={() => setWithdrawOpen(false)} available={wallet.balance} bank={wallet.bankAccount} />

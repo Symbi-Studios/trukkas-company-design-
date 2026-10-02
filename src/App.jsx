@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation.js";
 import { useDispatch, useSelector } from "react-redux";
 import {
   AppShell,
-  Avatar,
   CompanySwitcher,
   Sidebar,
   SidebarNavItem,
@@ -19,6 +18,8 @@ import { baseApi } from "./store/api/baseApi.js";
 import { AppLoadingScreen } from "./components/AppLoadingScreen.jsx";
 import { useCollection } from "./mock/useCollection.js";
 import { setActiveAccount, startCompanyWorkspace } from "./mock/api.js";
+import { onScreenSearch } from "./pageSearch.js";
+import { searchWorkspace } from "./domain/search.js";
 
 const PUBLIC_ROUTES = new Set([
   "/login",
@@ -44,10 +45,21 @@ export function CompanyShell({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const jobs = useCollection("jobs") || [];
+  const trips = useCollection("trips") || [];
+  const trucks = useCollection("trucks") || [];
+  const drivers = useCollection("drivers") || [];
+  const payouts = useCollection("payoutRequests") || [];
   const [section, detailId] = pathname.split("/").slice(1);
   // A won/past job's detail page belongs to My Jobs; open requests to Find Jobs.
   const wonJob = section === "jobs" && detailId && jobs.find((j) => j.id === detailId && j.status !== "Pending" && j.status !== "Quoted");
   const activeId = wonJob ? "my-jobs" : section || "dashboard";
+  // List screens filter as you type and name what they search; everywhere the
+  // dropdown offers matches from across the workspace.
+  const searchPlaceholder = (!detailId && SEARCH_PLACEHOLDER[activeId]) || "Search jobs, trips, trucks, drivers...";
+  const searchResults = React.useMemo(
+    () => searchWorkspace(globalSearch, { jobs, trips, trucks, drivers, payouts }),
+    [globalSearch, jobs, trips, trucks, drivers, payouts],
+  );
 
   React.useEffect(() => {
     setMounted(true);
@@ -78,6 +90,8 @@ export function CompanyShell({ children }) {
     setGlobalSearch("");
     setMobileNavOpen(false);
   }, [pathname]);
+
+  React.useEffect(() => onScreenSearch(setGlobalSearch), []);
 
   function toggleNavigation() {
     if (window.matchMedia("(max-width: 1023px)").matches) setMobileNavOpen((open) => !open);
@@ -120,46 +134,6 @@ export function CompanyShell({ children }) {
           onSelect={(company) => dispatch(setActiveCompany(company.id))}
         />
       }
-      footer={
-        !collapsed && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "10px 8px",
-              borderRadius: "var(--tk-r-lg)",
-              border: "1px solid var(--tk-line)",
-              background: "var(--tk-surface-sunk)",
-            }}
-          >
-            <Avatar name={account.name} src={profile?.photoUrl || undefined} size={32} tone="var(--tk-navy)" />
-            <span style={{ minWidth: 0 }}>
-              <span
-                style={{
-                  display: "block",
-                  font: "600 13px/18px var(--tk-font-sans)",
-                  color: "var(--tk-ink-900)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {account.name}
-              </span>
-              <span
-                style={{
-                  display: "block",
-                  font: "400 12px/16px var(--tk-font-sans)",
-                  color: "var(--tk-ink-400)",
-                }}
-              >
-                {account.role}
-              </span>
-            </span>
-          </div>
-        )
-      }
     >
       {NAV.map((group) => (
         <React.Fragment key={group.section}>
@@ -190,7 +164,7 @@ export function CompanyShell({ children }) {
         <TopBar
           onMenu={toggleNavigation}
           notifications={unreadCount}
-          searchPlaceholder={SEARCH_PLACEHOLDER[activeId]}
+          searchPlaceholder={searchPlaceholder}
           searchValue={globalSearch}
           onSearch={(event) => {
             setGlobalSearch(event.target.value);
@@ -200,6 +174,8 @@ export function CompanyShell({ children }) {
               }),
             );
           }}
+          searchResults={searchResults}
+          onSearchSelect={(item) => router.push(item.to)}
           health={null}
           onNotifications={() => router.push("/notifications")}
           onViewProfile={() => router.push("/profile")}

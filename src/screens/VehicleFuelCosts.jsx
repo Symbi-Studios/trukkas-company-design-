@@ -40,7 +40,7 @@ export function VehicleFuelCosts() {
         </Card>
       }
     >
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 12, marginBottom: 20 }}>
+      <section className="tk-money-stats" data-fit style={{ gap: 12, marginBottom: 20 }}>
         <StatCard icon="wrench" label="Total Maintenance Cost" value={formatNaira(totalMaintenanceCost)} labelPosition="bottom" />
         <StatCard icon="banknote" tint="green" label="Total Trip Earnings" value={formatNaira(totalEarnings)} labelPosition="bottom" />
         <StatCard icon="gauge" tint="purple" label="Net (Earnings − Maintenance)" value={formatNaira(totalEarnings - totalMaintenanceCost)} labelPosition="bottom" />

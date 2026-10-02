@@ -5,6 +5,7 @@ import { Link, useNavigate } from '../router.js';
 import { Badge, Button, Card, DataTable, EmptyState, Icon, Modal, PageHeader, TextField, Textarea } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
 import { createSupportTicket } from '../mock/api.js';
+import { useTopBarSearch } from '../pageSearch.js';
 import { FileDrop } from '../components/FileDrop.jsx';
 
 const STATUS_TONE = { Open: 'info', Pending: 'warning', Resolved: 'success' };
@@ -42,6 +43,12 @@ export function Support() {
   const tickets = useCollection('supportTickets') || [];
   const faqs = useCollection('faqs') || [];
   const [newOpen, setNewOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  useTopBarSearch(setQuery);
+  const q = query.trim().toLowerCase();
+  const matches = (...values) => !q || values.some((v) => String(v || '').toLowerCase().includes(q));
+  const visibleTickets = tickets.filter((t) => matches(t.id, t.subject, t.category, t.status));
+  const visibleFaqs = faqs.filter((f) => matches(f.question, f.answer));
 
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
@@ -50,9 +57,11 @@ export function Support() {
         <h3 className="tk-title" style={{ margin: 0, padding: '16px 16px 0' }}>Your Tickets</h3>
         {tickets.length === 0 ? (
           <EmptyState icon="life-buoy" title="No support tickets" description="Reach out to us any time — we usually respond within a few hours." />
+        ) : visibleTickets.length === 0 ? (
+          <EmptyState icon="search" title="No tickets match your search" />
         ) : (
           <DataTable
-            rows={tickets}
+            rows={visibleTickets}
             rowKey={(t) => t.id}
             onRowClick={(t) => navigate(`/support/${t.id}`)}
             columns={[
@@ -68,7 +77,8 @@ export function Support() {
       <Card>
         <h3 className="tk-title" style={{ margin: '0 0 12px' }}>Frequently Asked Questions</h3>
         <div style={{ display: 'grid', gap: 4 }}>
-          {faqs.map((f) => (
+          {visibleFaqs.length === 0 && <span className="tk-meta">No help articles match your search.</span>}
+          {visibleFaqs.map((f) => (
             <details key={f.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--tk-line)' }}>
               <summary style={{ cursor: 'pointer', font: '600 13px/20px var(--tk-font-sans)', color: 'var(--tk-ink-900)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Icon name="circle-help" size={15} color="var(--tk-blue)" /> {f.question}

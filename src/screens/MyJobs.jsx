@@ -6,6 +6,7 @@ import {
   Badge, Button, Card, DataTable, EmptyState, IconButton, PageHeader, Pagination, ProgressBar, SearchField, Select, StatCard, Tabs,
 } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
+import { syncTopBarSearch } from '../pageSearch.js';
 import { jobRate, jobStatusTone, jobTitle } from '../domain/jobs.js';
 import { dispatchSummary, shortPlace, tripsForJob } from '../domain/trips.js';
 import { jobEarnings, jobReceipt } from '../domain/payouts.js';
@@ -99,9 +100,9 @@ export function MyJobs() {
           <Tabs value={tab} onChange={(v) => { setTab(v); setPage(1); }} items={TABS.map((t) => ({ ...t, count: counts[t.value] }))} />
         </div>
         <div className={styles.toolbar}>
-          <SearchField placeholder="Search by job ID, trip ID, route, cargo, forwarder..." value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} />
+          <SearchField placeholder="Search by job ID, trip ID, route, cargo, forwarder..." value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); syncTopBarSearch(e.target.value); }} />
           <Select value={forwarder} placeholder="All Forwarders" options={forwarders} onChange={(e) => { setForwarder(e.target.value); setPage(1); }} />
-          {(forwarder || query) && <Button variant="ghost" onClick={() => { setForwarder(''); setQuery(''); }}>Clear</Button>}
+          {(forwarder || query) && <Button variant="ghost" onClick={() => { setForwarder(''); setQuery(''); syncTopBarSearch(''); }}>Clear</Button>}
         </div>
         {pageRows.length === 0 ? (
           <EmptyState icon="briefcase" title="No jobs in this view" description="Jobs appear here once you place a bid in Find Jobs." action={<Button variant="outline" onClick={() => navigate('/jobs')}>Find Jobs</Button>} />

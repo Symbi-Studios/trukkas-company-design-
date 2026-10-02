@@ -6,6 +6,8 @@ export interface IconProps extends React.HTMLAttributes<HTMLSpanElement> {
   size?: number;
   /** defaults to currentColor */
   color?: string;
+  /** paint the solid variant where one exists (currently "star") */
+  filled?: boolean;
   title?: string;
 }
 export declare function Icon(props: IconProps): JSX.Element;

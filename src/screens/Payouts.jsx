@@ -6,6 +6,7 @@ import {
   Badge, Banner, Button, Card, Checkbox, ChoiceCard, DataTable, EmptyState, IconButton, LabelValue, Modal, PageHeader, SearchField, StatCard,
 } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
+import { syncTopBarSearch } from '../pageSearch.js';
 import { requestPayout } from '../mock/api.js';
 import { eligibleTrips, payoutReceipt, payoutStatusTone, payoutTotals, summarizePayouts } from '../domain/payouts.js';
 import { jobTitle } from '../domain/jobs.js';
@@ -119,7 +120,7 @@ export function Payouts() {
         description="Request payouts for completed trips and download a receipt for every payout."
         actions={<Button icon="banknote" disabled={eligible.length === 0} onClick={() => setRequestOpen(true)}>Request Payout</Button>}
       />
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
+      <section className="tk-money-stats">
         <StatCard icon="hand-coins" tint="teal" label="Available to Request" value={formatNaira(eligibleNet)} caption={`${eligible.length} completed trip(s)`} />
         <StatCard icon="banknote" label="Total Paid Out" value={formatNaira(summary.paid)} />
         <StatCard icon="hourglass" tint="amber" label="In Progress" value={formatNaira(summary.processing)} caption="Requested or processing" />
@@ -132,7 +133,7 @@ export function Payouts() {
       )}
       <Card pad="none">
         <div style={{ padding: 14, borderBottom: '1px solid var(--tk-line)' }}>
-          <SearchField placeholder="Search payouts, trips, jobs, references..." value={query} onChange={(e) => setQuery(e.target.value)} />
+          <SearchField placeholder="Search payouts, trips, jobs, references..." value={query} onChange={(e) => { setQuery(e.target.value); syncTopBarSearch(e.target.value); }} />
         </div>
         {filtered.length === 0 ? (
           <EmptyState icon="banknote" title="No payouts yet" />

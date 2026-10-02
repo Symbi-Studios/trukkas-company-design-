@@ -5,17 +5,24 @@ import { useNavigate } from '../router.js';
 import { Button, Card, EmptyState, NotificationItem, PageHeader } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
 import { markAllNotificationsRead, markNotificationRead } from '../mock/api.js';
+import { useTopBarSearch } from '../pageSearch.js';
 
-const TONE = { document: 'red', job: 'blue', payout: 'green', maintenance: 'orange', review: 'purple', system: 'blue' };
+export const NOTIFICATION_TONE = { document: 'red', job: 'blue', payout: 'green', maintenance: 'orange', review: 'purple', system: 'blue' };
 
 export function NotificationCenter() {
   const navigate = useNavigate();
   const notifications = useCollection('notifications') || [];
   const [filter, setFilter] = useState('all');
+  const [query, setQuery] = useState('');
+  useTopBarSearch(setQuery);
 
-  const filtered = useMemo(() => notifications
-    .filter((n) => filter === 'all' || (filter === 'unread' && !n.read))
-    .sort((a, b) => (a.read === b.read ? 0 : a.read ? 1 : -1)), [notifications, filter]);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return notifications
+      .filter((n) => filter === 'all' || (filter === 'unread' && !n.read))
+      .filter((n) => !q || [n.title, n.body].some((v) => String(v || '').toLowerCase().includes(q)))
+      .sort((a, b) => (a.read === b.read ? 0 : a.read ? 1 : -1));
+  }, [notifications, filter, query]);
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   async function open(notification) {
@@ -43,11 +50,11 @@ export function NotificationCenter() {
       </div>
       <Card pad="none">
         {filtered.length === 0 ? (
-          <EmptyState icon="bell" title="No notifications" />
+          <EmptyState icon="bell" title={query ? 'No notifications match your search' : 'No notifications'} />
         ) : (
           <div style={{ padding: '0 16px' }}>
             {filtered.map((n) => (
-              <NotificationItem key={n.id} icon={n.icon} tone={TONE[n.type] || 'blue'} title={n.title} preview={n.body} meta={n.createdAt} unread={!n.read} onClick={() => open(n)} />
+              <NotificationItem key={n.id} icon={n.icon} tone={NOTIFICATION_TONE[n.type] || 'blue'} title={n.title} preview={n.body} meta={n.createdAt} unread={!n.read} onClick={() => open(n)} />
             ))}
           </div>
         )}

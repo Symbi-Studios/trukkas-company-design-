@@ -15,6 +15,7 @@ const TINT = {
 /**
  * The KPI tile that opens every console page: icon tile, label, big figure, delta or caption.
  * Set `labelPosition="bottom"` for the minimal variant — label sits under the value, no caption.
+ * The figure never wraps: it scales down to fit the card (see `.tk-stat-card` in styles.css).
  */
 export function StatCard({
   icon,
@@ -32,6 +33,13 @@ export function StatCard({
   const [bg, fg] = TINT[tint] || TINT.blue;
   const good = direction === "up";
   const labelBelow = labelPosition === "bottom";
+  const sideIcon = icon && layout !== "stack";
+  // Inputs for the fit-to-card type scale: how many characters the figure has,
+  // and how much of the card's inner width the icon tile and its gap take up.
+  const fit = {
+    "--tk-stat-len": typeof value === "string" || typeof value === "number" ? Math.max(1, String(value).length) : undefined,
+    "--tk-stat-chrome": sideIcon ? "60px" : "2px",
+  };
   const labelEl = (
     <span
       style={{
@@ -60,7 +68,7 @@ export function StatCard({
     </span>
   );
   return (
-    <Card style={{ display: "grid", gap: 12, minWidth: 0, ...style }}>
+    <Card className="tk-stat-card" style={{ display: "grid", gap: 12, minWidth: 0, ...fit, ...style }}>
       <div
         style={{
           display: "flex",

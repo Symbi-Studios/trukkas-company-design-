@@ -42,5 +42,5 @@ export function ScreenRouter({ screen }) {
   const Screen = screens[screen];
   if (Screen) return <Screen />;
   const item = NAV.flatMap((group) => group.items).find((entry) => entry.id === screen);
-  return <ScreenPlaceholder label={item?.label || screen} />;
+  return <ScreenPlaceholder label={item?.label} />;
 }

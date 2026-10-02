@@ -115,6 +115,32 @@
 .tk-table-wrap { width: 100%; overscroll-behavior-inline: contain; }
 .tk-data-table td { overflow-wrap: anywhere; }
 .tk-data-table tr:focus-visible { outline: 2px solid var(--tk-blue); outline-offset: -2px; }
+/* KPI figures stay on one line and shrink to fit their card instead of wrapping.
+   Size = free width / characters; a row can set --tk-stat-chars (e.g. 10 for
+   naira amounts) so all its cards scale together, and --tk-stat-metric-max to cap it. */
+.tk-stat-card { container-type: inline-size; }
+.tk-stat-card .tk-metric {
+  white-space: nowrap;
+  font-size: clamp(
+    16px,
+    calc((100cqi - var(--tk-stat-chrome, 60px)) / (max(var(--tk-stat-chars, 1), var(--tk-stat-len, 8)) * 0.6)),
+    var(--tk-stat-metric-max, var(--tk-metric-size))
+  );
+}
+/* Rows of naira amounts: four across needs ~215px a card, so halve the columns before that. */
+.tk-money-stats {
+  --tk-stat-chars: 10;
+  display: grid;
+  gap: var(--tk-grid-gap);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.tk-money-stats[data-fit] { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+@media (max-width: 1199px) {
+  .tk-money-stats:not([data-fit]) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 639px) {
+  .tk-money-stats:not([data-fit]) { grid-template-columns: minmax(0, 1fr); }
+}
 .tk-dropdown-menu { max-width: min(280px, calc(100vw - 24px)); max-height: min(520px, calc(100dvh - 24px)); overflow-y: auto; }
 
 @media (max-width: 1023px) {

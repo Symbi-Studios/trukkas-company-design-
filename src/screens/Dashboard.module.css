@@ -135,6 +135,8 @@
   z-index: 80;
 }
 .stats {
+  --tk-stat-chars: 10;
+  --tk-stat-metric-max: var(--tk-title-size);
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--tk-space-4);
@@ -145,7 +147,6 @@
   gap: var(--tk-space-3) !important;
 }
 .stats :global(.tk-metric) {
-  font-size: var(--tk-title-size);
   line-height: var(--tk-title-lh);
   letter-spacing: 0;
 }
@@ -464,7 +465,7 @@
   min-width: 0;
 }
 .compactTable table {
-  min-width: 570px;
+  min-width: 0 !important;
 }
 .compactTable th {
   padding: var(--tk-space-2) var(--tk-space-3) !important;
@@ -479,6 +480,9 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.compactTable td[data-key="route"] {
+  white-space: normal;
 }
 .compactTable tr:hover {
   background: var(--tk-surface-soft) !important;
@@ -542,12 +546,14 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+@media (max-width: 1199px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 @media (max-width: 1050px) {
   .motto {
     display: none;
-  }
-  .stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .financeGrid {
     grid-template-columns: minmax(0, 1fr);

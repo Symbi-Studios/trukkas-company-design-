@@ -77,7 +77,7 @@ export function VehicleDetail() {
                       <strong style={{ font: '600 15px/20px var(--tk-font-sans)', color: 'var(--tk-ink-900)' }}>{driver.name}</strong>
                       <span className="tk-meta">{driver.phone}</span>
                       <span className="tk-meta" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Icon name="star" size={12} color="var(--tk-warning)" />{driver.rating?.toFixed(1) ?? '—'} · {driver.tripsCompleted} trips · {driver.licenseClass}
+                        <Icon name="star" filled size={12} color="var(--tk-warning)" />{driver.rating?.toFixed(1) ?? '—'} · {driver.tripsCompleted} trips · {driver.licenseClass}
                       </span>
                     </span>
                   </div>

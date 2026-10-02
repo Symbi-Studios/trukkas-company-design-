@@ -6,7 +6,7 @@ export const TRIP_PROGRESS = { Assigned: 10, 'Picked Up': 35, 'In Transit': 60, 
 
 export const TRIP_TABS = [
   { value: 'all', label: 'All Trips' },
-  { value: 'Upcoming', label: 'Upcoming' },
+  { value: 'Upcoming', label: 'Assigned' },
   { value: 'Active', label: 'Active' },
   { value: 'Completed', label: 'Completed' },
   { value: 'Cancelled', label: 'Cancelled' },
@@ -25,7 +25,7 @@ export const TRIP_ISSUE_TYPES = ['Delay', 'Breakdown', 'Accident', 'Cargo Damage
 
 export const TRIP_COST_CATEGORIES = ['Fuel', 'Tolls & Levies', 'Driver Allowance', 'Port Charges', 'Repairs', 'Other'];
 
-/** Tab bucket: Upcoming (assigned, not picked up), Active (on the road), Completed, Cancelled. */
+/** Tab bucket: Upcoming (labelled "Assigned": not picked up yet), Active (on the road), Completed, Cancelled. */
 export function tripPhase(trip) {
   if (!trip) return null;
   if (trip.status === 'Cancelled') return 'Cancelled';
@@ -48,22 +48,20 @@ export function isDriverFree(driver, trips) {
   return driver.status === 'Available' && !trips.some((t) => t.driverId === driver.id && isOpenTrip(t));
 }
 
-/** Headline status shown in badges: active trips read On Track / Delayed. */
-export function tripHealth(trip) {
-  const phase = tripPhase(trip);
-  if (phase === 'Active') return trip.delayed ? 'Delayed' : 'On Track';
-  return phase;
-}
-
-const HEALTH_TONE = { 'On Track': 'success', Delayed: 'danger', Upcoming: 'info', Completed: 'success', Cancelled: 'danger' };
-
-export function tripHealthTone(label) {
-  return HEALTH_TONE[label] || 'neutral';
-}
-
 const STATUS_TONE = {
   Assigned: 'info', 'Picked Up': 'info', 'In Transit': 'info', 'At Destination': 'warning', Completed: 'success', Cancelled: 'danger',
 };
+
+/** Headline status shown in badges: the trip's stage, or Delayed for an active trip running behind. */
+export function tripHealth(trip) {
+  if (!trip) return null;
+  if (tripPhase(trip) === 'Active' && trip.delayed) return 'Delayed';
+  return trip.status;
+}
+
+export function tripHealthTone(label) {
+  return label === 'Delayed' ? 'danger' : STATUS_TONE[label] || 'neutral';
+}
 
 export function tripStatusTone(status) {
   return STATUS_TONE[status] || 'neutral';

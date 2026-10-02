@@ -7,6 +7,7 @@ import {
   Pagination, Select, Tabs, Textarea, TextField,
 } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
+import { syncTopBarSearch } from '../pageSearch.js';
 import { placeBid, toggleSaveJob } from '../mock/api.js';
 import {
   JOB_CATEGORIES, JOB_SORTS, JOB_TYPES, closesInLabel, closesInTone, isMarketplaceJob, jobTitle, suggestedBidRange,
@@ -56,7 +57,7 @@ export function Stars({ rating }) {
   if (rating == null) return null;
   return (
     <span className={styles.stars} aria-label={`${rating} out of 5`}>
-      {[1, 2, 3, 4, 5].map((n) => <Icon key={n} name="star" size={12} color={n <= Math.round(rating) ? 'var(--tk-warning)' : 'var(--tk-line-strong)'} />)}
+      {[1, 2, 3, 4, 5].map((n) => <Icon key={n} name="star" filled size={12} color={n <= Math.round(rating) ? 'var(--tk-warning)' : 'var(--tk-line-strong)'} />)}
     </span>
   );
 }
@@ -367,7 +368,7 @@ export function Jobs() {
 
   const setField = (key) => (value) => setDraft((d) => ({ ...d, [key]: value }));
   const apply = () => { setFilters(draft); setPage(1); };
-  const reset = () => { setDraft(EMPTY_FILTERS); setFilters(EMPTY_FILTERS); setQuery(''); setBidsOnly(false); setPage(1); };
+  const reset = () => { setDraft(EMPTY_FILTERS); setFilters(EMPTY_FILTERS); setQuery(''); syncTopBarSearch(''); setBidsOnly(false); setPage(1); };
 
   async function handleBid(jobId, amount, message) {
     await placeBid(jobId, amount, message);

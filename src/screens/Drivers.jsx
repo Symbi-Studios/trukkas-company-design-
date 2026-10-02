@@ -7,6 +7,7 @@ import {
   SearchField, StatCard, TextField,
 } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
+import { syncTopBarSearch } from '../pageSearch.js';
 import { addDriver } from '../mock/api.js';
 
 const STATUS_TONE = { Available: 'success', 'On Trip': 'info', 'Off Duty': 'neutral' };
@@ -62,7 +63,7 @@ export function Drivers() {
       </section>
       <Card pad="none">
         <div style={{ padding: 14, borderBottom: '1px solid var(--tk-line)' }}>
-          <SearchField placeholder="Search drivers by name, license, phone..." value={query} onChange={(e) => setQuery(e.target.value)} />
+          <SearchField placeholder="Search drivers by name, license, phone..." value={query} onChange={(e) => { setQuery(e.target.value); syncTopBarSearch(e.target.value); }} />
         </div>
         {filtered.length === 0 ? (
           <EmptyState icon="user" title="No drivers found" />
@@ -76,7 +77,7 @@ export function Drivers() {
               { key: 'license', header: 'License', render: (d) => <span><span style={{ display: 'block' }}>{d.licenseNumber}</span><span className="tk-meta">{d.licenseClass}</span></span> },
               { key: 'truck', header: 'Assigned Truck', render: (d) => d.truckPlate || '—' },
               { key: 'status', header: 'Status', render: (d) => <Badge tone={STATUS_TONE[d.status]} dot>{d.status}</Badge> },
-              { key: 'rating', header: 'Rating', render: (d) => <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Icon name="star" size={13} color="var(--tk-warning)" />{d.rating?.toFixed(1) ?? '—'}</span> },
+              { key: 'rating', header: 'Rating', render: (d) => <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Icon name="star" filled size={13} color="var(--tk-warning)" />{d.rating?.toFixed(1) ?? '—'}</span> },
               { key: 'trips', header: 'Trips', render: (d) => d.tripsCompleted },
             ]}
           />

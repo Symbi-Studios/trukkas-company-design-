@@ -4,12 +4,57 @@ import { Avatar } from '../core/Avatar.jsx';
 import { SearchField } from '../forms/SearchField.jsx';
 import { DropdownMenu } from '../feedback/DropdownMenu.jsx';
 
-/** Sticky application bar: menu toggle, global search, system health, notifications, account. */
+/**
+ * Sticky application bar: menu toggle, global search, system health, notifications, account.
+ * `searchResults` ([{ section, total, items: [{ key, icon, label, meta, tag }] }]) opens a
+ * results dropdown under the search while it has text; picking a row calls `onSearchSelect(item)`.
+ */
 export function TopBar({ onMenu, searchPlaceholder = 'Search jobs, trucks, companies, exporters...',
                          health = 'System Health', notifications = 0, user, role, style,
-                         searchValue, onSearch, onNotifications, onViewProfile, onLogout, avatarSrc }) {
+                         searchValue, onSearch, searchResults, onSearchSelect,
+                         onNotifications, onViewProfile, onLogout, avatarSrc }) {
   const [accountOpen, setAccountOpen] = React.useState(false);
   const accountRef = React.useRef(null);
+  const [searchOpen, setSearchOpen] = React.useState(false);
+  const [active, setActive] = React.useState(0);
+  const searchRef = React.useRef(null);
+  const hasQuery = !!searchValue?.trim();
+  const hits = (searchResults || []).flatMap((group) => group.items);
+  const showResults = searchOpen && hasQuery && !!searchResults;
+
+  React.useEffect(() => { setActive(0); }, [searchValue]);
+
+  React.useEffect(() => {
+    function focusOnShortcut(event) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchRef.current?.querySelector('input')?.focus();
+      }
+    }
+    function closeOnOutsideClick(event) {
+      if (!searchRef.current?.contains(event.target)) setSearchOpen(false);
+    }
+    document.addEventListener('keydown', focusOnShortcut);
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    return () => {
+      document.removeEventListener('keydown', focusOnShortcut);
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+    };
+  }, []);
+
+  function pick(item) {
+    setSearchOpen(false);
+    searchRef.current?.querySelector('input')?.blur();
+    onSearchSelect?.(item);
+  }
+
+  function onSearchKeyDown(event) {
+    if (event.key === 'Escape') { setSearchOpen(false); return; }
+    if (!showResults || hits.length === 0) return;
+    if (event.key === 'ArrowDown') { event.preventDefault(); setActive((i) => (i + 1) % hits.length); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); setActive((i) => (i - 1 + hits.length) % hits.length); }
+    else if (event.key === 'Enter') { event.preventDefault(); pick(hits[active]); }
+  }
 
   React.useEffect(() => {
     if (!accountOpen) return undefined;
@@ -41,8 +86,55 @@ export function TopBar({ onMenu, searchPlaceholder = 'Search jobs, trucks, compa
           <Icon name="menu" size={16} />
         </button>
       )}
-      <SearchField className="tk-global-search" variant="global" placeholder={searchPlaceholder} style={{ flex: '0 1 440px' }}
-        value={searchValue} onChange={onSearch} />
+      <div ref={searchRef} className="tk-global-search" style={{ position: 'relative', flex: '0 1 440px', minWidth: 0 }}>
+        <SearchField variant="global" placeholder={searchPlaceholder} value={searchValue}
+          onChange={(event) => { setSearchOpen(true); onSearch?.(event); }}
+          onFocus={() => setSearchOpen(true)} onKeyDown={onSearchKeyDown}
+          role="combobox" aria-expanded={showResults} aria-controls="tk-global-search-results" aria-autocomplete="list" />
+        {showResults && (
+          <div id="tk-global-search-results" role="listbox" className="tk-scroll" style={{
+            position: 'absolute', left: 0, top: 'calc(100% + 6px)', zIndex: 100, width: '100%', minWidth: 'min(360px, calc(100vw - 24px))',
+            maxHeight: 'min(480px, calc(100dvh - 96px))', overflowY: 'auto', padding: 6, background: '#fff',
+            borderRadius: 'var(--tk-r-lg)', border: '1px solid var(--tk-line)', boxShadow: 'var(--tk-shadow-menu)',
+            animation: 'tk-menu-in var(--tk-dur) var(--tk-ease)',
+          }}>
+            {hits.length === 0 && (
+              <div style={{ padding: '14px 10px', font: '400 13px/18px var(--tk-font-sans)', color: 'var(--tk-ink-400)' }}>
+                No results for “{searchValue.trim()}”
+              </div>
+            )}
+            {searchResults.map((group) => (
+              <div key={group.section}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 10px 6px', font: '600 10px/14px var(--tk-font-sans)',
+                              letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--tk-ink-300)' }}>
+                  <span>{group.section}</span>
+                  {group.total > group.items.length && <span>{group.items.length} of {group.total}</span>}
+                </div>
+                {group.items.map((item) => {
+                  const hot = hits[active] === item;
+                  return (
+                    <button key={item.key} type="button" role="option" aria-selected={hot}
+                      onMouseEnter={() => setActive(hits.indexOf(item))} onClick={() => pick(item)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 10px', border: 0,
+                               borderRadius: 'var(--tk-r-sm)', cursor: 'pointer', textAlign: 'left',
+                               background: hot ? 'var(--tk-surface-sunk)' : 'transparent', transition: 'var(--tk-transition)' }}>
+                      <span style={{ width: 30, height: 30, flex: '0 0 auto', display: 'grid', placeItems: 'center',
+                                     borderRadius: 'var(--tk-r-sm)', background: 'var(--tk-blue-soft)', color: 'var(--tk-blue)' }}>
+                        <Icon name={item.icon || 'search'} size={15} />
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0, display: 'grid' }}>
+                        <span style={{ font: '600 13px/18px var(--tk-font-sans)', color: 'var(--tk-ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
+                        {item.meta && <span style={{ font: '400 12px/16px var(--tk-font-sans)', color: 'var(--tk-ink-400)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.meta}</span>}
+                      </span>
+                      {item.tag && <span style={{ flex: '0 0 auto', font: '500 11px/16px var(--tk-font-sans)', color: 'var(--tk-ink-400)' }}>{item.tag}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="tk-topbar-spacer" style={{ flex: 1 }} />
       <button className="tk-topbar-notifications" type="button" aria-label="Notifications" onClick={onNotifications}
         style={{ position: 'relative', width: 38, height: 38, display: 'grid', placeItems: 'center',

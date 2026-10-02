@@ -41,8 +41,9 @@ export const NAV = [
   },
 ];
 
+// Top-bar search placeholder per list screen, where typing also filters the
+// list. Screens without an entry get the general workspace-search placeholder.
 export const SEARCH_PLACEHOLDER = {
-  dashboard: 'Search jobs, trips, trucks, drivers...',
   jobs: 'Search jobs by ID, route, cargo, forwarder...',
   'my-jobs': 'Search your jobs by ID, trip, route, forwarder...',
   trips: 'Search trips by ID, job, truck, driver...',
@@ -55,6 +56,4 @@ export const SEARCH_PLACEHOLDER = {
   'ratings-reviews': 'Search reviews by job, driver, forwarder...',
   notifications: 'Search notifications...',
   support: 'Search support tickets and help articles...',
-  'company-settings': 'Search settings...',
-  profile: 'Search settings and activity...',
 };

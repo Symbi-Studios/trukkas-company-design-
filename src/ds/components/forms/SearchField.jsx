@@ -2,7 +2,7 @@ import React from 'react';
 import { Icon } from '../../assets/icons/Icon.jsx';
 
 /** Wide search input. variant="global" is the top-bar field with the ⌘K hint. */
-export function SearchField({ placeholder = 'Search…', variant = 'panel', shortcut = '⌘ K', style, className, ...rest }) {
+export function SearchField({ placeholder = 'Search…', variant = 'panel', shortcut = '⌘ K', style, className, onFocus, onBlur, ...rest }) {
   const [f, setF] = React.useState(false);
   const global = variant === 'global';
   return (
@@ -14,7 +14,8 @@ export function SearchField({ placeholder = 'Search…', variant = 'panel', shor
       transition: 'var(--tk-transition)', ...style,
     }}>
       <Icon name="search" size={16} color="var(--tk-ink-300)" />
-      <input placeholder={placeholder} onFocus={() => setF(true)} onBlur={() => setF(false)} {...rest}
+      <input placeholder={placeholder} {...rest}
+             onFocus={(e) => { setF(true); onFocus?.(e); }} onBlur={(e) => { setF(false); onBlur?.(e); }}
              style={{ flex: 1, border: 0, outline: 'none', background: 'transparent', minWidth: 0,
                       font: 'var(--tk-body-weight) var(--tk-body-size)/var(--tk-body-lh) var(--tk-font-sans)', color: 'var(--tk-ink-900)' }} />
       {global && (

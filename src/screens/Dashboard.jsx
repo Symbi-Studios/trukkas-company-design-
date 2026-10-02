@@ -3,14 +3,17 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Badge, Card, DataTable, DonutChart, Icon, LegendList, PageHeader,
+  Badge, Card, DataTable, DonutChart, Icon, LegendList, NotificationItem, PageHeader,
   ProgressBar, SectionCard, StatCard,
 } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
-import { tripPhase, tripStatusTone, withJobs } from '../domain/trips.js';
+import { markNotificationRead } from '../mock/api.js';
+import { recentActivity } from '../domain/activity.js';
+import { shortPlace, tripHealth, tripHealthTone, tripPhase, withJobs } from '../domain/trips.js';
 import { formatNaira } from '../mock/format.js';
 import { COMPANY_REQUIREMENTS, complianceFor, documentsFor } from '../domain/documents.js';
 import { EarningsExpensesChart } from '../components/EarningsExpensesChart.jsx';
+import { NOTIFICATION_TONE } from './NotificationCenter.jsx';
 import styles from './Dashboard.module.css';
 
 function StarRating({ rating, reviews, trend, breakdown }) {
@@ -28,7 +31,7 @@ function StarRating({ rating, reviews, trend, breakdown }) {
       <div className={styles.ratingRows}>
         {rows.map((row) => (
           <div key={row.stars}>
-            <span>{row.stars} <Icon name="star" size={11} /></span>
+            <span>{row.stars} <Icon name="star" filled size={11} /></span>
             <ProgressBar value={row.pct} color={row.stars === 5 ? 'var(--tk-success)' : row.stars === 4 ? 'var(--tk-teal)' : 'var(--tk-warning)'} height={16} />
             <small>{row.pct}%</small>
           </div>
@@ -71,6 +74,8 @@ export function Dashboard() {
   const trips = useCollection('trips') || [];
   const documents = useCollection('documents') || [];
   const maintenance = useCollection('maintenance') || [];
+  const notifications = useCollection('notifications') || [];
+  const transactions = useCollection('walletTransactions') || [];
   const wallet = useCollection('walletSummary')?.[0];
   const reviewSummary = useCollection('reviewSummary')?.[0];
   const company = useCollection('companyProfile')?.[0];
@@ -91,27 +96,29 @@ export function Dashboard() {
     const pendingJobs = jobs.filter((job) => job.status === 'Pending');
     const activeJobs = jobs.filter((job) => job.status === 'In Progress');
     const activeTrips = withJobs(trips, jobs).filter((trip) => tripPhase(trip) === 'Active');
-    const completedThisMonth = jobs.filter((job) => job.status === 'Completed');
     const maintenanceDue = maintenance.filter((record) => ['Upcoming', 'Overdue', 'In Progress'].includes(record.status));
     const activityFeed = trips.length === 0 ? [
       { text: 'Company workspace created', time: 'Just now', tone: 'var(--tk-success)' },
       ...trucks.slice(0, 3).map((t) => ({ text: `${t.plate} added to your fleet`, time: 'Just now', tone: 'var(--tk-blue)' })),
-    ] : [
-      { text: 'Payment received for TRP-0037', time: '1 day ago', tone: 'var(--tk-success)' },
-      { text: 'TK-2026-000041 marked In Transit', time: '2 days ago', tone: 'var(--tk-blue)' },
-      { text: 'Maintenance scheduled for LSD 123 XY', time: '3 days ago', tone: 'var(--tk-warning)' },
-      { text: 'Driver Daniel Etim added', time: '5 days ago', tone: 'var(--tk-purple)' },
-    ];
+    ] : recentActivity({ trips, transactions });
     const fleetStatus = [
       { label: 'Active', value: trucks.filter((t) => t.status === 'Active').length, color: 'var(--tk-success)' },
       { label: 'On Trip', value: trucks.filter((t) => t.status === 'On Trip').length, color: 'var(--tk-blue)' },
       { label: 'In Maintenance', value: trucks.filter((t) => t.status === 'In Maintenance').length, color: 'var(--tk-warning)' },
       { label: 'Inactive', value: trucks.filter((t) => t.status === 'Inactive').length, color: 'var(--tk-danger)' },
     ];
-    return { pendingJobs, activeJobs, activeTrips, completedThisMonth, maintenanceDue, activityFeed, fleetStatus };
-  }, [trucks, maintenance, jobs, trips, drivers]);
+    return { pendingJobs, activeJobs, activeTrips, maintenanceDue, activityFeed, fleetStatus };
+  }, [trucks, maintenance, jobs, trips, transactions]);
 
   const expiringDocs = documents.filter((d) => d.status === 'Expiring Soon' || d.status === 'Expired').length;
+  const unreadCount = notifications.filter((n) => !n.read).length;
+  // Unread first, then in the order the feed delivers them.
+  const latestNotifications = [...notifications].sort((a, b) => Number(a.read) - Number(b.read)).slice(0, 4);
+
+  async function openNotification(notification) {
+    if (!notification.read) await markNotificationRead(notification.id);
+    if (notification.link) router.push(notification.link);
+  }
 
   return (
     <div className={styles.dashboard}>
@@ -129,11 +136,8 @@ export function Dashboard() {
         <StatCard icon="user-round" tint="purple" label="Active Drivers" value={drivers.filter((d) => d.status !== 'Off Duty').length} caption="On duty" />
         <StatCard icon="briefcase" tint="red" label="Pending Job Requests" value={data.pendingJobs.length} caption="Require your action" />
         <StatCard icon="circle-check" label="Active Jobs" value={data.activeJobs.length} caption="In progress" />
-        <StatCard icon="check-check" tint="green" label="Completed Jobs" value={data.completedThisMonth.length} caption="This month" />
         <StatCard icon="wallet" tint="teal" label="Wallet Balance" value={formatNaira(wallet?.balance ?? 0)} caption="Available balance" />
         <StatCard icon="hourglass" tint="amber" label="Pending Payout" value={formatNaira(wallet?.pendingPayout ?? 0)} caption="In review" />
-        <StatCard icon="banknote" tint="green" label="Total Earnings (May)" value={formatNaira(wallet?.earningsThisMonth ?? 0)} delta={wallet?.earningsThisMonth ? '18%' : undefined} caption={wallet?.earningsThisMonth ? 'vs last month' : 'No earnings yet'} />
-        <StatCard icon="star" tint="purple" label="Average Rating" value={reviewSummary ? reviewSummary.average.toFixed(1) : '—'} caption={reviewSummary ? `(${reviewSummary.total} reviews)` : undefined} />
       </section>
 
       <section className={styles.financeGrid}>
@@ -148,11 +152,12 @@ export function Dashboard() {
               rows={data.pendingJobs.slice(0, 5)}
               rowKey={(job) => job.id}
               onRowClick={(job) => router.push(`/jobs/${job.id}`)}
+              tableLayout="fixed"
               columns={[
-                { key: 'id', header: 'Job ID', render: (job) => job.id },
-                { key: 'route', header: 'Route & Type', render: (job) => <span>{job.origin} → {job.destination}<br /><span className="tk-meta">{job.jobType}</span></span> },
-                { key: 'requirement', header: 'Requirement', render: (job) => <Badge tone="warning">{job.requirement}</Badge> },
-                { key: 'postedOn', header: 'Requested', render: (job) => job.postedOn?.split(' · ')[0] },
+                { key: 'id', header: 'Job ID', width: 146, render: (job) => job.id },
+                { key: 'route', header: 'Route & Type', render: (job) => <span>{shortPlace(job.origin)} → {shortPlace(job.destination)}<br /><span className="tk-meta">{job.jobType}</span></span> },
+                { key: 'requirement', header: 'Requirement', width: 140, render: (job) => <Badge tone="warning">{job.requirement}</Badge> },
+                { key: 'postedOn', header: 'Requested', width: 116, render: (job) => job.postedOn?.split(' · ')[0] },
               ]}
             />
           </div>
@@ -168,12 +173,11 @@ export function Dashboard() {
               rows={data.activeTrips.slice(0, 5)}
               rowKey={(trip) => trip.id}
               onRowClick={(trip) => router.push(`/trips/${trip.id}`)}
+              tableLayout="fixed"
               columns={[
-                { key: 'driver', header: 'Trip ID', render: (trip) => trip.id || '—' },
-                { key: 'driver', header: 'Driver', render: (trip) => trip.driverName || '—' },
-                { key: 'truck', header: 'Truck', render: (trip) => trip.truckPlate || '—' },
-                { key: 'route', header: 'Route', render: (trip) => `${trip.job?.origin} → ${trip.job?.destination}` },
-                { key: 'status', header: 'Status', render: (trip) => <Badge tone={tripStatusTone(trip.status)}>{trip.status}</Badge> },
+                { key: 'trip', header: 'Trip & Route', render: (trip) => <span>{trip.id}<br /><span className="tk-meta">{shortPlace(trip.job?.origin)} → {shortPlace(trip.job?.destination)}</span></span> },
+                { key: 'truck', header: 'Truck / Driver', width: 150, render: (trip) => <span>{trip.truckPlate || '—'}<br /><span className="tk-meta">{trip.driverName || 'Unassigned'}</span></span> },
+                { key: 'status', header: 'Status', width: 142, render: (trip) => <Badge tone={tripHealthTone(tripHealth(trip))}>{tripHealth(trip)}</Badge> },
               ]}
             />
           </div>
@@ -196,13 +200,14 @@ export function Dashboard() {
         </SectionCard>
       </section>
 
-      <section className={styles.financeGrid}>
-        <SectionCard title="Recent Activity" action={<button className={styles.linkButton} onClick={() => router.push('/notifications')}>View all activity</button>} pad="none">
+      <section className={styles.insightsGrid}>
+        <SectionCard title="Recent Activity" action={<button className={styles.linkButton} onClick={() => router.push('/notifications')}>View all</button>} pad="none">
           <div style={{ padding: '4px var(--tk-card-pad) var(--tk-card-pad)' }}>
+            {data.activityFeed.length === 0 && <span className="tk-meta">No activity yet.</span>}
             {data.activityFeed.map((item, i) => (
-              <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 0', borderBottom: i < data.activityFeed.length - 1 ? '1px solid var(--tk-line)' : 0 }}>
+              <div key={item.id || i} style={{ display: 'flex', gap: 10, padding: '10px 0', borderBottom: i < data.activityFeed.length - 1 ? '1px solid var(--tk-line)' : 0 }}>
                 <span style={{ width: 8, height: 8, borderRadius: 999, marginTop: 6, flex: '0 0 auto', background: item.tone }} />
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ font: '400 13px/18px var(--tk-font-sans)', color: 'var(--tk-ink-700)' }}>{item.text}</div>
                   <div className="tk-meta">{item.time}</div>
                 </div>
@@ -210,21 +215,28 @@ export function Dashboard() {
             ))}
           </div>
         </SectionCard>
-        <SectionCard title="Notifications" action={<button className={styles.linkButton} onClick={() => router.push('/notifications')}>View all</button>} pad="none">
-          {expiringDocs > 0 && (
-            <div style={{ padding: '0 var(--tk-card-pad)' }}>
-              <Card tone="sunk" style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '4px 0 8px' }}>
+        <SectionCard title="Notifications" count={unreadCount || undefined} action={<button className={styles.linkButton} onClick={() => router.push('/notifications')}>View all</button>} pad="none">
+          <div style={{ padding: '0 var(--tk-card-pad) 6px' }}>
+            {expiringDocs > 0 && (
+              <Card tone="sunk" style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '4px 0 0', cursor: 'pointer' }} onClick={() => router.push('/documents')}>
                 <Icon name="triangle-alert" size={16} color="var(--tk-warning)" />
                 <span className="tk-meta">{expiringDocs} document{expiringDocs === 1 ? '' : 's'} expiring or expired across your fleet.</span>
               </Card>
-            </div>
-          )}
+            )}
+            {latestNotifications.length === 0 && expiringDocs === 0 && <p className="tk-meta" style={{ margin: '8px 0 12px' }}>You're all caught up.</p>}
+            {latestNotifications.map((n, i) => (
+              <NotificationItem
+                key={n.id} icon={n.icon} tone={NOTIFICATION_TONE[n.type] || 'blue'} title={n.title} preview={n.body} meta={n.createdAt}
+                unread={!n.read} onClick={() => openNotification(n)}
+                style={i === latestNotifications.length - 1 ? { borderBottom: 0 } : undefined}
+              />
+            ))}
+          </div>
         </SectionCard>
-      </section>
-
-      <section className={styles.insightsGrid}>
-        <SectionCard title="Average Rating">
-          {reviewSummary && <StarRating rating={reviewSummary.average} reviews={reviewSummary.total} trend={reviewSummary.trendVsLastMonth} breakdown={reviewSummary.breakdown} />}
+        <SectionCard title="Average Rating" action={<button className={styles.linkButton} onClick={() => router.push('/ratings-reviews')}>View reviews</button>}>
+          {reviewSummary
+            ? <StarRating rating={reviewSummary.average} reviews={reviewSummary.total} trend={reviewSummary.trendVsLastMonth} breakdown={reviewSummary.breakdown} />
+            : <span className="tk-meta">No reviews yet.</span>}
         </SectionCard>
       </section>
     </div>

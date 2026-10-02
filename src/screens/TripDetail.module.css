@@ -52,13 +52,13 @@
 /* ---- Info strip ---------------------------------------------------------- */
 .infoStrip {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(max-content, 1fr));
 }
 .infoStrip > div {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 16px 14px;
+  padding: 16px 12px;
   min-width: 0;
 }
 .infoStrip > div + div {
@@ -76,7 +76,7 @@
 .infoStrip strong {
   color: var(--tk-ink-900);
   font: 600 14px/20px var(--tk-font-sans);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 
 /* ---- Progress ------------------------------------------------------------ */
@@ -415,8 +415,9 @@
 
 /* ---- Costs + communication ---------------------------------------------- */
 .costStats {
+  --tk-stat-chars: 10;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--tk-grid-gap);
 }
 .costForm {
@@ -445,7 +446,8 @@
   font: 400 13px/19px var(--tk-font-sans);
 }
 
-@media (max-width: 1320px) {
+/* Six facts need ~830px on one line; below that, two rows of three. */
+@media (max-width: 1500px) {
   .infoStrip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -455,6 +457,8 @@
   .infoStrip > div:nth-child(n + 4) {
     border-top: 1px solid var(--tk-line);
   }
+}
+@media (max-width: 1320px) {
   .twoUp {
     grid-template-columns: minmax(0, 1fr);
   }

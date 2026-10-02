@@ -6,6 +6,7 @@ import {
   Avatar, Badge, Banner, Button, Card, DataTable, EmptyState, Icon, LabelValue, PageHeader, ProgressBar, SearchField, SectionCard, StatCard, Tabs,
 } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
+import { syncTopBarSearch } from '../pageSearch.js';
 import {
   COMPANY_REQUIREMENTS, DRIVER_REQUIREMENTS, VEHICLE_REQUIREMENTS, complianceFor, documentsFor, formatDisplayDate,
 } from '../domain/documents.js';
@@ -91,7 +92,7 @@ export function Documents() {
 
       <Card pad="none">
         <div className={styles.tabBar}>
-          <Tabs value={tab} onChange={(v) => { setTab(v); setQuery(''); }} items={[
+          <Tabs value={tab} onChange={(v) => { setTab(v); setQuery(''); syncTopBarSearch(''); }} items={[
             { value: 'company', label: 'Company', count: companyDocs.length },
             { value: 'vehicles', label: 'Vehicles', count: vehicleRows.length },
             { value: 'drivers', label: 'Drivers', count: driverRows.length },
@@ -134,7 +135,7 @@ export function Documents() {
 
         {tab !== 'company' && (
           <div className={styles.toolbar}>
-            <SearchField placeholder={tab === 'vehicles' ? 'Search vehicles by plate or model...' : 'Search drivers by name or licence...'} value={query} onChange={(e) => setQuery(e.target.value)} />
+            <SearchField placeholder={tab === 'vehicles' ? 'Search vehicles by plate or model...' : 'Search drivers by name or licence...'} value={query} onChange={(e) => { setQuery(e.target.value); syncTopBarSearch(e.target.value); }} />
             {tab === 'vehicles' && <Button variant="outline" icon="plus" onClick={() => navigate('/fleet/new')}>Add Vehicle</Button>}
           </div>
         )}

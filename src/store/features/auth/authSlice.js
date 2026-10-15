@@ -14,9 +14,9 @@ const authSlice = createSlice({
     setCredentials(state, action) {
       const { account, activeCompanyId, accessToken, refreshToken } = action.payload;
       if (account !== undefined) state.account = account;
-      if (activeCompanyId) state.activeCompanyId = activeCompanyId;
-      if (accessToken) state.accessToken = accessToken;
-      if (refreshToken) state.refreshToken = refreshToken;
+      if (activeCompanyId !== undefined) state.activeCompanyId = activeCompanyId;
+      if (accessToken !== undefined) state.accessToken = accessToken;
+      if (refreshToken !== undefined) state.refreshToken = refreshToken;
     },
     setActiveCompany(state, action) {
       state.activeCompanyId = action.payload;

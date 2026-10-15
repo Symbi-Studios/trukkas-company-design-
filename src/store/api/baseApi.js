@@ -5,7 +5,10 @@ const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://trukk
 const baseUrl = configuredBaseUrl.replace(/\/+$/, '');
 const apiLoggingDisabled = String(process.env.NEXT_PUBLIC_API_LOGGING ?? '').trim().toLowerCase() === 'false';
 const apiLoggingEnabled = process.env.NODE_ENV !== 'production' && !apiLoggingDisabled;
-const publicEndpoints = new Set(['loginAccount', 'refreshAccount', 'forgotAccountPassword', 'resetAccountPassword']);
+const publicEndpoints = new Set([
+  'loginAccount', 'signUpAccount', 'refreshAccount', 'forgotAccountPassword', 'resetAccountPassword',
+  'checkAccountEmail', 'startAccountRegistration', 'resendAccountCode', 'verifyAccountPhone',
+]);
 const reauthExcludedPaths = new Set([
   '/auth/login',
   '/auth/refresh',
@@ -28,10 +31,11 @@ const refreshBaseQuery = fetchBaseQuery({ baseUrl });
 let activeRefresh = null;
 
 const REDACTED = '[REDACTED]';
-const sensitiveField = /authorization|cookie|password|passcode|secret|token|credential|otp|email|phone|mobile|contact|name|actor|recipient|address|birth|\bdob\b|gender|location|latitude|longitude|coordinates|avatar|photo|\bbio\b|ip[_-]?address|device[_-]?id|nin|bvn|ssn|passport|license|iban|bank[_-]?(account|number)|card[_-]?(number|cvv)|national[_-]?id|tax[_-]?id|^(body|title|message)$|(^|[_-])search($|[_-])|(^|[_-])query($|[_-])|^q$/i;
+const sensitiveField = /authorization|cookie|password|passcode|secret|token|credential|identifier|actual[_-]?user[_-]?id|otp|^code$|pin$|email|phone|mobile|contact|name|actor|recipient|address|birth|\bdob\b|gender|location|latitude|longitude|coordinates|avatar|photo|\bbio\b|ip[_-]?address|device[_-]?id|nin|bvn|ssn|passport|license|iban|bank[_-]?(account|number)|card[_-]?(number|cvv)|national[_-]?id|tax[_-]?id|^(body|title|message)$|(^|[_-])search($|[_-])|(^|[_-])query($|[_-])|^q$/i;
 const identityCollection = new Set([
   'users', 'admins', 'drivers', 'forwarders', 'customers', 'profiles',
   'companies', 'accounts', 'recipients', 'contacts', 'verification',
+  'user', 'admin', 'driver', 'forwarder', 'customer', 'profile', 'company', 'account', 'recipient', 'contact',
 ]);
 
 function redactInlineText(value) {
@@ -129,10 +133,10 @@ async function runLoggedBaseQuery(query, args, api, extraOptions, label = api.en
   console.info('Request:', {
     method,
     url,
-    headers: request?.headers,
-    body: requestBody,
+    headers: sanitizeForLog(request?.headers),
+    body: sanitizeForLog(requestBody),
   });
-  console.info('Response body:', responseBody);
+  console.info('Response body:', sanitizeForLog(responseBody));
   console.groupEnd();
   return result;
 }
@@ -159,8 +163,6 @@ export function unwrapApiResponseData(response) {
   return data;
 }
 
-// Not yet exercised — auth stays mock-gated (see authApi.js) until a
-// company-facing auth endpoint is confirmed against the live API spec.
 async function performRefresh(refreshToken, api, extraOptions) {
   const result = await runLoggedBaseQuery(refreshBaseQuery, {
     url: '/auth/refresh',
@@ -175,15 +177,14 @@ async function performRefresh(refreshToken, api, extraOptions) {
     return { status: 'failed', error: result.error };
   }
   const data = unwrapApiResponseData(result.data);
-  if (!data?.accessToken) {
+  if (typeof data?.accessToken !== 'string' || !data.accessToken.trim()) {
     clearExpiredSession(api, refreshToken);
     return { status: 'failed', error: { status: 'CUSTOM_ERROR', error: 'The refresh response is missing session details.' } };
   }
 
   api.dispatch(setCredentials({
     accessToken: data.accessToken,
-    refreshToken: data.refreshToken || refreshToken,
-    account: data.account,
+    refreshToken: typeof data.refreshToken === 'string' && data.refreshToken.trim() ? data.refreshToken : refreshToken,
   }));
   return { status: 'success' };
 }
@@ -209,7 +210,7 @@ async function baseQueryWithReauth(args, api, extraOptions) {
   const method = (typeof args === 'string' ? 'GET' : args.method || 'GET').toUpperCase();
   const safeToRetry = ['GET', 'HEAD', 'OPTIONS'].includes(method) || retryableAfterRefresh.has(api.endpoint);
 
-  if (result.error?.status !== 401 || reauthExcludedPaths.has(path)) return result;
+  if (result.error?.status !== 401 || publicEndpoints.has(api.endpoint) || reauthExcludedPaths.has(path)) return result;
 
   const currentToken = api.getState().auth.accessToken;
   if (safeToRetry && currentToken && currentToken !== requestToken) {
@@ -231,6 +232,6 @@ async function baseQueryWithReauth(args, api, extraOptions) {
 export const baseApi = createApi({
   reducerPath: 'baseApi',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Notifications'],
+  tagTypes: ['Notifications', 'AuthOnboardingDocuments', 'AuthOnboardingBank'],
   endpoints: () => ({}),
 });

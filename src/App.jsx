@@ -17,7 +17,6 @@ import { setActiveCompany, clearSession } from "./store/features/auth/authSlice.
 import { baseApi } from "./store/api/baseApi.js";
 import { AppLoadingScreen } from "./components/AppLoadingScreen.jsx";
 import { useCollection } from "./mock/useCollection.js";
-import { setActiveAccount, startCompanyWorkspace } from "./mock/api.js";
 import { onScreenSearch } from "./pageSearch.js";
 import { searchWorkspace } from "./domain/search.js";
 
@@ -39,8 +38,7 @@ export function CompanyShell({ children }) {
   const dispatch = useDispatch();
   const [logoutAccount] = useLogoutAccountMutation();
   const notifications = useCollection("notifications") || [];
-  const company = useCollection("companyProfile")?.[0];
-  const profile = (useCollection("adminProfile") || [])[0];
+  const company = account ? { id: account.companyIds[0], name: account.companyName } : null;
   const unreadCount = notifications.filter((n) => !n.read).length;
   const router = useRouter();
   const pathname = usePathname();
@@ -64,17 +62,6 @@ export function CompanyShell({ children }) {
   React.useEffect(() => {
     setMounted(true);
   }, []);
-
-  // The mock store is in-memory: after a reload it re-seeds the demo company.
-  // Point the mock "server" at the signed-in account and, for accounts created
-  // via /signup, rebuild their (empty) company workspace.
-  React.useEffect(() => {
-    if (!account) return;
-    setActiveAccount(account.id);
-    if (account.isNewCompany && company?.id !== account.companyIds?.[0]) {
-      startCompanyWorkspace(account, { name: account.companyName });
-    }
-  }, [account, company?.id]);
 
   React.useEffect(() => {
     if (!mounted || PUBLIC_ROUTES.has(pathname) || account || loggingOut) return;
@@ -179,7 +166,7 @@ export function CompanyShell({ children }) {
           health={null}
           onNotifications={() => router.push("/notifications")}
           onViewProfile={() => router.push("/profile")}
-          avatarSrc={profile?.photoUrl || undefined}
+          avatarSrc={account.photoUrl || undefined}
           onLogout={handleLogout}
           user={account.name || account.email || "Trukkas Company"}
           role={account.role}

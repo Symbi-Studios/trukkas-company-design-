@@ -7,7 +7,7 @@ import { CodeInput } from '../../components/SecurityInputs.jsx';
 import styles from './Settings.module.css';
 
 /** Create a PIN, change it with the current PIN, or reset it with an SMS code. */
-export function PinForm({ mode, phone, onDone }) {
+export function PinForm({ mode, phone, onDone, savePin = setTransactionPin }) {
   const [current, setCurrent] = useState('');
   const [otp, setOtp] = useState('');
   const [demoCode, setDemoCode] = useState('');
@@ -25,7 +25,7 @@ export function PinForm({ mode, phone, onDone }) {
     if (pin !== confirm) { setError('The new PINs don’t match.'); return; }
     setBusy(true);
     try {
-      await setTransactionPin({ newPin: pin, currentPin: mode === 'change' ? current : undefined, otp: mode === 'reset' ? otp : undefined });
+      await savePin({ newPin: pin, currentPin: mode === 'change' ? current : undefined, otp: mode === 'reset' ? otp : undefined });
       onDone();
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   }

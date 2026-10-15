@@ -6,36 +6,42 @@ import { PinPrompt } from '../../components/SecurityInputs.jsx';
 import styles from './Settings.module.css';
 
 /** Bank account form with mock name enquiry. Used in settings and onboarding. */
-export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Account', requirePin = true, onCancel }) {
+export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Account', requirePin = true, onCancel, banks = BANKS, resolveAccount = resolveAccountName, saveAccount = updateBankAccount }) {
   const [bankCode, setBankCode] = useState(initial?.bankCode || '');
   const [accountNumber, setAccountNumber] = useState('');
   const [accountName, setAccountName] = useState('');
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState('');
   const [pinOpen, setPinOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setAccountName('');
+    setResolving(false);
     if (!bankCode || accountNumber.length !== 10) return undefined;
     let cancelled = false;
     setResolving(true);
     setError('');
-    resolveAccountName(bankCode, accountNumber)
+    resolveAccount(bankCode, accountNumber)
       .then((r) => { if (!cancelled) setAccountName(r.accountName); })
       .catch((err) => { if (!cancelled) setError(err.message); })
       .finally(() => { if (!cancelled) setResolving(false); });
     return () => { cancelled = true; };
-  }, [bankCode, accountNumber]);
+  }, [bankCode, accountNumber, resolveAccount]);
 
   async function save(pin) {
-    const bank = await updateBankAccount({ bankCode, accountNumber, accountName }, pin);
-    setPinOpen(false);
-    setAccountNumber('');
-    onSaved?.(bank);
+    setSaving(true);
+    try {
+      const bank = await saveAccount({ bankCode, accountNumber, accountName }, pin);
+      setPinOpen(false);
+      setAccountNumber('');
+      onSaved?.(bank);
+    } finally { setSaving(false); }
   }
 
   async function submit(event) {
     event.preventDefault();
+    if (saving) return;
     setError('');
     if (!accountName) { setError('Enter a valid bank and 10-digit account number.'); return; }
     if (requirePin) { setPinOpen(true); return; }
@@ -44,7 +50,7 @@ export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Acc
 
   return (
     <form onSubmit={submit} className={styles.form}>
-      <Select label="Bank" value={bankCode} placeholder="Select your bank" options={BANKS.map((b) => ({ value: b.code, label: b.name }))} onChange={(e) => setBankCode(e.target.value)} />
+      <Select label="Bank" value={bankCode} placeholder="Select your bank" options={banks.map((b) => ({ value: b.code, label: b.name }))} onChange={(e) => setBankCode(e.target.value)} />
       <TextField label="Account Number (NUBAN)" inputMode="numeric" maxLength={10} value={accountNumber} onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))} placeholder="10-digit account number" />
       <div className={styles.full}>
         {resolving && <span className="tk-meta">Verifying account name…</span>}
@@ -54,7 +60,7 @@ export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Acc
       </div>
       <div className={styles.formActions}>
         {onCancel && <Button variant="outline" onClick={onCancel}>Cancel</Button>}
-        <Button type="submit" icon="landmark" disabled={!accountName}>{submitLabel}</Button>
+        <Button type="submit" icon="landmark" disabled={!accountName || saving}>{submitLabel}</Button>
       </div>
       <PinPrompt open={pinOpen} onClose={() => setPinOpen(false)} confirmLabel="Approve Change"
         description="Changing where payouts are sent requires your transaction PIN." onConfirm={save} />

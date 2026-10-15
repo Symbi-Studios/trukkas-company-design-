@@ -1,18 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   Badge, Banner, Button, Card, Checkbox, Icon, Logo, Select, TextField,
 } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
-import { addTruck, confirmVerificationCode, sendVerificationCode, updateCompanyProfile } from '../mock/api.js';
-import { emailTaken } from '../mock/accounts.js';
-import { SIGNUP_DEMO_EMAIL } from '../mock/fixtures/account.js';
-import { useSignUpAccountMutation } from '../store/features/auth/authApi.js';
+import {
+  useCheckAccountEmailMutation, useStartAccountRegistrationMutation, useResendAccountCodeMutation,
+  useVerifyAccountPhoneMutation, useSignUpAccountMutation, useSaveOnboardingCompanyMutation, useFinishCompanyOnboardingMutation,
+} from '../store/features/auth/authApi.js';
 import { setCredentials } from '../store/features/auth/authSlice.js';
+import {
+  useGetOnboardingDocumentsQuery, useUploadOnboardingDocumentMutation, useGetOnboardingTrucksQuery,
+  useGetOnboardingBanksQuery, useResolveOnboardingBankMutation, useGetOnboardingBankQuery,
+  useSaveOnboardingBankMutation, useGetOnboardingSecurityQuery,
+} from '../store/features/auth/onboardingApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { COMPANY_REQUIREMENTS, complianceFor, documentsFor } from '../domain/documents.js';
 import { VEHICLE_CLASSES } from '../domain/vehicles.js';
@@ -25,7 +29,7 @@ import styles from './Onboarding.module.css';
 
 const STEPS = [
   { key: 'account', label: 'Create account', icon: 'user-round' },
-  { key: 'email', label: 'Verify email', icon: 'mail-check' },
+  { key: 'birth', label: 'Date of birth', icon: 'user-round' },
   { key: 'phone', label: 'Verify phone', icon: 'smartphone' },
   { key: 'company', label: 'Company details', icon: 'building-2' },
   { key: 'documents', label: 'Company documents', icon: 'file-check', optional: true },
@@ -50,35 +54,47 @@ function useCountdown() {
 }
 
 /** "Send code → enter 6 digits" block for email and phone verification. */
-function VerifyStep({ channel, target, onVerified, onChangeTarget }) {
+function VerifyStep({ channel, target, sessionToken, onVerified, onChangeTarget }) {
   const [code, setCode] = useState('');
-  const [demoCode, setDemoCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [left, restart] = useCountdown();
+  const [resendCode, { isLoading: resending }] = useResendAccountCodeMutation();
+  const [verifyPhone] = useVerifyAccountPhoneMutation();
+  const verifying = useRef(false);
+  const verified = useRef(false);
 
   async function send() {
     setError('');
-    const r = await sendVerificationCode(channel, target);
-    setDemoCode(r.demoCode);
-    restart();
+    try {
+      await resendCode({ sessionToken }).unwrap();
+      restart();
+    } catch (err) { setError(getApiErrorMessage(err)); }
   }
-  useEffect(() => { send(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { restart(); }, []); // The phone form already sent the first code.
 
   async function verify(value = code) {
+    if (verifying.current || resending || !/^\d{6}$/.test(value)) return;
+    verifying.current = true;
     setBusy(true); setError('');
-    try { await confirmVerificationCode(channel, target, value); await onVerified(); } catch (err) { setError(err.message); setCode(''); } finally { setBusy(false); }
+    try {
+      if (!verified.current) {
+        await verifyPhone({ sessionToken, code: value }).unwrap();
+        verified.current = true;
+      }
+      await onVerified();
+    } catch (err) { setError(getApiErrorMessage(err)); }
+    finally { verifying.current = false; setBusy(false); }
   }
 
   return (
     <div className={styles.verify}>
       <span className={styles.verifyIcon}><Icon name={channel === 'email' ? 'mail' : 'message-square'} size={26} /></span>
-      <p className={styles.lead}>We sent a 6-digit code to <strong>{channel === 'email' ? maskEmail(target) : maskPhone(target)}</strong>. It expires in 10 minutes.</p>
+      <p className={styles.lead}>We sent a 6-digit code to <strong>{channel === 'email' ? maskEmail(target) : maskPhone(target)}</strong>. Expiry: —.</p>
       <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => verify(v)} error={error} disabled={busy} />
-      {demoCode && <Badge tone="info">Prototype only — no {channel === 'email' ? 'email' : 'SMS'} is sent. Demo code: {demoCode}</Badge>}
       <div className={styles.verifyActions}>
-        <Button variant="ghost" disabled={left > 0} onClick={send}>{left > 0 ? `Resend in ${left}s` : 'Resend code'}</Button>
-        <Button variant="ghost" onClick={onChangeTarget}>{channel === 'email' ? 'Change email' : 'Change number'}</Button>
+        <Button variant="ghost" disabled={left > 0 || resending || busy || verified.current} onClick={send}>{left > 0 ? `Resend in ${left}s` : 'Resend code'}</Button>
+        <Button variant="ghost" disabled={busy} onClick={onChangeTarget}>{channel === 'email' ? 'Change email' : 'Change number'}</Button>
       </div>
       <Button fullWidth disabled={busy || code.length < 6} onClick={() => verify()}>{busy ? 'Verifying…' : 'Verify'}</Button>
     </div>
@@ -90,47 +106,119 @@ export function Onboarding() {
   const dispatch = useDispatch();
   const account = useSelector((state) => state.auth.account);
   const [signUpAccount] = useSignUpAccountMutation();
-  const company = useCollection('companyProfile')?.[0];
-  const documents = useCollection('documents') || [];
-  const trucks = useCollection('trucks') || [];
-  const wallet = useCollection('walletSummary')?.[0];
-  const security = (useCollection('security') || [])[0];
+  const [checkEmail] = useCheckAccountEmailMutation();
+  const [startRegistration] = useStartAccountRegistrationMutation();
+  const [saveCompany] = useSaveOnboardingCompanyMutation();
+  const [finishOnboarding] = useFinishCompanyOnboardingMutation();
+  const [uploadDocument] = useUploadOnboardingDocumentMutation();
+  const [resolveBank] = useResolveOnboardingBankMutation();
+  const [saveBank] = useSaveOnboardingBankMutation();
+  const { data: documents } = useGetOnboardingDocumentsQuery(undefined, { skip: !account });
+  const { data: truckData } = useGetOnboardingTrucksQuery(undefined, { skip: !account });
+  const { data: banks } = useGetOnboardingBanksQuery(undefined, { skip: !account });
+  const { data: bank } = useGetOnboardingBankQuery(undefined, { skip: !account });
+  const { data: security } = useGetOnboardingSecurityQuery(undefined, { skip: !account });
+  const trucks = truckData || [];
 
   const [step, setStep] = useState(0);
   const [created, setCreated] = useState(false);
-  const [form, setForm] = useState({ name: '', email: SIGNUP_DEMO_EMAIL, password: '', confirm: '', terms: false, phone: '+234 ' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', terms: false, phone: '+234 ', dateOfBirth: '' });
+  const [sessionToken, setSessionToken] = useState(null);
   const [biz, setBiz] = useState({ name: '', rcNumber: '', entity: 'Limited Liability Company', founded: '', email: '', phone: '', address: '', state: 'Lagos', fleetSize: '', regions: [], role: 'Director', directorName: '', directorDob: '' });
   const [truck, setTruck] = useState({ plate: '', vehicleClass: 'Head', make: '', model: '', year: '' });
   const [uploadType, setUploadType] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // An already signed-in user who didn't just sign up doesn't belong here.
-  useEffect(() => { if (account && !created) router.replace('/dashboard'); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const resolveAccount = useCallback(async (bankCode, accountNumber) => {
+    try {
+      const selected = banks?.find((item) => item.code === bankCode);
+      if (!selected) throw new Error('Choose a bank from the supported bank list.');
+      const resolved = await resolveBank({ bankName: selected.name, accountNumber }).unwrap();
+      if (!resolved.accountName || resolved.accountName === '—') throw new Error('The API could not confirm the account name.');
+      return resolved;
+    } catch (err) { throw new Error(err instanceof Error ? err.message : getApiErrorMessage(err)); }
+  }, [banks, resolveBank]);
+
+  async function saveAccount({ bankCode, accountNumber }) {
+    try {
+      const selected = banks?.find((item) => item.code === bankCode);
+      if (!selected) throw new Error('Choose a bank from the supported bank list.');
+      const saved = await saveBank({ bankName: selected.name, accountNumber }).unwrap();
+      if (!saved) throw new Error('The API did not return a saved bank account.');
+      return saved;
+    } catch (err) { throw new Error(err instanceof Error ? err.message : getApiErrorMessage(err)); }
+  }
+
+  async function submitDocument(document) {
+    try { return await uploadDocument(document).unwrap(); }
+    catch (err) { throw new Error(getApiErrorMessage(err)); }
+  }
+
+  // Resume company setup without collecting or persisting a password again.
+  useEffect(() => {
+    if (!account) return;
+    if (account.onboardingComplete !== false || ['AWAITING_REVIEW', 'APPLICATION_REJECTED'].includes(account.onboardingStep)) {
+      router.replace('/dashboard');
+      return;
+    }
+    setCreated(true);
+    setStep(account.cacNumber ? 4 : 3);
+    setBiz((value) => ({
+      ...value, name: account.companyName === '—' ? '' : account.companyName,
+      rcNumber: account.cacNumber || '', address: account.businessAddress || '',
+      entity: account.businessType || value.entity, email: account.email, phone: account.phone,
+      directorName: account.contactName || account.name, directorDob: account.dateOfBirth || '',
+    }));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const current = STEPS[step];
-  const go = (index) => { setError(''); setStep(index); window.scrollTo({ top: 0 }); };
-  const companyDocs = documentsFor(documents, 'company');
+  const go = (index) => {
+    if (index < 2) { setSessionToken(null); setForm((value) => ({ ...value, phoneEntered: false })); }
+    setError(''); setStep(index); window.scrollTo({ top: 0 });
+  };
+  const companyDocs = documentsFor(documents || [], 'company');
   const compliance = complianceFor(COMPANY_REQUIREMENTS, companyDocs).summary;
 
   async function submitAccount(event) {
     event.preventDefault();
     setError('');
-    if (!form.name.trim()) { setError('Enter your full name.'); return; }
+    if (form.name.trim().split(/\s+/).length < 2) { setError('Enter your first and last name.'); return; }
     if (!/^\S+@\S+\.\S+$/.test(form.email)) { setError('Enter a valid email address.'); return; }
     if (passwordStrength(form.password).score < 3) { setError('Choose a stronger password.'); return; }
     if (form.password !== form.confirm) { setError('Passwords don’t match.'); return; }
     if (!form.terms) { setError('Accept the terms to continue.'); return; }
-    if (await emailTaken(form.email)) { setError('An account with this email already exists. Sign in instead.'); return; }
-    go(1);
+    if (busy) return;
+    setBusy(true);
+    try {
+      const availability = await checkEmail({ email: form.email }).unwrap();
+      if (availability.available === false) { setError('An account with this email already exists. Sign in instead.'); return; }
+      if (availability.available !== true) { setError('Email availability could not be confirmed. Try again.'); return; }
+      go(1);
+    } catch (err) { setError(getApiErrorMessage(err)); }
+    finally { setBusy(false); }
   }
 
   async function createAccount() {
-    const result = await signUpAccount({ name: form.name, email: form.email, phone: form.phone.trim(), password: form.password }).unwrap().catch((err) => { throw new Error(getApiErrorMessage(err)); });
+    const result = await signUpAccount({ name: form.name, email: form.email, password: form.password, dateOfBirth: form.dateOfBirth, sessionToken }).unwrap();
     setCreated(true);
     setForm((f) => ({ ...f, password: '', confirm: '' }));
-    setBiz((b) => ({ ...b, email: result.account.email, phone: result.account.phone, directorName: result.account.name }));
+    setBiz((b) => ({ ...b, email: result.account.email, phone: result.account.phone, directorName: result.account.name, directorDob: form.dateOfBirth }));
     go(3);
+  }
+
+  async function sendPhoneCode(event) {
+    event.preventDefault();
+    if (busy) return;
+    if (!/^\+234\d{10}$/.test(form.phone.replace(/\s/g, ''))) { setError('Enter a valid Nigerian mobile number, e.g. +234 803 000 0000.'); return; }
+    setBusy(true); setError('');
+    try {
+      const result = await startRegistration({ phone: form.phone }).unwrap();
+      if (!result.sessionToken) throw new Error('The API did not return a phone verification session.');
+      setSessionToken(result.sessionToken);
+      setForm((value) => ({ ...value, phoneEntered: true }));
+    } catch (err) { setError(err instanceof Error ? err.message : getApiErrorMessage(err)); }
+    finally { setBusy(false); }
   }
 
   async function submitCompany(event) {
@@ -139,14 +227,12 @@ export function Onboarding() {
     if (!biz.name.trim() || !biz.rcNumber.trim() || !biz.address.trim()) { setError('Company name, RC/BN number and address are required.'); return; }
     if (!biz.directorName.trim() || !biz.directorDob) { setError('Enter the director’s full name and date of birth.'); return; }
     setBusy(true);
-    await updateCompanyProfile({
-      name: biz.name.trim(), shortName: biz.name.trim().split(' ')[0], rcNumber: biz.rcNumber.trim().toUpperCase(), entityType: biz.entity,
-      founded: biz.founded, email: biz.email, phone: biz.phone, address: `${biz.address.trim()}, ${biz.state}, Nigeria`, fleetSize: biz.fleetSize, regions: biz.regions,
-      director: { name: biz.directorName.trim(), role: biz.role, dob: biz.directorDob, email: account.email, phone: account.phone },
-    });
-    dispatch(setCredentials({ account: { ...account, companyName: biz.name.trim(), title: biz.directorName.trim() === account.name ? biz.role : account.title } }));
-    setBusy(false);
-    go(4);
+    try {
+      await saveCompany(biz).unwrap();
+      dispatch(setCredentials({ account: { ...account, companyName: biz.name.trim(), cacNumber: biz.rcNumber.trim(), businessAddress: `${biz.address.trim()}, ${biz.state}, Nigeria`, businessType: biz.entity, contactName: biz.directorName.trim() } }));
+      go(4);
+    } catch (err) { setError(getApiErrorMessage(err)); }
+    finally { setBusy(false); }
   }
 
   async function submitTruck(event) {
@@ -154,22 +240,26 @@ export function Onboarding() {
     setError('');
     if (!truck.plate.trim() || !truck.make.trim() || !truck.model.trim() || !truck.year) { setError('Enter plate, make, model and year.'); return; }
     try {
-      const plate = truck.plate.trim().toUpperCase().replace(/\s+/g, ' ');
-      await addTruck({
-        plate, vehicleClass: truck.vehicleClass, type: truck.vehicleClass === 'Trailer' ? 'Trailer' : 'Truck (Head)',
-        make: truck.make.trim(), model: truck.model.trim(), year: Number(truck.year), makeModel: `${truck.make.trim()} ${truck.model.trim()} ${truck.year}`,
-        color: '—', vin: '—', purchaseDate: '—', ownership: 'Company Owned', insuranceExpiry: '—', roadWorthinessExpiry: '—',
-      });
-      setTruck({ plate: '', vehicleClass: truck.vehicleClass, make: '', model: '', year: '' });
+      throw new Error('Truck registration is unavailable here: the API does not document saving make, model or head/trailer type from this form.');
     } catch (err) { setError(err.message); }
   }
 
+  async function finish() {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {
+      const result = await finishOnboarding().unwrap();
+      dispatch(setCredentials({ account: { ...account, ...result } }));
+      router.replace('/dashboard');
+    } catch (err) { setError(getApiErrorMessage(err)); }
+    finally { setBusy(false); }
+  }
   const checklist = [
-    { label: 'Email & phone verified', done: created, icon: 'badge-check' },
-    { label: 'Company details', done: !!company?.rcNumber, icon: 'building-2' },
-    { label: `Company documents (${compliance.requiredMet}/${compliance.requiredTotal})`, done: compliance.complete, icon: 'file-check', to: '/documents' },
-    { label: `Trucks added (${trucks.length})`, done: trucks.length > 0, icon: 'truck', to: '/fleet/new' },
-    { label: 'Payout bank account', done: !!wallet?.bankAccount, icon: 'landmark', to: '/company-settings?tab=payout' },
+    { label: 'Phone verified', done: created, icon: 'badge-check' },
+    { label: 'Company details', done: step >= 4, icon: 'building-2' },
+    { label: `Company documents (${documents ? compliance.requiredMet : '—'}/${compliance.requiredTotal})`, done: !!documents && compliance.complete, icon: 'file-check', to: '/documents' },
+    { label: `Trucks added (${truckData ? trucks.length : '—'})`, done: trucks.length > 0, icon: 'truck', to: '/fleet/new' },
+    { label: 'Payout bank account', done: !!bank, icon: 'landmark', to: '/company-settings?tab=payout' },
     { label: 'Transaction PIN', done: !!security?.pin?.set, icon: 'lock-keyhole', to: '/company-settings?tab=pin' },
   ];
 
@@ -197,7 +287,7 @@ export function Onboarding() {
             <span>
               <small>Step {step + 1} of {STEPS.length}{current.optional ? ' · Optional' : ''}</small>
               <h1>{{
-                account: 'Create your Trukkas account', email: 'Verify your email', phone: 'Verify your phone number', company: 'Tell us about your company',
+                account: 'Create your Trukkas account', birth: 'Your date of birth', phone: 'Verify your phone number', company: 'Tell us about your company',
                 documents: 'Upload company documents', trucks: 'Add your trucks', payout: 'Payout account & transaction PIN', done: 'You’re all set!',
               }[current.key]}</h1>
             </span>
@@ -215,31 +305,38 @@ export function Onboarding() {
               <PasswordStrength password={form.password} />
               <Checkbox checked={form.terms} onChange={(v) => setForm({ ...form, terms: v })} label="I agree to the Trukkas Terms of Service and Privacy Policy, and confirm I’m authorised to register this company." />
               {error && <p className={styles.error}>{error}</p>}
-              <Button type="submit" fullWidth size="lg" iconRight="arrow-right">Continue</Button>
+              <Button type="submit" fullWidth size="lg" disabled={busy} iconRight="arrow-right">{busy ? 'Checking…' : 'Continue'}</Button>
             </form>
           )}
 
-          {current.key === 'email' && (
-            <VerifyStep channel="email" target={form.email.trim().toLowerCase()} onVerified={() => go(2)} onChangeTarget={() => go(0)} />
+          {current.key === 'birth' && (
+            <form className={styles.form} onSubmit={(event) => {
+              event.preventDefault();
+              const birth = new Date(`${form.dateOfBirth}T00:00:00`);
+              const adult = new Date();
+              adult.setFullYear(adult.getFullYear() - 18);
+              if (!form.dateOfBirth || Number.isNaN(birth.getTime()) || birth > adult) { setError('You must be at least 18 years old to register.'); return; }
+              go(2);
+            }}>
+              <TextField label="Date of birth" type="date" autoComplete="bday" required value={form.dateOfBirth} max={new Date().toISOString().slice(0, 10)} onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })} />
+              {error && <p className={styles.error}>{error}</p>}
+              <Button type="submit" fullWidth size="lg" iconRight="arrow-right">Continue</Button>
+            </form>
           )}
 
           {current.key === 'phone' && (
             form.phoneEntered ? (
               <VerifyStep
-                channel="sms" target={form.phone.trim()}
+                channel="sms" target={form.phone.trim()} sessionToken={sessionToken}
                 onVerified={createAccount}
                 onChangeTarget={() => setForm({ ...form, phoneEntered: false })}
               />
             ) : (
-              <form className={styles.form} onSubmit={(e) => {
-                e.preventDefault();
-                if (form.phone.replace(/\D/g, '').length < 13) { setError('Enter a valid Nigerian mobile number, e.g. +234 803 000 0000.'); return; }
-                setError(''); setForm({ ...form, phoneEntered: true });
-              }}>
+              <form className={styles.form} onSubmit={sendPhoneCode}>
                 <p className={styles.lead}>We use your phone for sign-in codes, PIN resets and important trip alerts.</p>
                 <TextField label="Mobile Number" type="tel" autoComplete="tel" required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+234 803 000 0000" />
                 {error && <p className={styles.error}>{error}</p>}
-                <Button type="submit" fullWidth size="lg" icon="message-square">Send Code</Button>
+                <Button type="submit" fullWidth size="lg" disabled={busy} icon="message-square">{busy ? 'Sending…' : 'Send Code'}</Button>
               </form>
             )
           )}
@@ -290,7 +387,7 @@ export function Onboarding() {
           {current.key === 'documents' && (
             <div className={styles.form}>
               <p className={styles.lead}>Trukkas verifies every company before it can bid on jobs or receive payouts. Upload what you have now — you can finish from <strong>Documents</strong> later.</p>
-              <ComplianceChecklist title="Business Documents" requirements={COMPANY_REQUIREMENTS} docs={companyDocs} onUpload={(req) => setUploadType(req.type)} style={{ boxShadow: 'none' }} />
+              <ComplianceChecklist title="Business Documents" requirements={COMPANY_REQUIREMENTS} docs={companyDocs} unavailable={!documents} onUpload={(req) => setUploadType(req.type)} style={{ boxShadow: 'none' }} />
               <div className={styles.footer}>
                 <Button variant="outline" onClick={() => go(5)}>Skip for now</Button>
                 <Button iconRight="arrow-right" onClick={() => go(5)}>Continue</Button>
@@ -316,7 +413,7 @@ export function Onboarding() {
                     <li key={t.plate}><Icon name="truck" size={18} color="var(--tk-blue)" /><strong>{t.plate}</strong><span>{t.makeModel}</span><Badge tone="warning">Documents pending</Badge></li>
                   ))}
                 </ul>
-              ) : <p className="tk-meta">No trucks added yet.</p>}
+              ) : <p className="tk-meta">{truckData ? 'No trucks added yet.' : '—'}</p>}
               <div className={styles.footer}>
                 <Button variant="outline" onClick={() => go(6)}>{trucks.length ? 'Continue' : 'Skip, add later'}</Button>
                 {trucks.length > 0 && <Button iconRight="arrow-right" onClick={() => go(6)}>Continue</Button>}
@@ -328,15 +425,15 @@ export function Onboarding() {
             <div className={styles.form}>
               <section className={styles.block}>
                 <h3><Icon name="landmark" size={17} /> Payout bank account</h3>
-                {wallet?.bankAccount
-                  ? <span className={styles.okLine}><Icon name="circle-check" size={16} />{wallet.bankAccount.bankName} •••• {wallet.bankAccount.last4} · {wallet.bankAccount.accountName}</span>
-                  : <BankAccountForm requirePin={false} submitLabel="Save Bank Account" />}
+                {bank
+                  ? <span className={styles.okLine}><Icon name="circle-check" size={16} />{bank.bankName} •••• {bank.last4} · {bank.accountName}</span>
+                  : <BankAccountForm requirePin={false} submitLabel="Save Bank Account" banks={banks || []} resolveAccount={resolveAccount} saveAccount={saveAccount} />}
               </section>
               <section className={styles.block}>
                 <h3><Icon name="lock-keyhole" size={17} /> Transaction PIN</h3>
                 {security?.pin?.set
                   ? <span className={styles.okLine}><Icon name="circle-check" size={16} />PIN created. You’ll use it to approve payouts, withdrawals and bank changes.</span>
-                  : <PinForm mode="create" phone={account?.phone} onDone={() => {}} />}
+                  : <PinForm mode="create" phone={account?.phone} savePin={async () => { throw new Error('The API accepts a 4-digit transaction PIN; this form uses 6 digits. PIN creation is unavailable until these contracts match.'); }} onDone={() => {}} />}
               </section>
               <div className={styles.footer}>
                 <Button variant="outline" onClick={() => go(7)}>Skip for now</Button>
@@ -358,7 +455,8 @@ export function Onboarding() {
                 ))}
               </ul>
               <Banner tone="info" title="Verification">Once your required documents are uploaded, Trukkas reviews them (usually within 1 business day) and unlocks bidding.</Banner>
-              <Button fullWidth size="lg" icon="layout-dashboard" onClick={() => router.replace('/dashboard')}>Go to Dashboard</Button>
+              {error && <p className={styles.error}>{error}</p>}
+              <Button fullWidth size="lg" icon="layout-dashboard" disabled={busy} onClick={finish}>{busy ? 'Opening dashboard…' : 'Go to Dashboard'}</Button>
             </div>
           )}
         </Card>
@@ -367,8 +465,8 @@ export function Onboarding() {
       </section>
 
       <UploadDocumentModal
-        open={!!uploadType} onClose={() => setUploadType(null)} ownerType="company" ownerId={company?.id} ownerLabel={company?.name}
-        requirements={COMPANY_REQUIREMENTS} initialType={uploadType} onDone={() => setUploadType(null)}
+        open={!!uploadType} onClose={() => setUploadType(null)} ownerType="company" ownerId={account?.id} ownerLabel={account?.companyName}
+        requirements={COMPANY_REQUIREMENTS} initialType={uploadType} submitDocument={submitDocument} onDone={() => setUploadType(null)}
       />
     </main>
   );

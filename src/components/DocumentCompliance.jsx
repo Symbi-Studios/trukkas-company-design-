@@ -14,16 +14,16 @@ const STATUS_ICON = {
 };
 
 /** Requirement-by-requirement checklist for one owner (company, vehicle or driver). */
-export function ComplianceChecklist({ title, description, requirements, docs, onUpload, onOpen, action, style }) {
+export function ComplianceChecklist({ title, description, requirements, docs, onUpload, onOpen, action, style, unavailable = false }) {
   const { rows, summary } = complianceFor(requirements, docs);
   const pct = summary.requiredTotal ? Math.round((summary.requiredMet / summary.requiredTotal) * 100) : 100;
   return (
     <SectionCard
       title={title} description={description} style={style}
-      action={action || <Badge tone={summary.complete ? 'success' : 'warning'} dot>{summary.complete ? 'Compliant' : 'Action needed'}</Badge>}
+      action={action || <Badge tone={summary.complete ? 'success' : 'warning'} dot>{unavailable ? '—' : summary.complete ? 'Compliant' : 'Action needed'}</Badge>}
     >
       <ProgressBar
-        value={pct} height={8} label="Required documents" caption={`${summary.requiredMet} of ${summary.requiredTotal}`}
+        value={pct} height={8} label="Required documents" caption={unavailable ? '—' : `${summary.requiredMet} of ${summary.requiredTotal}`}
         color={summary.complete ? 'var(--tk-success)' : 'var(--tk-warning)'}
       />
       <ul className={styles.rows}>
@@ -44,7 +44,7 @@ export function ComplianceChecklist({ title, description, requirements, docs, on
                     : req.hint || 'Not uploaded yet.'}
                 </small>
               </span>
-              <Badge tone={tone}>{status}</Badge>
+              <Badge tone={tone}>{unavailable ? '—' : status}</Badge>
               <span className={styles.actions}>
                 {doc && onOpen && <Button size="sm" variant="outline" icon="eye" onClick={() => onOpen(doc)}>View</Button>}
                 {onUpload && (
@@ -62,7 +62,7 @@ export function ComplianceChecklist({ title, description, requirements, docs, on
 }
 
 /** Upload (or replace) one compliance document for an owner. */
-export function UploadDocumentModal({ open, onClose, ownerType, ownerId, ownerLabel, requirements, initialType, onDone }) {
+export function UploadDocumentModal({ open, onClose, ownerType, ownerId, ownerLabel, requirements, initialType, onDone, submitDocument }) {
   const [type, setType] = useState('');
   const [files, setFiles] = useState([]);
   const [number, setNumber] = useState('');
@@ -87,13 +87,14 @@ export function UploadDocumentModal({ open, onClose, ownerType, ownerId, ownerLa
     if (req.expires && !expiry) { setError('Enter the expiry date.'); return; }
     setBusy(true);
     try {
-      const doc = await createDocument({
+      const doc = await (submitDocument || createDocument)({
         ownerType, ownerId, type: req.type,
         name: needsFile ? files[0].name : `${req.label}${ownerLabel ? ` — ${ownerLabel}` : ''}`,
         fileSize: needsFile ? files[0].size : '—',
         url: needsFile ? files[0].url : undefined,
         number: number.trim() ? (req.sensitive ? maskNumber(number) : number.trim()) : null,
         expiryDate: expiry || null,
+        ...(submitDocument ? { file: files[0]?.file } : {}),
       });
       onDone?.(doc);
     } catch (err) {

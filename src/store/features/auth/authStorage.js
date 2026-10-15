@@ -28,7 +28,11 @@ export function readStoredAuth() {
     const accessToken = nonEmptyString(parsed.accessToken);
     const refreshToken = nonEmptyString(parsed.refreshToken);
 
-    if (!account || !accessToken || !refreshToken) throw new Error('Incomplete auth data');
+    if (!account || account.apiRole !== 'TRUCKER' || account.truckerType !== 'COMPANY'
+      || !nonEmptyString(account.id) || !Array.isArray(account.companyIds) || !account.companyIds.includes(activeCompanyId)
+      || !accessToken || !refreshToken || accessToken.endsWith('.mock') || refreshToken.endsWith('.mock')) {
+      throw new Error('Incomplete company auth data');
+    }
     return { account, activeCompanyId, accessToken, refreshToken };
   } catch {
     try {

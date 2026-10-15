@@ -14,8 +14,6 @@ import {
 import { clearSession } from '../store/features/auth/authSlice.js';
 import { baseApi } from '../store/api/baseApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
-import { MOCK_CREDENTIALS } from '../mock/fixtures/account.js';
-import { sendVerificationCode } from '../mock/api.js';
 import { maskPhone } from '../domain/security.js';
 import { CodeInput } from '../components/SecurityInputs.jsx';
 import styles from './AuthScreens.module.css';
@@ -72,12 +70,12 @@ export function LoginScreen() {
   const [challenge, setChallenge] = React.useState(null);
   const [code, setCode] = React.useState('');
   const [useBackup, setUseBackup] = React.useState(false);
-  const [demoCode, setDemoCode] = React.useState('');
   const [verifyTwoFactorLogin, { isLoading: verifying }] = useVerifyTwoFactorLoginMutation();
 
   React.useEffect(() => {
     if (account) {
-      router.replace(destinationAfterLogin());
+      const needsCompanySetup = account.onboardingComplete === false && !['AWAITING_REVIEW', 'APPLICATION_REJECTED'].includes(account.onboardingStep);
+      router.replace(needsCompanySetup ? '/signup' : destinationAfterLogin());
       return;
     }
     if (new URLSearchParams(window.location.search).get('reset') === '1') {
@@ -97,10 +95,6 @@ export function LoginScreen() {
       if (result.twoFactorRequired) {
         setChallenge(result.challenge);
         setCode('');
-        if (result.challenge.method === 'sms') {
-          const sent = await sendVerificationCode('sms', result.challenge.phone);
-          setDemoCode(sent.demoCode);
-        }
       }
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
@@ -134,7 +128,6 @@ export function LoginScreen() {
           ) : (
             <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => handleVerify(null, v)} disabled={verifying} />
           )}
-          {demoCode && !useBackup && <p className={styles.success}>Prototype only — no SMS is sent. Demo code: {demoCode}</p>}
           <Button type="submit" fullWidth disabled={verifying || code.length < 6}>{verifying ? 'Verifying…' : 'Verify & Sign in'}</Button>
         </form>
         <div className={styles.bottomLinks}>
@@ -165,7 +158,7 @@ export function LoginScreen() {
           required
           aria-required="true"
           disabled={busy}
-          placeholder={MOCK_CREDENTIALS.email}
+          placeholder="admin@speedlinelogistics.com"
         />
         <TextField
           label="Password"
@@ -216,12 +209,12 @@ export function ForgotPasswordScreen() {
     <AuthFrame
       eyebrow="ACCOUNT RECOVERY"
       title="Forgot your password?"
-      description="Enter your email. If it is registered, we’ll send a reset link."
+      description="Enter your email. If it is registered, we’ll send a code to your linked phone."
     >
       <Notice message={error} error />
       {sent ? (
         <div className={styles.form}>
-          <Notice message="If that email is registered, a reset link has been sent. Check your inbox." />
+          <Notice message="If that email is registered, a reset code has been sent. Check your linked phone." />
           <Button type="button" variant="secondary" fullWidth onClick={() => setSent(false)}>
             Use another email
           </Button>
@@ -238,16 +231,16 @@ export function ForgotPasswordScreen() {
             required
             aria-required="true"
             disabled={busy}
-            placeholder={MOCK_CREDENTIALS.email}
+            placeholder="admin@speedlinelogistics.com"
           />
           <Button type="submit" fullWidth disabled={busy}>
-            {busy ? 'Sending link…' : 'Send reset link'}
+            {busy ? 'Sending code…' : 'Send reset code'}
           </Button>
         </form>
       )}
       <div className={styles.bottomLinks}>
         <Link href="/login">Back to sign in</Link>
-        <Link href="/reset-password">Have a reset token?</Link>
+        <Link href="/reset-password">Have a reset code?</Link>
       </div>
     </AuthFrame>
   );
@@ -266,14 +259,22 @@ export function ResetPasswordScreen() {
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setEmail(params.get('email') || '');
-    setToken(params.get('token') || '');
+    setToken(params.get('otp') || params.get('token') || '');
   }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
     setError('');
     if (!email.trim() || !token.trim() || !newPassword) {
-      setError('Enter your email, reset token, and new password.');
+      setError('Enter your email, reset code, and new password.');
+      return;
+    }
+    if (!/^\d{6}$/.test(token.trim())) {
+      setError('Enter the 6-digit reset code from your phone.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setError('Use at least 8 characters for your new password.');
       return;
     }
     if (newPassword !== confirmation) {
@@ -294,7 +295,7 @@ export function ResetPasswordScreen() {
     <AuthFrame
       eyebrow="ACCOUNT RECOVERY"
       title="Set a new password"
-      description="Use the token from your Trukkas password reset email."
+      description="Use the 6-digit code sent to your Trukkas account’s linked phone."
     >
       <Notice message={error} error />
       <form className={styles.form} onSubmit={handleSubmit}>
@@ -308,19 +309,21 @@ export function ResetPasswordScreen() {
           required
           aria-required="true"
           disabled={busy}
-          placeholder={MOCK_CREDENTIALS.email}
+          placeholder="admin@speedlinelogistics.com"
         />
         <TextField
-          label="Reset token"
+          label="Reset code"
           type="text"
           name="token"
+          inputMode="numeric"
+          maxLength={6}
           value={token}
           onChange={(event) => setToken(event.target.value)}
-          autoComplete="off"
+          autoComplete="one-time-code"
           required
           aria-required="true"
           disabled={busy}
-          placeholder="Paste the token from your email"
+          placeholder="Enter the 6-digit code from your phone"
         />
         <TextField
           label="New password"

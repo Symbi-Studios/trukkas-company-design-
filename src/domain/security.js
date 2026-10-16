@@ -3,7 +3,7 @@
 // In production, secrets, PIN hashes and TOTP verification live on the server;
 // the browser only collects input. These helpers let the mock behave like it.
 
-export const PIN_LENGTH = 6;
+export const PIN_LENGTH = 4;
 export const MAX_PIN_ATTEMPTS = 5;
 
 export const PIN_PROTECTED_ACTIONS = [
@@ -33,7 +33,7 @@ export function pinProblem(pin = '') {
   if (/^(\d)\1+$/.test(pin)) return 'Avoid repeating the same digit.';
   const asc = '0123456789012345';
   const desc = '9876543210987654';
-  if (asc.includes(pin) || desc.includes(pin)) return 'Avoid sequences like 123456.';
+  if (asc.includes(pin) || desc.includes(pin)) return 'Avoid sequences like 1234.';
   return '';
 }
 

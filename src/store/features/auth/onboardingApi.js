@@ -87,6 +87,33 @@ export const onboardingApi = baseApi.injectEndpoints({
         const data = unwrapApiResponseData(response);
         return { pin: { set: typeof data?.transactionPinSet === 'boolean' ? data.transactionPinSet : null } };
       },
+      providesTags: ['AuthOnboardingSecurity'],
+    }),
+    saveOnboardingPin: builder.mutation({
+      async queryFn({ newPin, confirmPin, currentPin }, _api, _options, baseQuery) {
+        if (typeof newPin !== 'string' || !/^\d{4}$/.test(newPin) || newPin !== confirmPin) {
+          return { error: { status: 'CUSTOM_ERROR', error: 'Enter and confirm a matching 4-digit PIN.' } };
+        }
+        const result = await baseQuery({
+          url: '/profile/transaction-pin', method: 'PATCH',
+          body: { newPin, confirmPin, ...(currentPin ? { currentPin } : {}) },
+        });
+        if (result.error) return result;
+        const data = unwrapApiResponseData(result.data);
+        return data?.transactionPinSet === true ? { data: { transactionPinSet: true } }
+          : { error: { status: 'CUSTOM_ERROR', error: 'The API did not confirm that your PIN was saved.' } };
+      },
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          dispatch(onboardingApi.util.updateQueryData('getOnboardingSecurity', undefined, (security) => {
+            security.pin.set = true;
+          }));
+        } catch {
+          // The form shows the error; retain the last confirmed security status.
+        }
+      },
+      invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingSecurity'],
     }),
   }),
 });
@@ -94,5 +121,5 @@ export const onboardingApi = baseApi.injectEndpoints({
 export const {
   useGetOnboardingDocumentsQuery, useUploadOnboardingDocumentMutation, useGetOnboardingTrucksQuery,
   useGetOnboardingBanksQuery, useResolveOnboardingBankMutation, useGetOnboardingBankQuery,
-  useSaveOnboardingBankMutation, useGetOnboardingSecurityQuery,
+  useSaveOnboardingBankMutation, useGetOnboardingSecurityQuery, useSaveOnboardingPinMutation,
 } = onboardingApi;

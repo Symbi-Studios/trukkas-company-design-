@@ -137,7 +137,7 @@ export function PinPrompt({ open, onClose, title = 'Enter Transaction PIN', desc
     <Modal
       open={open} onClose={onClose} width={440}
       title={creating ? 'Create your Transaction PIN' : title}
-      description={creating ? 'You need a 6-digit PIN to approve payouts, withdrawals and bank changes. Don’t share it with anyone.' : description}
+      description={creating ? 'You need a 4-digit PIN to approve payouts, withdrawals and bank changes. Don’t share it with anyone.' : description}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>Cancel</Button>

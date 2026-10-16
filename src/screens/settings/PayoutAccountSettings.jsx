@@ -104,7 +104,7 @@ export function PayoutAccountSettings({ onToast }) {
       <SectionCard title="How payouts work">
         <ul className={styles.steps}>
           <li>Completed trips become available to request under Payouts.</li>
-          <li>Every payout, withdrawal and bank change is approved with your 6-digit transaction PIN.</li>
+          <li>Every payout, withdrawal and bank change is approved with your 4-digit transaction PIN.</li>
           <li>The account name must match your registered company name.</li>
         </ul>
       </SectionCard>

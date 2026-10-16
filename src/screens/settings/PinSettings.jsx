@@ -25,7 +25,7 @@ export function PinForm({ mode, phone, onDone, savePin = setTransactionPin }) {
     if (pin !== confirm) { setError('The new PINs don’t match.'); return; }
     setBusy(true);
     try {
-      await savePin({ newPin: pin, currentPin: mode === 'change' ? current : undefined, otp: mode === 'reset' ? otp : undefined });
+      await savePin({ newPin: pin, confirmPin: confirm, currentPin: mode === 'change' ? current : undefined, otp: mode === 'reset' ? otp : undefined });
       onDone();
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
@@ -49,7 +49,7 @@ export function PinForm({ mode, phone, onDone, savePin = setTransactionPin }) {
         <>
           <CodeInput masked label="New PIN" length={PIN_LENGTH} value={pin} onChange={setPin} />
           <CodeInput masked label="Confirm New PIN" length={PIN_LENGTH} value={confirm} onChange={setConfirm} />
-          <p className={styles.hint}>Use 6 digits. Avoid birthdays, repeated digits (111111) or sequences (123456).</p>
+          <p className={styles.hint}>Use 4 digits. Avoid birthdays, repeated digits (1111) or sequences (1234).</p>
           {error && <p className={styles.error}>{error}</p>}
           <Button type="submit" icon="lock" disabled={busy || pin.length < PIN_LENGTH || confirm.length < PIN_LENGTH}>{busy ? 'Saving…' : mode === 'create' ? 'Create PIN' : 'Save New PIN'}</Button>
         </>
@@ -69,7 +69,7 @@ export function PinSettings({ onToast }) {
 
   return (
     <>
-      <SectionCard title="Transaction PIN" description="A 6-digit PIN that approves money movement from your account."
+      <SectionCard title="Transaction PIN" description="A 4-digit PIN that approves money movement from your account."
         action={<Badge tone={pin.set ? (locked ? 'danger' : 'success') : 'warning'} dot>{pin.set ? (locked ? 'Locked' : 'Active') : 'Not set'}</Badge>}>
         {locked && <Banner tone="danger" title="PIN temporarily locked">Too many wrong attempts. Wait 15 minutes or reset your PIN below.</Banner>}
         {pin.set && !activeMode && (

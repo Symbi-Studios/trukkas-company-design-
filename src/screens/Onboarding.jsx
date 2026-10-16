@@ -15,7 +15,7 @@ import { setCredentials } from '../store/features/auth/authSlice.js';
 import {
   useGetOnboardingDocumentsQuery, useUploadOnboardingDocumentMutation, useGetOnboardingTrucksQuery,
   useGetOnboardingBanksQuery, useResolveOnboardingBankMutation, useGetOnboardingBankQuery,
-  useSaveOnboardingBankMutation, useGetOnboardingSecurityQuery,
+  useSaveOnboardingBankMutation, useGetOnboardingSecurityQuery, useSaveOnboardingPinMutation,
 } from '../store/features/auth/onboardingApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { COMPANY_REQUIREMENTS, complianceFor, documentsFor } from '../domain/documents.js';
@@ -113,6 +113,7 @@ export function Onboarding() {
   const [uploadDocument] = useUploadOnboardingDocumentMutation();
   const [resolveBank] = useResolveOnboardingBankMutation();
   const [saveBank] = useSaveOnboardingBankMutation();
+  const [saveTransactionPin] = useSaveOnboardingPinMutation();
   const { data: documents } = useGetOnboardingDocumentsQuery(undefined, { skip: !account });
   const { data: truckData } = useGetOnboardingTrucksQuery(undefined, { skip: !account });
   const { data: banks } = useGetOnboardingBanksQuery(undefined, { skip: !account });
@@ -152,6 +153,11 @@ export function Onboarding() {
 
   async function submitDocument(document) {
     try { return await uploadDocument(document).unwrap(); }
+    catch (err) { throw new Error(getApiErrorMessage(err)); }
+  }
+
+  async function savePin(values) {
+    try { return await saveTransactionPin(values).unwrap(); }
     catch (err) { throw new Error(getApiErrorMessage(err)); }
   }
 
@@ -433,7 +439,7 @@ export function Onboarding() {
                 <h3><Icon name="lock-keyhole" size={17} /> Transaction PIN</h3>
                 {security?.pin?.set
                   ? <span className={styles.okLine}><Icon name="circle-check" size={16} />PIN created. You’ll use it to approve payouts, withdrawals and bank changes.</span>
-                  : <PinForm mode="create" phone={account?.phone} savePin={async () => { throw new Error('The API accepts a 4-digit transaction PIN; this form uses 6 digits. PIN creation is unavailable until these contracts match.'); }} onDone={() => {}} />}
+                  : <PinForm mode="create" phone={account?.phone} savePin={savePin} onDone={() => {}} />}
               </section>
               <div className={styles.footer}>
                 <Button variant="outline" onClick={() => go(7)}>Skip for now</Button>

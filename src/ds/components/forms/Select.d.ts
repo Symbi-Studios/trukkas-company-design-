@@ -1,5 +1,5 @@
 import * as React from 'react';
-export interface SelectOption { value: string; label: string; }
+export interface SelectOption { value: string; label: string; disabled?: boolean; }
 export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'value' | 'onChange'> {
   label?: React.ReactNode;
   options?: Array<string | SelectOption>;

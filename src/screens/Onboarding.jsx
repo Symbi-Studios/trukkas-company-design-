@@ -38,7 +38,13 @@ const STEPS = [
   { key: 'done', label: 'All set', icon: 'party-popper' },
 ];
 
-const STATES = ['Lagos', 'Ogun', 'Oyo', 'Rivers', 'Kano', 'Kaduna', 'FCT (Abuja)', 'Delta', 'Edo', 'Anambra', 'Abia', 'Enugu', 'Kwara', 'Sokoto', 'Cross River', 'Other'];
+const STATES = [
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue', 'Borno',
+  'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu', 'FCT (Abuja)', 'Gombe',
+  'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina', 'Kebbi', 'Kogi', 'Kwara', 'Lagos',
+  'Nasarawa', 'Niger', 'Ogun', 'Ondo', 'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto',
+  'Taraba', 'Yobe', 'Zamfara',
+];
 const REGIONS = ['South West', 'South South', 'South East', 'North Central', 'North West', 'North East', 'Cross-border (ECOWAS)'];
 const FLEET_SIZES = ['1–5 trucks', '6–20 trucks', '21–50 trucks', '51–100 trucks', '100+ trucks'];
 const RESEND_SECONDS = 30;
@@ -90,7 +96,7 @@ function VerifyStep({ channel, target, sessionToken, onVerified, onChangeTarget 
   return (
     <div className={styles.verify}>
       <span className={styles.verifyIcon}><Icon name={channel === 'email' ? 'mail' : 'message-square'} size={26} /></span>
-      <p className={styles.lead}>We sent a 6-digit code to <strong>{channel === 'email' ? maskEmail(target) : maskPhone(target)}</strong>. Expiry: —.</p>
+      <p className={styles.lead}>We sent a 6-digit code to <strong>{channel === 'email' ? maskEmail(target) : maskPhone(target)}</strong>. It expires in 10 minutes.</p>
       <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => verify(v)} error={error} disabled={busy} />
       <div className={styles.verifyActions}>
         <Button variant="ghost" disabled={left > 0 || resending || busy || verified.current} onClick={send}>{left > 0 ? `Resend in ${left}s` : 'Resend code'}</Button>
@@ -179,6 +185,12 @@ export function Onboarding() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const current = STEPS[step];
+  const canContinueAccount = form.name.trim().split(/\s+/).length >= 2
+    && /^\S+@\S+\.\S+$/.test(form.email)
+    && passwordStrength(form.password).score >= 3
+    && form.password === form.confirm
+    && form.terms;
+  const isValidRegistrationPhone = /^\+234\d{10}$/.test(form.phone.replace(/\s/g, ''));
   const go = (index) => {
     if (index < 2) { setSessionToken(null); setForm((value) => ({ ...value, phoneEntered: false })); }
     setError(''); setStep(index); window.scrollTo({ top: 0 });
@@ -216,7 +228,7 @@ export function Onboarding() {
   async function sendPhoneCode(event) {
     event.preventDefault();
     if (busy) return;
-    if (!/^\+234\d{10}$/.test(form.phone.replace(/\s/g, ''))) { setError('Enter a valid Nigerian mobile number, e.g. +234 803 000 0000.'); return; }
+    if (!isValidRegistrationPhone) { setError('Enter a valid Nigerian mobile number, e.g. +234 803 000 0000.'); return; }
     setBusy(true); setError('');
     try {
       const result = await startRegistration({ phone: form.phone }).unwrap();
@@ -311,7 +323,7 @@ export function Onboarding() {
               <PasswordStrength password={form.password} />
               <Checkbox checked={form.terms} onChange={(v) => setForm({ ...form, terms: v })} label="I agree to the Trukkas Terms of Service and Privacy Policy, and confirm I’m authorised to register this company." />
               {error && <p className={styles.error}>{error}</p>}
-              <Button type="submit" fullWidth size="lg" disabled={busy} iconRight="arrow-right">{busy ? 'Checking…' : 'Continue'}</Button>
+              <Button type="submit" fullWidth size="lg" disabled={busy || !canContinueAccount} iconRight="arrow-right">{busy ? 'Checking…' : 'Continue'}</Button>
             </form>
           )}
 
@@ -326,7 +338,7 @@ export function Onboarding() {
             }}>
               <TextField label="Date of birth" type="date" autoComplete="bday" required value={form.dateOfBirth} max={new Date().toISOString().slice(0, 10)} onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })} />
               {error && <p className={styles.error}>{error}</p>}
-              <Button type="submit" fullWidth size="lg" iconRight="arrow-right">Continue</Button>
+              <Button type="submit" fullWidth size="lg" disabled={!form.dateOfBirth} iconRight="arrow-right">Continue</Button>
             </form>
           )}
 
@@ -342,7 +354,7 @@ export function Onboarding() {
                 <p className={styles.lead}>We use your phone for sign-in codes, PIN resets and important trip alerts.</p>
                 <TextField label="Mobile Number" type="tel" autoComplete="tel" required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+234 803 000 0000" />
                 {error && <p className={styles.error}>{error}</p>}
-                <Button type="submit" fullWidth size="lg" disabled={busy} icon="message-square">{busy ? 'Sending…' : 'Send Code'}</Button>
+                <Button type="submit" fullWidth size="lg" disabled={busy || !isValidRegistrationPhone} icon="message-square">{busy ? 'Sending…' : 'Send Code'}</Button>
               </form>
             )
           )}

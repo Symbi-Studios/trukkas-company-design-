@@ -30,113 +30,96 @@ const rawBaseQuery = fetchBaseQuery({
 const refreshBaseQuery = fetchBaseQuery({ baseUrl });
 let activeRefresh = null;
 
-const REDACTED = '[REDACTED]';
-const sensitiveField = /authorization|cookie|password|passcode|secret|token|credential|identifier|actual[_-]?user[_-]?id|otp|^code$|pin$|email|phone|mobile|contact|name|actor|recipient|address|birth|\bdob\b|gender|location|latitude|longitude|coordinates|avatar|photo|\bbio\b|ip[_-]?address|device[_-]?id|nin|bvn|ssn|passport|license|iban|bank[_-]?(account|number)|card[_-]?(number|cvv)|national[_-]?id|tax[_-]?id|^(body|title|message)$|(^|[_-])search($|[_-])|(^|[_-])query($|[_-])|^q$/i;
-const identityCollection = new Set([
-  'users', 'admins', 'drivers', 'forwarders', 'customers', 'profiles',
-  'companies', 'accounts', 'recipients', 'contacts', 'verification',
-  'user', 'admin', 'driver', 'forwarder', 'customer', 'profile', 'company', 'account', 'recipient', 'contact',
-]);
+let requestSequence = 0;
 
-function redactInlineText(value) {
-  return value
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED)
-    .replace(/(?<![\w])\+?(?:\d[\s().-]?){9,14}(?!\w)/g, REDACTED);
+function bodyForLog(body) {
+  // Keep duplicate form fields and File objects visible in the console.
+  if (body instanceof FormData || body instanceof URLSearchParams) return Array.from(body.entries());
+  return body;
 }
 
-function sanitizeForLog(value, key = '', parents = [], seen = new WeakSet()) {
-  if (sensitiveField.test(key)) return REDACTED;
-  if (value == null || typeof value === 'boolean' || typeof value === 'number') return value;
-  if (typeof value === 'string') return redactInlineText(value);
-  if (typeof value !== 'object') return String(value);
-
-  if (seen.has(value)) return '[Circular]';
-  seen.add(value);
-
-  if (typeof Headers !== 'undefined' && value instanceof Headers) {
-    return Object.fromEntries(Array.from(value.entries(), ([header, content]) => [
-      header,
-      sanitizeForLog(content, header, parents, seen),
-    ]));
+function requestUrlForLog(args) {
+  const config = typeof args === 'string' ? { url: args } : args;
+  const path = config.url || '';
+  let url = /^[a-z][a-z\d+.-]*:|^\/\//i.test(path)
+    ? path
+    : baseUrl + (path.startsWith('?') ? '' : '/') + path.replace(/^\/+/, '');
+  if (config.params) {
+    const params = config.params instanceof URLSearchParams ? config.params
+      : new URLSearchParams(Object.fromEntries(Object.entries(config.params).filter(([, value]) => value !== undefined)));
+    url += (url.includes('?') ? '&' : '?') + params.toString();
   }
-  if (typeof FormData !== 'undefined' && value instanceof FormData) {
-    return Object.fromEntries(Array.from(value.entries(), ([field, content]) => [
-      field,
-      content instanceof Blob ? '[File omitted]' : sanitizeForLog(content, field, parents, seen),
-    ]));
-  }
-  if (typeof URLSearchParams !== 'undefined' && value instanceof URLSearchParams) {
-    return Object.fromEntries(Array.from(value.entries(), ([field, content]) => [
-      field,
-      sanitizeForLog(content, field, parents, seen),
-    ]));
-  }
-  if (typeof Blob !== 'undefined' && value instanceof Blob) return `[Binary data omitted; ${value.size} bytes]`;
-  if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return '[Binary data omitted]';
-  if (value instanceof Date) return value.toISOString();
-  if (Array.isArray(value)) return value.map((item) => sanitizeForLog(item, '', parents, seen));
-
-  const keys = Object.keys(value);
-  const containsIdentityFields = keys.some((field) => /email|phone|mobile|first[_-]?name|last[_-]?name|full[_-]?name|(^|[_-])name($|[_-])/i.test(field));
-  const nextParents = [...parents, key.toLowerCase()];
-  return Object.fromEntries(keys.map((field) => {
-    const isIdentity = containsIdentityFields && /^id$/i.test(field);
-    const isNestedIdentityId = /^((user|admin|driver|customer|profile|account|recipient|contact)[_-]?id)$/i.test(field);
-    const inIdentityCollection = parents.some((parent) => identityCollection.has(parent));
-    return [field, isIdentity || isNestedIdentityId || (inIdentityCollection && /^id$/i.test(field))
-      ? REDACTED
-      : sanitizeForLog(value[field], field, nextParents, seen)];
-  }));
-}
-
-function sanitizeUrl(rawUrl) {
-  try {
-    const value = String(rawUrl);
-    const url = /^[a-z][a-z\d+.-]*:/i.test(value)
-      ? new URL(value)
-      : new URL(value.replace(/^\/+/, ''), `${baseUrl}/`);
-    const segments = url.pathname.split('/');
-    let redactNextSegment = false;
-    const safeSegments = segments.map((segment) => {
-      if (redactNextSegment) {
-        redactNextSegment = false;
-        return REDACTED;
-      }
-      if (identityCollection.has(segment.toLowerCase())) redactNextSegment = true;
-      return segment;
-    });
-    url.searchParams.forEach((value, key) => {
-      url.searchParams.set(key, sanitizeForLog(value, key));
-    });
-    return `${url.origin}${safeSegments.join('/')}${url.search}`;
-  } catch {
-    return redactInlineText(String(rawUrl));
-  }
+  return url;
 }
 
 async function runLoggedBaseQuery(query, args, api, extraOptions, label = api.endpoint) {
+  if (!apiLoggingEnabled) return query(args, api, extraOptions);
+
+  const requestId = ++requestSequence;
+  const prefix = '[API #' + requestId + '] ';
   const startedAt = Date.now();
-  const result = await query(args, api, extraOptions);
-  if (!apiLoggingEnabled) return result;
+  const config = typeof args === 'string' ? { url: args } : args;
+  const details = {
+    requestId,
+    endpoint: label,
+    operation: api.type,
+    method: (config.method || 'GET').toUpperCase(),
+    url: requestUrlForLog(args),
+    params: config.params,
+    configuredHeaders: Object.fromEntries(new Headers(config.headers).entries()),
+    body: bodyForLog(config.body),
+    startedAt: new Date(startedAt).toISOString(),
+  };
+
+  // Log immediately so requests that are pending or fail are still visible.
+  console.info(prefix + 'REQUEST ' + details.method + ' ' + details.url, details);
+
+  let result;
+  try {
+    result = await query(args, api, extraOptions);
+  } catch (error) {
+    console.error(prefix + 'FAILED ' + details.method + ' ' + details.url, {
+      request: details,
+      durationMs: Date.now() - startedAt,
+      completedAt: new Date().toISOString(),
+      error,
+    });
+    throw error;
+  }
 
   const request = result.meta?.request;
   const response = result.meta?.response;
-  const method = (request?.method || (typeof args === 'string' ? 'GET' : args.method || 'GET')).toUpperCase();
-  const url = sanitizeUrl(request?.url || (typeof args === 'string' ? args : args.url));
-  const requestBody = typeof args === 'string' ? undefined : args.body;
-  const responseBody = result.error
-    ? (result.error.data ?? { error: result.error.error ?? result.error.status })
-    : result.data;
+  const statusCode = response?.status
+    ?? (result.error?.status === 'PARSING_ERROR' ? result.error.originalStatus
+      : typeof result.error?.status === 'number' ? result.error.status : null);
+  const method = request?.method || details.method;
+  const url = request?.url || details.url;
+  const durationMs = Date.now() - startedAt;
+  const responseBody = result.error ? result.error.data : result.data;
 
-  console.groupCollapsed(`[API] ${method} ${url} → ${response?.status ?? result.error?.status ?? 'complete'} (${Date.now() - startedAt}ms)`);
-  console.info('Endpoint:', label);
+  console.groupCollapsed(prefix + method + ' ' + url + ' → '
+    + (statusCode ?? result.error?.status ?? 'complete') + ' (' + durationMs + 'ms)');
   console.info('Request:', {
+    ...details,
     method,
     url,
-    headers: sanitizeForLog(request?.headers),
-    body: sanitizeForLog(requestBody),
+    headers: request ? Object.fromEntries(request.headers.entries()) : details.configuredHeaders,
   });
-  console.info('Response body:', sanitizeForLog(responseBody));
+  console.info('Response:', {
+    requestId,
+    endpoint: label,
+    statusCode,
+    statusText: response?.statusText,
+    ok: response?.ok,
+    url: response?.url,
+    headers: response ? Object.fromEntries(response.headers.entries()) : undefined,
+    redirected: response?.redirected,
+    type: response?.type,
+    durationMs,
+    completedAt: new Date().toISOString(),
+    body: bodyForLog(responseBody),
+  });
+  if (result.error) console.error('API/transport error:', result.error);
   console.groupEnd();
   return result;
 }

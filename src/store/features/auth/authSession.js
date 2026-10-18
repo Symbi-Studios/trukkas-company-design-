@@ -17,7 +17,7 @@ export function companySession(session, profile) {
     apiRole: profile.role,
     truckerType: profile.truckerType,
     actualUserId: text(user.actualUserId),
-    permissions: Array.isArray(user.permissions) ? user.permissions.filter((value) => typeof value === 'string') : [],
+    permissions: Array.isArray(user.permissions) ? user.permissions.filter((value) => typeof value === 'string') : null,
     companyIds: [profile.id],
     companyName: text(profile.businessName) || '—',
     title: '—',

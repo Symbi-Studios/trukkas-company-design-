@@ -13,6 +13,7 @@ import {
 } from "./ds.js";
 import { NAV, SEARCH_PLACEHOLDER } from "./nav.js";
 import { useLogoutAccountMutation } from "./store/features/auth/authApi.js";
+import { useGetNotificationUnreadCountQuery } from "./store/features/notifications/notificationsApi.js";
 import { setActiveCompany, clearSession } from "./store/features/auth/authSlice.js";
 import { baseApi } from "./store/api/baseApi.js";
 import { AppLoadingScreen } from "./components/AppLoadingScreen.jsx";
@@ -37,11 +38,14 @@ export function CompanyShell({ children }) {
   const account = useSelector((state) => state.auth.account);
   const dispatch = useDispatch();
   const [logoutAccount] = useLogoutAccountMutation();
-  const notifications = useCollection("notifications") || [];
-  const company = account ? { id: account.companyIds[0], name: account.companyName } : null;
-  const unreadCount = notifications.filter((n) => !n.read).length;
-  const router = useRouter();
   const pathname = usePathname();
+  const { data: notificationCount } = useGetNotificationUnreadCountQuery(undefined, {
+    skip: !account || loggingOut || PUBLIC_ROUTES.has(pathname),
+    refetchOnMountOrArgChange: true,
+  });
+  const company = account ? { id: account.companyIds[0], name: account.companyName } : null;
+  const unreadCount = notificationCount ?? null;
+  const router = useRouter();
   const jobs = useCollection("jobs") || [];
   const trips = useCollection("trips") || [];
   const trucks = useCollection("trucks") || [];

@@ -36,11 +36,11 @@ export function LegendList({ items = [], showShare = true, style }) {
           >
             {it.display ?? it.value}
           </span>
-          {showShare && it.value != null && (
+          {showShare && (it.value != null || Object.hasOwn(it, 'percent')) && (
             <span className="tk-meta" style={{ width: 46, textAlign: "right" }}>
-              ({Number.isFinite(it.percent)
+              {Object.hasOwn(it, 'percent') && !Number.isFinite(it.percent) ? '—' : `(${Number.isFinite(it.percent)
                 ? Math.round(it.percent * 10) / 10
-                : Math.round((it.value / total) * 1000) / 10}%)
+                : Math.round((it.value / total) * 1000) / 10}%)`}
             </span>
           )}
         </div>

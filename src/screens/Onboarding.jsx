@@ -16,6 +16,7 @@ import {
   useGetOnboardingDocumentsQuery, useUploadOnboardingDocumentMutation, useGetOnboardingTrucksQuery,
   useGetOnboardingBanksQuery, useResolveOnboardingBankMutation, useGetOnboardingBankQuery,
   useSaveOnboardingBankMutation, useGetOnboardingSecurityQuery, useSaveOnboardingPinMutation,
+  UNSUPPORTED_ONBOARDING_DOCUMENTS,
 } from '../store/features/auth/onboardingApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { COMPANY_REQUIREMENTS, complianceFor, documentsFor } from '../domain/documents.js';
@@ -131,7 +132,7 @@ export function Onboarding() {
   const [created, setCreated] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', terms: false, phone: '+234 ', dateOfBirth: '' });
   const [sessionToken, setSessionToken] = useState(null);
-  const [biz, setBiz] = useState({ name: '', rcNumber: '', entity: 'Limited Liability Company', founded: '', email: '', phone: '', address: '', state: 'Lagos', fleetSize: '', regions: [], role: 'Director', directorName: '', directorDob: '' });
+  const [biz, setBiz] = useState({ name: '', rcNumber: '', entity: 'Limited Liability Company', founded: '', email: '', phone: '', address: '', state: 'Lagos', fleetSize: '', regions: [], operatingStates: null, role: 'Director', directorName: '', directorDob: '' });
   const [truck, setTruck] = useState({ plate: '', vehicleClass: 'Head', make: '', model: '', year: '' });
   const [uploadType, setUploadType] = useState(null);
   const [error, setError] = useState('');
@@ -180,13 +181,14 @@ export function Onboarding() {
       ...value, name: account.companyName === '—' ? '' : account.companyName,
       rcNumber: account.cacNumber || '', address: account.businessAddress || '',
       entity: account.businessType || value.entity, email: account.email, phone: account.phone,
-      directorName: account.contactName || account.name, directorDob: account.dateOfBirth || '',
+      ...(account.onboardingCompany || {}),
     }));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const current = STEPS[step];
   const canContinueAccount = form.name.trim().split(/\s+/).length >= 2
     && /^\S+@\S+\.\S+$/.test(form.email)
+    && form.password.length >= 8
     && passwordStrength(form.password).score >= 3
     && form.password === form.confirm
     && form.terms;
@@ -197,12 +199,14 @@ export function Onboarding() {
   };
   const companyDocs = documentsFor(documents || [], 'company');
   const compliance = complianceFor(COMPANY_REQUIREMENTS, companyDocs).summary;
+  const companyComplianceAvailable = !!documents && !COMPANY_REQUIREMENTS.some((req) => req.required && UNSUPPORTED_ONBOARDING_DOCUMENTS.includes(req.type));
 
   async function submitAccount(event) {
     event.preventDefault();
     setError('');
     if (form.name.trim().split(/\s+/).length < 2) { setError('Enter your first and last name.'); return; }
     if (!/^\S+@\S+\.\S+$/.test(form.email)) { setError('Enter a valid email address.'); return; }
+    if (form.password.length < 8) { setError('Use at least 8 characters for your password.'); return; }
     if (passwordStrength(form.password).score < 3) { setError('Choose a stronger password.'); return; }
     if (form.password !== form.confirm) { setError('Passwords don’t match.'); return; }
     if (!form.terms) { setError('Accept the terms to continue.'); return; }
@@ -218,7 +222,7 @@ export function Onboarding() {
   }
 
   async function createAccount() {
-    const result = await signUpAccount({ name: form.name, email: form.email, password: form.password, dateOfBirth: form.dateOfBirth, sessionToken }).unwrap();
+    const result = await signUpAccount({ name: form.name, email: form.email, password: form.password, dateOfBirth: form.dateOfBirth, sessionToken, acceptedTerms: form.terms }).unwrap();
     setCreated(true);
     setForm((f) => ({ ...f, password: '', confirm: '' }));
     setBiz((b) => ({ ...b, email: result.account.email, phone: result.account.phone, directorName: result.account.name, directorDob: form.dateOfBirth }));
@@ -241,13 +245,15 @@ export function Onboarding() {
 
   async function submitCompany(event) {
     event.preventDefault();
+    if (busy) return;
     setError('');
     if (!biz.name.trim() || !biz.rcNumber.trim() || !biz.address.trim()) { setError('Company name, RC/BN number and address are required.'); return; }
     if (!biz.directorName.trim() || !biz.directorDob) { setError('Enter the director’s full name and date of birth.'); return; }
     setBusy(true);
     try {
-      await saveCompany(biz).unwrap();
-      dispatch(setCredentials({ account: { ...account, companyName: biz.name.trim(), cacNumber: biz.rcNumber.trim(), businessAddress: `${biz.address.trim()}, ${biz.state}, Nigeria`, businessType: biz.entity, contactName: biz.directorName.trim() } }));
+      const saved = await saveCompany(biz).unwrap();
+      dispatch(setCredentials({ account: { ...account, ...saved } }));
+      setBiz((value) => ({ ...value, ...saved.onboardingCompany }));
       go(4);
     } catch (err) { setError(getApiErrorMessage(err)); }
     finally { setBusy(false); }
@@ -258,7 +264,7 @@ export function Onboarding() {
     setError('');
     if (!truck.plate.trim() || !truck.make.trim() || !truck.model.trim() || !truck.year) { setError('Enter plate, make, model and year.'); return; }
     try {
-      throw new Error('Truck registration is unavailable here: the API does not document saving make, model or head/trailer type from this form.');
+      throw new Error('Truck registration is unavailable from this form until its vehicle types are supported.');
     } catch (err) { setError(err.message); }
   }
 
@@ -266,7 +272,7 @@ export function Onboarding() {
     if (busy) return;
     setBusy(true); setError('');
     try {
-      const result = await finishOnboarding().unwrap();
+      const result = await finishOnboarding({ acceptedTerms: form.terms || account?.registrationTermsConsent === true }).unwrap();
       dispatch(setCredentials({ account: { ...account, ...result } }));
       router.replace('/dashboard');
     } catch (err) { setError(getApiErrorMessage(err)); }
@@ -275,7 +281,7 @@ export function Onboarding() {
   const checklist = [
     { label: 'Phone verified', done: created, icon: 'badge-check' },
     { label: 'Company details', done: step >= 4, icon: 'building-2' },
-    { label: `Company documents (${documents ? compliance.requiredMet : '—'}/${compliance.requiredTotal})`, done: !!documents && compliance.complete, icon: 'file-check', to: '/documents' },
+    { label: `Company documents (${companyComplianceAvailable ? compliance.requiredMet : '—'}/${companyComplianceAvailable ? compliance.requiredTotal : '—'})`, done: companyComplianceAvailable && compliance.complete, icon: 'file-check', to: '/documents' },
     { label: `Trucks added (${truckData ? trucks.length : '—'})`, done: trucks.length > 0, icon: 'truck', to: '/fleet/new' },
     { label: 'Payout bank account', done: !!bank, icon: 'landmark', to: '/company-settings?tab=payout' },
     { label: 'Transaction PIN', done: !!security?.pin?.set, icon: 'lock-keyhole', to: '/company-settings?tab=pin' },
@@ -405,7 +411,7 @@ export function Onboarding() {
           {current.key === 'documents' && (
             <div className={styles.form}>
               <p className={styles.lead}>Trukkas verifies every company before it can bid on jobs or receive payouts. Upload what you have now — you can finish from <strong>Documents</strong> later.</p>
-              <ComplianceChecklist title="Business Documents" requirements={COMPANY_REQUIREMENTS} docs={companyDocs} unavailable={!documents} onUpload={(req) => setUploadType(req.type)} style={{ boxShadow: 'none' }} />
+              <ComplianceChecklist title="Business Documents" requirements={COMPANY_REQUIREMENTS} docs={companyDocs} unavailable={!documents} unavailableTypes={UNSUPPORTED_ONBOARDING_DOCUMENTS} onUpload={(req) => setUploadType(req.type)} style={{ boxShadow: 'none' }} />
               <div className={styles.footer}>
                 <Button variant="outline" onClick={() => go(5)}>Skip for now</Button>
                 <Button iconRight="arrow-right" onClick={() => go(5)}>Continue</Button>

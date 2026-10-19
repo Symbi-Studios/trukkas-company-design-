@@ -6,6 +6,7 @@ const documentTypes = {
   'Goods-in-Transit Insurance': 'GOODS_IN_TRANSIT_INSURANCE', 'Haulage Permit': 'OPERATING_LICENCE',
 };
 const documentNames = Object.fromEntries(Object.entries(documentTypes).map(([name, type]) => [type, name]));
+export const UNSUPPORTED_ONBOARDING_DOCUMENTS = ['Memorandum of Association', 'NIN', 'BVN', 'Government ID', 'Bank Verification'];
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : '—';
 const displayDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}(?:T|$)/.test(value) && Number.isFinite(Date.parse(value))
   ? new Date(value).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
@@ -50,11 +51,14 @@ export const onboardingApi = baseApi.injectEndpoints({
       invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingDocuments'],
     }),
     getOnboardingTrucks: builder.query({
-      query: () => '/dashboard/trucks',
+      query: () => '/auth/register/review',
       transformResponse(response) {
         const data = unwrapApiResponseData(response);
-        const trucks = Array.isArray(data) ? data : data?.trucks;
-        return Array.isArray(trucks) ? trucks.map((truck) => ({ id: truck.id, plate: text(truck.plateNumber), makeModel: '—' })) : null;
+        const trucks = data?.trucks;
+        return Array.isArray(trucks) ? trucks.map((truck) => ({
+          id: truck.id, plate: text(truck.plateNumber),
+          makeModel: [text(truck.make), text(truck.model)].join(' '),
+        })) : null;
       },
     }),
     getOnboardingBanks: builder.query({
@@ -85,7 +89,18 @@ export const onboardingApi = baseApi.injectEndpoints({
       query: () => '/profile/security-settings',
       transformResponse: (response) => {
         const data = unwrapApiResponseData(response);
-        return { pin: { set: typeof data?.transactionPinSet === 'boolean' ? data.transactionPinSet : null } };
+        return {
+          pin: {
+            set: typeof data?.transactionPinSet === 'boolean' ? data.transactionPinSet : null,
+            updatedOn: displayDate(data?.transactionPinChangedAt),
+          },
+          passwordUpdatedOn: displayDate(data?.passwordChangedAt),
+          twoFactor: {
+            available: typeof data?.twoFactor?.available === 'boolean' ? data.twoFactor.available : null,
+            enabled: typeof data?.twoFactor?.enabled === 'boolean' ? data.twoFactor.enabled : null,
+            method: data?.twoFactor?.method === 'app' ? 'Authenticator app' : data?.twoFactor?.method === 'sms' ? 'SMS' : '—',
+          },
+        };
       },
       providesTags: ['AuthOnboardingSecurity'],
     }),

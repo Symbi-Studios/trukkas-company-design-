@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from '../router.js';
-import { Avatar, Badge, Button, Card, DataTable, Icon, Modal, PageHeader, SectionCard, Select, SkeletonRow, Textarea, TextField } from '../ds.js';
+import { Avatar, Badge, Button, Card, DataTable, EmptyState, Icon, Modal, PageHeader, SectionCard, Select, SkeletonRow, Textarea, TextField } from '../ds.js';
 import {
-  EMPTY_PROFILE, useGetMyProfileQuery, useUpdateMyProfileMutation, useUploadMyProfilePhotoMutation,
+  EMPTY_PROFILE, useGetMyProfileQuery, useGetMyProfileAccessQuery, useGetMyProfileLoginHistoryQuery,
+  useUpdateMyProfileMutation, useUploadMyProfilePhotoMutation,
   useRemoveMyProfilePhotoMutation, useRequestProfileContactChangeMutation, useVerifyProfileContactChangeMutation,
 } from '../store/features/profile/profileApi.js';
 import { useGetOnboardingSecurityQuery } from '../store/features/auth/onboardingApi.js';
@@ -70,11 +71,16 @@ export function Profile() {
   const navigate = useNavigate();
   const account = useSelector((state) => state.auth.account);
   const { data, error, isLoading } = useGetMyProfileQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
-  const { data: security } = useGetOnboardingSecurityQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const { data: security, error: securityError } = useGetOnboardingSecurityQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const { data: access, error: accessError } = useGetMyProfileAccessQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const { data: loginHistory, error: historyError, isLoading: historyLoading } = useGetMyProfileLoginHistoryQuery(data?.timezoneId ?? null, {
+    skip: !account || isLoading, refetchOnMountOrArgChange: true,
+  });
   const [updateProfile, { isLoading: saving }] = useUpdateMyProfileMutation();
   const [uploadPhoto, { isLoading: uploading }] = useUploadMyProfilePhotoMutation();
   const [removePhoto, { isLoading: removing }] = useRemoveMyProfilePhotoMutation();
   const profile = data ?? EMPTY_PROFILE;
+  const canEdit = access?.canEdit === true;
   const busy = saving || uploading || removing;
   const [draft, setDraft] = useState(null);
   const [contact, setContact] = useState(null);
@@ -83,7 +89,6 @@ export function Profile() {
 
   if (!account) return null;
   const form = { ...profile, ...draft };
-  const permissions = Array.isArray(account.permissions) ? account.permissions : null;
   const set = (key) => (e) => {
     const value = e.target.value;
     setDraft((previous) => ({ ...previous, [key]: value }));
@@ -121,14 +126,14 @@ export function Profile() {
 
   return (
     <div className={styles.page}>
-      <PageHeader title="My Profile" description={error ? getApiErrorMessage(error) : 'Your personal details, sign-in security and access on this company account.'} />
+      <PageHeader title="My Profile" description={error || accessError || securityError ? getApiErrorMessage(error || accessError || securityError) : 'Your personal details, sign-in security and access on this company account.'} />
 
       <Card style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
         <Avatar name={profile.name} src={profile.photoUrl || undefined} size={80} tone="var(--tk-navy)" />
         <span style={{ flex: 1, minWidth: 220, display: 'grid', gap: 4 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <strong style={{ font: '700 22px/28px var(--tk-font-sans)', color: 'var(--tk-ink-900)' }}>{profile.name}</strong>
-            <Badge tone="purple">{account.role || '—'}</Badge>
+            <Badge tone="purple">{access?.roleName ?? '—'}</Badge>
           </span>
           <span className="tk-meta">{[profile.title, profile.companyName].join(' · ')}</span>
           <span className="tk-meta">Member since {profile.joined}</span>
@@ -140,8 +145,8 @@ export function Profile() {
           if (file.size > 5 * 1024 * 1024) { showToast('Photos must be under 5 MB.'); return; }
           savePhoto(file);
         }} />
-        <Button variant="outline" icon="camera" disabled={busy || !data} onClick={() => fileInput.current?.click()}>{profile.photoUrl ? 'Change Photo' : 'Upload Photo'}</Button>
-        {profile.photoUrl && <Button variant="ghost" disabled={busy} onClick={deletePhoto}>Remove</Button>}
+        <Button variant="outline" icon="camera" disabled={busy || !data || !canEdit} onClick={() => fileInput.current?.click()}>{profile.photoUrl ? 'Change Photo' : 'Upload Photo'}</Button>
+        {profile.photoUrl && <Button variant="ghost" disabled={busy || !canEdit} onClick={deletePhoto}>Remove</Button>}
       </Card>
 
       <div className={styles.shell} style={{ gridTemplateColumns: 'minmax(0, 1fr) 360px' }}>
@@ -152,40 +157,40 @@ export function Profile() {
               <TextField label="Job Title" value={form.title} onChange={set('title')} placeholder="e.g. Managing Director" />
               <div>
                 <TextField label="Email Address" value={profile.email} disabled suffix={profile.emailVerified === null ? '—' : profile.emailVerified ? <Badge tone="success">Verified</Badge> : <Badge tone="warning">Unverified</Badge>} />
-                <button type="button" disabled={busy || !data} className={styles.hint} style={{ border: 0, background: 'none', padding: 0, marginTop: 6, color: 'var(--tk-blue)', cursor: 'pointer', fontWeight: 600 }} onClick={() => setContact('email')}>Change email</button>
+                <button type="button" disabled={busy || !data || !canEdit} className={styles.hint} style={{ border: 0, background: 'none', padding: 0, marginTop: 6, color: 'var(--tk-blue)', cursor: 'pointer', fontWeight: 600 }} onClick={() => setContact('email')}>Change email</button>
               </div>
               <div>
                 <TextField label="Phone Number" value={profile.phone} disabled suffix={profile.phoneVerified === null ? '—' : profile.phoneVerified ? <Badge tone="success">Verified</Badge> : <Badge tone="warning">Unverified</Badge>} />
-                <button type="button" disabled={busy || !data} className={styles.hint} style={{ border: 0, background: 'none', padding: 0, marginTop: 6, color: 'var(--tk-blue)', cursor: 'pointer', fontWeight: 600 }} onClick={() => setContact('phone')}>Change phone</button>
+                <button type="button" disabled={busy || !data || !canEdit} className={styles.hint} style={{ border: 0, background: 'none', padding: 0, marginTop: 6, color: 'var(--tk-blue)', cursor: 'pointer', fontWeight: 600 }} onClick={() => setContact('phone')}>Change phone</button>
               </div>
               <div className={styles.full}><Textarea label="Short Bio (optional)" rows={2} maxLength={200} value={form.bio || ''} onChange={set('bio')} /></div>
-              <Select label="Language" value={form.language} placeholder="—" options={['English', 'Pidgin (coming soon)', 'Hausa (coming soon)', 'Yoruba (coming soon)', 'Igbo (coming soon)'].map((v) => ({ value: v, label: v }))} onChange={set('language')} />
-              <Select label="Time Zone" value={form.timezone} placeholder="—" options={TIMEZONES} onChange={set('timezone')} />
+              <Select label="Language" value={form.language} placeholder={form.language} options={['English', 'Pidgin (coming soon)', 'Hausa (coming soon)', 'Yoruba (coming soon)', 'Igbo (coming soon)'].map((v) => ({ value: v, label: v }))} onChange={set('language')} />
+              <Select label="Time Zone" value={form.timezone} placeholder={form.timezone} options={TIMEZONES} onChange={set('timezone')} />
               <div className={styles.formActions}>
-                <Button disabled={!draft || !form.name.trim() || form.name === '—' || busy || !data} onClick={() => persist({ name: form.name.trim(), title: form.title, bio: form.bio, language: form.language, timezone: form.timezone }, 'Profile saved.')}>Save Changes</Button>
+                <Button disabled={!draft || !form.name.trim() || busy || !data || !canEdit} onClick={() => persist({ name: form.name.trim(), title: form.title, bio: form.bio, language: form.language, timezone: form.timezone }, 'Profile saved.')}>Save Changes</Button>
                 {draft && <Button variant="outline" onClick={() => setDraft(null)}>Discard</Button>}
               </div>
             </div>
           </SectionCard>
 
           <SectionCard title="Recent Sign-in Activity" pad="none">
-            <DataTable rows={profile.loginHistory ?? []} rowKey={(r, i) => r.time + i} columns={[
+            {historyLoading ? <SkeletonRow columns={4} /> : historyError ? <EmptyState icon="clock" title={getApiErrorMessage(historyError)} /> : <DataTable rows={loginHistory ?? []} rowKey={(r, i) => r.id ?? r.time + i} columns={[
               { key: 'time', header: 'When', render: (r) => r.time },
               { key: 'device', header: 'Device', render: (r) => r.device },
               { key: 'location', header: 'Location', render: (r) => r.location },
-              { key: 'result', header: 'Result', render: (r) => <Badge tone={r.result === 'Success' ? 'success' : 'danger'}>{r.result}</Badge> },
-            ]} />
+              { key: 'result', header: 'Result', render: (r) => <Badge tone={r.result === 'Success' ? 'success' : r.result === 'Failed' ? 'danger' : 'neutral'}>{r.result}</Badge> },
+            ]} />}
           </SectionCard>
         </div>
 
         <aside className={styles.content}>
           <SectionCard title="Account Security">
             {[
-              { icon: 'key-round', label: 'Password', value: '—', ok: null, tab: 'security' },
-              { icon: 'shield-check', label: 'Two-factor authentication', value: '—', ok: null, tab: 'security' },
-              { icon: 'lock-keyhole', label: 'Transaction PIN', value: security?.pin.set === true ? 'Set · —' : security?.pin.set === false ? 'Not set' : '—', ok: security?.pin.set, tab: 'pin' },
+              { icon: 'key-round', label: 'Password', value: security?.passwordUpdatedOn && security.passwordUpdatedOn !== '—' ? `Changed ${security.passwordUpdatedOn}` : '—', ok: security?.passwordUpdatedOn && security.passwordUpdatedOn !== '—', tab: 'security' },
+              { icon: 'shield-check', label: 'Two-factor authentication', value: security?.twoFactor?.enabled === true ? `On · ${security.twoFactor.method ?? '—'}` : security?.twoFactor?.enabled === false ? 'Off' : '—', ok: security?.twoFactor?.enabled, disabled: security?.twoFactor?.available === false, tab: 'security' },
+              { icon: 'lock-keyhole', label: 'Transaction PIN', value: security?.pin.set === true ? `Set · ${security.pin.updatedOn ?? '—'}` : security?.pin.set === false ? 'Not set' : '—', ok: security?.pin.set, tab: 'pin' },
             ].map((item) => (
-              <button key={item.label} type="button" className={styles.row} onClick={() => navigate(`/company-settings?tab=${item.tab}`)}
+              <button key={item.label} type="button" disabled={item.disabled} className={styles.row} onClick={() => navigate(`/company-settings?tab=${item.tab}`)}
                 style={{ width: '100%', background: 'none', border: 0, borderTop: '1px solid var(--tk-line)', cursor: 'pointer', textAlign: 'left' }}>
                 <span className={styles.iconTile} data-tone={item.ok ? 'green' : 'amber'}><Icon name={item.icon} size={18} /></span>
                 <span className={styles.rowMain}><strong>{item.label}</strong><small>{item.value}</small></span>
@@ -193,13 +198,13 @@ export function Profile() {
               </button>
             ))}
           </SectionCard>
-          <SectionCard title="Your Access" description="—">
+          <SectionCard title="Your Access" description={access?.roleDescription ?? '—'}>
             {PERMISSION_GROUPS.map((g) => {
-              const granted = g.permissions.filter((p) => permissions?.includes(p.key));
+              const group = access?.groups[g.group];
               return (
                 <div key={g.group} className={styles.row}>
-                  <span className={styles.iconTile} data-tone={granted.length ? 'green' : 'neutral'}><Icon name={g.icon} size={16} /></span>
-                  <span className={styles.rowMain}><strong>{g.group}</strong><small>{permissions === null ? '—' : granted.length ? granted.map((p) => p.label).join(', ') : 'No access'}</small></span>
+                  <span className={styles.iconTile} data-tone={group?.granted ? 'green' : 'neutral'}><Icon name={g.icon} size={16} /></span>
+                  <span className={styles.rowMain}><strong>{g.group}</strong><small>{group?.value ?? '—'}</small></span>
                 </div>
               );
             })}

@@ -14,16 +14,17 @@ const STATUS_ICON = {
 };
 
 /** Requirement-by-requirement checklist for one owner (company, vehicle or driver). */
-export function ComplianceChecklist({ title, description, requirements, docs, onUpload, onOpen, action, style, unavailable = false }) {
+export function ComplianceChecklist({ title, description, requirements, docs, onUpload, onOpen, action, style, unavailable = false, unavailableTypes = [] }) {
   const { rows, summary } = complianceFor(requirements, docs);
+  const summaryUnavailable = unavailable || requirements.some((req) => req.required && unavailableTypes.includes(req.type));
   const pct = summary.requiredTotal ? Math.round((summary.requiredMet / summary.requiredTotal) * 100) : 100;
   return (
     <SectionCard
       title={title} description={description} style={style}
-      action={action || <Badge tone={summary.complete ? 'success' : 'warning'} dot>{unavailable ? '—' : summary.complete ? 'Compliant' : 'Action needed'}</Badge>}
+      action={action || <Badge tone={summary.complete ? 'success' : 'warning'} dot>{summaryUnavailable ? '—' : summary.complete ? 'Compliant' : 'Action needed'}</Badge>}
     >
       <ProgressBar
-        value={pct} height={8} label="Required documents" caption={unavailable ? '—' : `${summary.requiredMet} of ${summary.requiredTotal}`}
+        value={pct} height={8} label="Required documents" caption={summaryUnavailable ? '—' : `${summary.requiredMet} of ${summary.requiredTotal}`}
         color={summary.complete ? 'var(--tk-success)' : 'var(--tk-warning)'}
       />
       <ul className={styles.rows}>
@@ -44,7 +45,7 @@ export function ComplianceChecklist({ title, description, requirements, docs, on
                     : req.hint || 'Not uploaded yet.'}
                 </small>
               </span>
-              <Badge tone={tone}>{unavailable ? '—' : status}</Badge>
+              <Badge tone={tone}>{unavailable || unavailableTypes.includes(req.type) ? '—' : status}</Badge>
               <span className={styles.actions}>
                 {doc && onOpen && <Button size="sm" variant="outline" icon="eye" onClick={() => onOpen(doc)}>View</Button>}
                 {onUpload && (

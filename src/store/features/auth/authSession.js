@@ -1,10 +1,15 @@
+import { companyFormView } from './onboardingContracts.js';
+
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
 
 // The company-facing API identifies a company by its trucker user ID.
-export function companySession(session, profile) {
+export function companySession(session, profile, access) {
   const user = session.user;
   if (!profile || profile.id !== user.id || profile.role !== 'TRUCKER' || profile.truckerType !== 'COMPANY') {
     throw new Error('This account does not have a confirmed trucking-company profile. Use your company account or contact support.');
+  }
+  if (!access || access.companyId !== profile.id || typeof access.isOwner !== 'boolean' || !text(access.userId)) {
+    throw new Error('The API could not confirm your access to this company. Please sign in again.');
   }
   const fullName = [profile.firstName, profile.middleName, profile.lastName].map(text).filter(Boolean).join(' ');
   const account = {
@@ -12,15 +17,16 @@ export function companySession(session, profile) {
     name: fullName || text(profile.contactName) || '—',
     email: text(profile.email) || '—',
     phone: text(profile.phone) || '—',
-    role: text(user.teamRole) || 'Owner',
-    roleId: text(user.teamRole) || 'owner',
+    role: text(access.role?.name) ?? (access.isOwner ? 'Owner' : '—'),
+    roleId: access.isOwner ? 'owner' : text(access.role?.id),
     apiRole: profile.role,
     truckerType: profile.truckerType,
-    actualUserId: text(user.actualUserId),
-    permissions: Array.isArray(user.permissions) ? user.permissions.filter((value) => typeof value === 'string') : null,
+    actualUserId: access.isOwner ? null : access.userId,
+    isOwner: access.isOwner,
+    permissions: Array.isArray(access.permissions) ? access.permissions.filter((value) => typeof value === 'string') : null,
     companyIds: [profile.id],
     companyName: text(profile.businessName) || '—',
-    title: '—',
+    title: text(profile.title) ?? '—',
     emailVerified: typeof profile.emailVerified === 'boolean' ? profile.emailVerified : null,
     phoneVerified: typeof profile.phoneVerified === 'boolean' ? profile.phoneVerified : null,
     onboardingComplete: typeof profile.onboarding?.complete === 'boolean' ? profile.onboarding.complete : null,
@@ -31,6 +37,7 @@ export function companySession(session, profile) {
     cacNumber: text(profile.cacNumber),
     businessType: text(profile.businessType),
     contactName: text(profile.contactName),
+    onboardingCompany: companyFormView(profile),
   };
   return { account, activeCompanyId: profile.id, accessToken: session.accessToken, refreshToken: session.refreshToken };
 }

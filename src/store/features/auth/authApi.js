@@ -1,6 +1,7 @@
 import { baseApi, refreshSession, unwrapApiResponseData } from '../../api/baseApi.js';
 import { setCredentials } from './authSlice.js';
 import { companySession } from './authSession.js';
+import { companyFormBody, companyFormView } from './onboardingContracts.js';
 
 const post = (url, body) => ({ url, method: 'POST', body });
 const unavailable = (message) => ({ error: { status: 'CUSTOM_ERROR', error: message } });
@@ -13,8 +14,10 @@ async function sessionFromResponse(response, baseQuery) {
   }
   const profile = await baseQuery({ url: '/profile', headers: { authorization: `Bearer ${data.accessToken}` } });
   if (profile.error) return profile;
+  const access = await baseQuery({ url: '/team/me', headers: { authorization: `Bearer ${data.accessToken}` } });
+  if (access.error) return access;
   try {
-    return { data: companySession(data, unwrapApiResponseData(profile.data)?.user) };
+    return { data: companySession(data, unwrapApiResponseData(profile.data)?.user, unwrapApiResponseData(access.data)) };
   } catch (error) {
     return unavailable(error.message);
   }
@@ -60,8 +63,9 @@ export const authApi = baseApi.injectEndpoints({
       transformResponse: unwrapApiResponseData,
     }),
     signUpAccount: builder.mutation({
-      async queryFn({ name, email, password, dateOfBirth, sessionToken }, _api, _options, baseQuery) {
+      async queryFn({ name, email, password, dateOfBirth, sessionToken, acceptedTerms }, _api, _options, baseQuery) {
         const names = name.trim().split(/\s+/);
+        if (acceptedTerms !== true) return unavailable('Accept the terms to continue.');
         if (names.length < 2 || !dateOfBirth || !sessionToken) {
           return unavailable('Enter your first and last name, date of birth, and verify your phone before creating an account.');
         }
@@ -84,23 +88,43 @@ export const authApi = baseApi.injectEndpoints({
         if (selected.error) return unavailable('Your account was created, but company setup could not be completed. Retry verification to continue company setup; do not register again.');
         pendingRegistration.selected = true;
         const session = await sessionFromResponse(result.data, baseQuery);
-        if (!session.error) pendingRegistration = null;
+        if (!session.error) {
+          session.data.account.registrationTermsConsent = true;
+          pendingRegistration = null;
+        }
         return session;
       },
       onQueryStarted: storeSession,
     }),
     saveOnboardingCompany: builder.mutation({
-      async queryFn({ name, rcNumber, address, state, entity, directorName }, _api, _options, baseQuery) {
-        const details = await baseQuery({ url: '/profile', method: 'PATCH', body: { businessType: entity, contactName: directorName.trim() } });
+      async queryFn(form, api, _options, baseQuery) {
+        let body;
+        try { body = companyFormBody(form); }
+        catch (error) { return unavailable(error.message); }
+        const details = await baseQuery({ url: '/profile', method: 'PATCH', body: { businessType: form.entity } });
         if (details.error) return details;
-        const result = await baseQuery(post('/auth/register/company-profile', {
-          businessName: name.trim(), cacNumber: rcNumber.trim(), businessAddress: `${address.trim()}, ${state}, Nigeria`,
-        }));
-        return result.error ? result : { data: unwrapApiResponseData(result.data) };
+        const result = await baseQuery(post('/auth/register/company-profile', body));
+        if (result.error) return result;
+        const data = unwrapApiResponseData(result.data);
+        const resultProfile = await baseQuery('/profile');
+        if (resultProfile.error) return unavailable('Company details were saved, but the updated profile could not be loaded. Sign in again to resume setup.');
+        const user = unwrapApiResponseData(resultProfile.data)?.user;
+        if (user?.id !== api.getState().auth.account?.id || user?.role !== 'TRUCKER' || user?.truckerType !== 'COMPANY') {
+          return unavailable('The API did not confirm the saved company profile.');
+        }
+        return { data: {
+          companyName: typeof user.businessName === 'string' ? user.businessName : '—',
+          cacNumber: typeof user.cacNumber === 'string' ? user.cacNumber : null,
+          businessAddress: typeof user.businessAddress === 'string' ? user.businessAddress : null,
+          businessType: typeof user.businessType === 'string' ? user.businessType : null,
+          onboardingCompany: companyFormView(user, data?.companyProfile),
+          onboardingStep: user.onboarding?.nextStep ?? null,
+          onboardingComplete: typeof user.onboarding?.complete === 'boolean' ? user.onboarding.complete : null,
+        } };
       },
     }),
     finishCompanyOnboarding: builder.mutation({
-      async queryFn(_arg, _api, _options, baseQuery) {
+      async queryFn({ acceptedTerms } = {}, _api, _options, baseQuery) {
         const profile = await baseQuery('/profile');
         if (profile.error) return profile;
         const user = unwrapApiResponseData(profile.data)?.user;
@@ -108,7 +132,7 @@ export const authApi = baseApi.injectEndpoints({
         if (user.onboarding?.nextStep !== 'SUBMIT_FOR_REVIEW') {
           return { data: { onboardingStep: user.onboarding?.nextStep ?? null, onboardingComplete: user.onboarding?.complete ?? null } };
         }
-        const submitted = await baseQuery(post('/auth/register/submit'));
+        const submitted = await baseQuery(post('/auth/register/submit', acceptedTerms === true ? { acceptedTerms: true } : undefined));
         if (submitted.error) return submitted;
         const data = unwrapApiResponseData(submitted.data);
         return data?.status === 'PENDING_REVIEW'

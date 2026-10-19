@@ -1,7 +1,7 @@
 import { baseApi, refreshSession, unwrapApiResponseData } from '../../api/baseApi.js';
 import { setCredentials } from './authSlice.js';
 import { companySession } from './authSession.js';
-import { companyFormBody, companyFormView } from './onboardingContracts.js';
+import { companyFormBody, companyFormView, isAdultDate } from './onboardingContracts.js';
 
 const post = (url, body) => ({ url, method: 'POST', body });
 const unavailable = (message) => ({ error: { status: 'CUSTOM_ERROR', error: message } });
@@ -9,7 +9,8 @@ let pendingRegistration = null;
 
 async function sessionFromResponse(response, baseQuery) {
   const data = unwrapApiResponseData(response);
-  if (typeof data?.accessToken !== 'string' || typeof data?.refreshToken !== 'string' || !data?.user?.id) {
+  if (typeof data?.accessToken !== 'string' || !data.accessToken.trim()
+    || typeof data?.refreshToken !== 'string' || !data.refreshToken.trim() || !data?.user?.id) {
     return unavailable('The API did not return a complete session. Please sign in again.');
   }
   const profile = await baseQuery({ url: '/profile', headers: { authorization: `Bearer ${data.accessToken}` } });
@@ -69,6 +70,10 @@ export const authApi = baseApi.injectEndpoints({
         if (names.length < 2 || !dateOfBirth || !sessionToken) {
           return unavailable('Enter your first and last name, date of birth, and verify your phone before creating an account.');
         }
+        if (!isAdultDate(dateOfBirth)) return unavailable('You must be at least 18 years old to register.');
+        if (!/^\S+@\S+\.\S+$/.test(email.trim()) || typeof password !== 'string' || password.length < 8) {
+          return unavailable('Enter a valid email and a password with at least 8 characters.');
+        }
         let result = pendingRegistration?.sessionToken === sessionToken ? { data: pendingRegistration.response } : null;
         if (!result) result = await baseQuery(post('/auth/register/create-account', {
           sessionToken, firstName: names[0], lastName: names[names.length - 1],
@@ -77,7 +82,8 @@ export const authApi = baseApi.injectEndpoints({
         }));
         if (result.error) return result;
         const data = unwrapApiResponseData(result.data);
-        if (typeof data?.accessToken !== 'string' || typeof data?.refreshToken !== 'string' || data.user?.role !== 'TRUCKER') {
+        if (typeof data?.accessToken !== 'string' || !data.accessToken.trim()
+          || typeof data?.refreshToken !== 'string' || !data.refreshToken.trim() || data.user?.role !== 'TRUCKER') {
           return unavailable('The API did not return a trucking account session. Please sign in again.');
         }
         pendingRegistration = { sessionToken, response: result.data, selected: pendingRegistration?.sessionToken === sessionToken && pendingRegistration.selected };

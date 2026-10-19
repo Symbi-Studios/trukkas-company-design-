@@ -8,12 +8,14 @@ import {
   EmptyState, ProgressBar, SectionCard, Skeleton, SkeletonRow, StatCard,
 } from '../ds.js';
 import {
-  EMPTY_DASHBOARD, EMPTY_EARNINGS, useGetCompanyDashboardQuery, useGetDashboardActiveTripsQuery,
+  EMPTY_DASHBOARD, EMPTY_EARNINGS, useGetCompanyDashboardQuery, useGetDashboardPendingJobsQuery, useGetDashboardActiveTripsQuery,
   useGetDashboardEarningsQuery, useGetDashboardRatingQuery,
 } from '../store/features/dashboard/dashboardApi.js';
 import { useGetNotificationsQuery, useGetNotificationUnreadCountQuery, useMarkNotificationReadMutation } from '../store/features/notifications/notificationsApi.js';
 import { useGetOnboardingBankQuery } from '../store/features/auth/onboardingApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { jobDetailHref } from '../domain/jobLinks.js';
+import { tripDetailHref } from '../domain/tripLinks.js';
 import { EarningsExpensesChart } from '../components/EarningsExpensesChart.jsx';
 import { NOTIFICATION_TONE } from './NotificationCenter.jsx';
 import styles from './Dashboard.module.css';
@@ -73,6 +75,7 @@ export function Dashboard() {
   const router = useRouter();
   const companyName = useSelector((state) => state.auth.account?.companyName);
   const { data: overview = EMPTY_DASHBOARD, error: overviewError, isLoading: overviewLoading } = useGetCompanyDashboardQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { data: pendingJobData, error: pendingJobsError, isLoading: pendingJobsLoading } = useGetDashboardPendingJobsQuery(undefined, { refetchOnMountOrArgChange: true });
   const { data: tripData, error: tripsError, isLoading: tripsLoading } = useGetDashboardActiveTripsQuery(undefined, { refetchOnMountOrArgChange: true });
   const { data: earnings = EMPTY_EARNINGS, error: earningsError, isLoading: earningsLoading } = useGetDashboardEarningsQuery(undefined, { refetchOnMountOrArgChange: true });
   const { data: reviewSummary, error: ratingError, isLoading: ratingLoading } = useGetDashboardRatingQuery(undefined, { refetchOnMountOrArgChange: true });
@@ -83,7 +86,7 @@ export function Dashboard() {
   const [actionError, setActionError] = useState(null);
   const bankConfigured = bank === null ? false : bank && [bank.bankName, bank.last4, bank.accountName].every((value) => value && value !== '—') ? true : null;
   const setupItems = [
-    { label: 'Verify email & phone', hint: 'Confirm your contact details', icon: 'badge-check', done: overview.setup.contact, to: '/profile' },
+    { label: 'Verify email & phone', hint: 'Confirm your contact details', icon: 'badge-check', done: overview.setup.contact, to: '/profile?verify=email' },
     { label: 'Company documents', hint: overview.setup.documentHint, icon: 'file-check', done: overview.setup.documents, to: '/documents' },
     { label: 'Add your first truck', hint: 'Papers, photos and specs', icon: 'truck', done: overview.setup.truck, to: '/fleet/new' },
     { label: 'Onboard a driver', hint: 'Licence and ID', icon: 'user-round', done: overview.setup.driver, to: '/drivers' },
@@ -91,7 +94,7 @@ export function Dashboard() {
     { label: 'Transaction PIN', hint: 'Approves payouts & withdrawals', icon: 'lock-keyhole', done: overview.setup.pin, to: '/company-settings?tab=pin' },
     { label: 'Two-factor authentication', hint: 'Protect your sign-in', icon: 'shield-check', done: overview.setup.twoFactor, available: overview.setup.twoFactorAvailable, to: '/company-settings?tab=security' },
   ];
-  const data = { ...overview, pendingJobs: null, activeTrips: tripData?.trips ?? null };
+  const data = { ...overview, pendingJobs: pendingJobData?.jobs ?? null, activeTrips: tripData?.trips ?? null };
   const expiringDocs = overview.expiringDocs;
   // Unread first, then in the order the feed delivers them.
   const latestNotifications = useMemo(() => notificationData?.notifications
@@ -137,17 +140,17 @@ export function Dashboard() {
           <div className={styles.compactTable}>
             <DataTable
               rows={data.pendingJobs ?? []}
-              rowKey={(job) => job.id}
-              onRowClick={(job) => router.push(`/jobs/${job.id}`)}
+              rowKey={(job, index) => job.bidId ?? index}
+              onRowClick={(job) => job.id && router.push(jobDetailHref(job.id))}
               tableLayout="fixed"
               columns={[
-                { key: 'id', header: 'Job ID', width: 146, render: (job) => job.id },
+                { key: 'id', header: 'Job ID', width: 146, render: (job) => job.number },
                 { key: 'route', header: 'Route & Type', render: (job) => <span>{job.origin} → {job.destination}<br /><span className="tk-meta">{job.jobType}</span></span> },
                 { key: 'requirement', header: 'Requirement', width: 140, render: (job) => <Badge tone="warning">{job.requirement}</Badge> },
                 { key: 'postedOn', header: 'Requested', width: 116, render: (job) => job.postedOn?.split(' · ')[0] },
               ]}
             />
-            {overview.pendingJobRequests !== 0 && <span className="tk-meta">—</span>}
+            {pendingJobsLoading ? <SkeletonRow columns={4} /> : pendingJobsError ? <EmptyState icon="briefcase" title={getApiErrorMessage(pendingJobsError)} /> : data.pendingJobs === null && <span className="tk-meta">—</span>}
           </div>
         </SectionCard>
         <SectionCard
@@ -160,7 +163,7 @@ export function Dashboard() {
             <DataTable
               rows={data.activeTrips ?? []}
               rowKey={(trip, index) => trip.id ?? index}
-              onRowClick={(trip) => trip.id && router.push(`/trips/${encodeURIComponent(trip.id)}`)}
+              onRowClick={(trip) => trip.id && router.push(tripDetailHref(trip.id))}
               tableLayout="fixed"
               columns={[
                 { key: 'trip', header: 'Trip & Route', render: (trip) => <span>{trip.number}<br /><span className="tk-meta">{trip.origin} → {trip.destination}</span></span> },

@@ -6,7 +6,7 @@ const boolean = (value) => typeof value === 'boolean' ? value : null;
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const displayDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))
   ? new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeZone: 'Africa/Lagos' }).format(new Date(value)) : '—';
-const languages = { en: 'English', fr: 'French', ha: 'Hausa (coming soon)', yo: 'Yoruba (coming soon)', ig: 'Igbo (coming soon)' };
+const languages = { en: 'English', fr: 'French', ha: 'Hausa (coming soon)', yo: 'Yoruba (coming soon)', ig: 'Igbo (coming soon)', pcm: 'Pidgin (coming soon)' };
 const timezones = {
   'Africa/Lagos': 'Africa/Lagos (WAT, UTC+1)', 'Africa/Accra': 'Africa/Accra (GMT, UTC+0)',
   'Africa/Nairobi': 'Africa/Nairobi (EAT, UTC+3)', 'Europe/London': 'Europe/London (UTC+0/+1)',
@@ -35,6 +35,21 @@ export const EMPTY_PROFILE = {
   emailVerified: null, phoneVerified: null,
   title: '—', bio: '—', language: '—', timezone: '—', timezoneId: null,
 };
+
+function contactValue(channel, value) {
+  if (typeof value !== 'string') return null;
+  if (channel === 'email') return /^\S+@\S+\.\S+$/.test(value.trim()) ? value.trim() : null;
+  if (channel === 'phone') {
+    const phone = value.replace(/\s/g, '');
+    return /^\+?\d{10,15}$/.test(phone) ? phone : null;
+  }
+  return null;
+}
+
+export const isProfileContactValid = (channel, value) => contactValue(channel, value) !== null;
+
+const verificationTime = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))
+  ? Date.parse(value) : null;
 
 function profileAccountError(api, editing = false) {
   const account = api.getState().auth.account;
@@ -75,11 +90,13 @@ function profileResult(response, api) {
 }
 
 async function syncProfile(_arg, { dispatch, getState, queryFulfilled }) {
-  const token = getState().auth.accessToken;
+  const previousAccount = getState().auth.account;
   try {
     const { data } = await queryFulfilled;
     const account = getState().auth.account;
-    if (!data || token !== getState().auth.accessToken || account?.id !== data.id) return;
+    // Refreshing tokens keeps the account object. A logout, different login or
+    // newer profile sync replaces it, so an older response must not overwrite it.
+    if (!data || account !== previousAccount || account?.id !== data.id) return;
     dispatch(setCredentials({ account: {
       ...account, name: data.name, email: data.email, phone: data.phone,
       photoUrl: data.photoUrl, companyName: data.companyName, title: data.title,
@@ -88,6 +105,21 @@ async function syncProfile(_arg, { dispatch, getState, queryFulfilled }) {
     dispatch(profileApi.util.updateQueryData('getMyProfile', undefined, () => data));
   } catch {
     // Keep the last confirmed account. The screen presents the request error.
+  }
+}
+
+async function syncProfilePhoto(_arg, { dispatch, getState, queryFulfilled }) {
+  const previousAccount = getState().auth.account;
+  try {
+    const { data } = await queryFulfilled;
+    const account = getState().auth.account;
+    if (!data || !account || account !== previousAccount || !Object.hasOwn(data, 'photoUrl')) return;
+    dispatch(setCredentials({ account: { ...account, photoUrl: data.photoUrl } }));
+    dispatch(profileApi.util.updateQueryData('getMyProfile', undefined, (profile) => {
+      if (profile.id === account.id) profile.photoUrl = data.photoUrl;
+    }));
+  } catch {
+    // Keep the last confirmed photo when the upload or removal fails.
   }
 }
 
@@ -205,6 +237,7 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
         const photoUrl = text(unwrapApiResponseData(result.data)?.avatarUrl);
         return photoUrl ? { data: { photoUrl } } : unavailable('The API did not confirm your uploaded profile photo.');
       },
+      onQueryStarted: syncProfilePhoto,
       invalidatesTags: (_data, error) => error ? [] : ['Profile'],
     }),
     removeMyProfilePhoto: builder.mutation({
@@ -216,16 +249,50 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
         return unwrapApiResponseData(result.data)?.avatarUrl === null
           ? { data: { photoUrl: null } } : unavailable('The API did not confirm removal of your profile photo.');
       },
+      onQueryStarted: syncProfilePhoto,
       invalidatesTags: (_data, error) => error ? [] : ['Profile'],
+    }),
+    requestProfileEmailVerification: builder.mutation({
+      async queryFn(_arg, api, _options, baseQuery) {
+        const blocked = profileAccountError(api);
+        if (blocked) return blocked;
+        const result = await baseQuery({ url: '/profile/request-email-verification', method: 'POST' });
+        if (result.error) {
+          const seconds = unwrapApiResponseData(result.error.data)?.retryAfterSeconds;
+          return { error: { ...result.error, retryAt: Number.isFinite(seconds) && seconds > 0 ? Date.now() + seconds * 1000 : null } };
+        }
+        const data = unwrapApiResponseData(result.data);
+        if (typeof data?.emailVerified !== 'boolean') return unavailable('The API did not confirm whether an email verification code was sent.');
+        return { data: {
+          verified: data.emailVerified,
+          expiresAt: verificationTime(data.expiresAt),
+          resendAt: verificationTime(data.resendAvailableAt),
+        } };
+      },
+      invalidatesTags: (data, error) => !error && data?.verified === true ? ['Profile', 'AuthOnboardingSecurity'] : [],
+    }),
+    verifyProfileEmail: builder.mutation({
+      async queryFn({ code }, api, _options, baseQuery) {
+        const blocked = profileAccountError(api);
+        if (blocked) return blocked;
+        if (typeof code !== 'string' || !/^\d{6}$/.test(code)) return unavailable('Enter the 6-digit verification code.');
+        const result = await baseQuery({ url: '/profile/verify-email', method: 'POST', body: { code } });
+        if (result.error) return result;
+        return unwrapApiResponseData(result.data)?.emailVerified === true
+          ? { data: { verified: true } } : unavailable('The API did not confirm email verification.');
+      },
+      invalidatesTags: (_data, error) => error ? [] : ['Profile', 'AuthOnboardingSecurity'],
     }),
     requestProfileContactChange: builder.mutation({
       async queryFn({ channel, value }, api, _options, baseQuery) {
         const blocked = profileAccountError(api, true);
         if (blocked) return blocked;
         if (!['email', 'phone'].includes(channel)) return unavailable('Choose email or phone.');
+        const contact = contactValue(channel, value);
+        if (!contact) return unavailable(channel === 'email' ? 'Enter a valid email.' : 'Enter a valid phone number.');
         return baseQuery({
           url: `/profile/request-${channel}-change`, method: 'POST',
-          body: channel === 'email' ? { newEmail: value.trim() } : { newPhone: value.replace(/\s/g, '') },
+          body: channel === 'email' ? { newEmail: contact } : { newPhone: contact },
         });
       },
     }),
@@ -235,12 +302,14 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
         if (blocked) return blocked;
         if (!['email', 'phone'].includes(channel)) return unavailable('Choose email or phone.');
         if (!/^\d{6}$/.test(code)) return unavailable('Enter the 6-digit verification code.');
+        const contact = contactValue(channel, value);
+        if (!contact) return unavailable(channel === 'email' ? 'Enter a valid email.' : 'Enter a valid phone number.');
         return baseQuery({
           url: `/profile/verify-${channel}-change`, method: 'POST',
-          body: { ...(channel === 'email' ? { newEmail: value.trim() } : { newPhone: value.replace(/\s/g, '') }), code },
+          body: { ...(channel === 'email' ? { newEmail: contact } : { newPhone: contact }), code },
         });
       },
-      invalidatesTags: (_data, error) => error ? [] : ['Profile'],
+      invalidatesTags: (_data, error) => error ? [] : ['Profile', 'AuthOnboardingSecurity'],
     }),
   }),
 });
@@ -249,4 +318,5 @@ export const {
   useGetMyProfileQuery, useGetMyProfileAccessQuery, useGetMyProfileLoginHistoryQuery,
   useUpdateMyProfileMutation, useUploadMyProfilePhotoMutation,
   useRemoveMyProfilePhotoMutation, useRequestProfileContactChangeMutation, useVerifyProfileContactChangeMutation,
+  useRequestProfileEmailVerificationMutation, useVerifyProfileEmailMutation,
 } = profileApi;

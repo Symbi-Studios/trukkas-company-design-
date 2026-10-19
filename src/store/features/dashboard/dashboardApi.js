@@ -18,6 +18,12 @@ const activityColors = {
 };
 const rows = (value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && !Array.isArray(row)) ? value : null;
 const place = (value) => text(text(value)?.split(',')[0]) ?? '—';
+const jobTypes = {
+  PORT_TO_DESTINATION: 'Port-to-Destination', PORT_TO_PORT: 'Port-to-Port',
+  BULK_BREAK: 'Break-bulk', EXPORT: 'Export',
+};
+const requestedDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))
+  ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Africa/Lagos' }).format(new Date(value)) : '—';
 
 function overviewView(response) {
   const overview = unwrapApiResponseData(response)?.overview;
@@ -72,6 +78,23 @@ export const dashboardApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDas
       query: () => '/company/overview',
       transformResponse: overviewView,
       providesTags: ['CompanyDashboard', 'AuthOnboardingDocuments', 'AuthOnboardingSecurity'],
+    }),
+    getDashboardPendingJobs: builder.query({
+      query: () => ({ url: '/company/bids', params: { tab: 'active', page: 1, limit: 5 } }),
+      transformResponse(response) {
+        const data = unwrapApiResponseData(response);
+        const bids = rows(data?.bids);
+        return {
+          total: count(data?.pagination?.total),
+          jobs: bids?.map((bid) => ({
+            bidId: text(bid.id), id: text(bid.job?.id), number: text(bid.job?.jobNumber) ?? '—',
+            origin: place(bid.job?.origin), destination: place(bid.job?.destination),
+            jobType: typeof bid.job?.jobType === 'string' && Object.hasOwn(jobTypes, bid.job.jobType) ? jobTypes[bid.job.jobType] : '—',
+            requirement: text(bid.job?.requirement) ?? '—', postedOn: requestedDate(bid.job?.requestedAt),
+          })) ?? null,
+        };
+      },
+      providesTags: ['CompanyDashboard'],
     }),
     getDashboardActiveTrips: builder.query({
       query: () => ({ url: '/company/trips', params: { group: 'ACTIVE', page: 1, limit: 5 } }),
@@ -142,5 +165,5 @@ export const dashboardApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDas
 });
 
 export const {
-  useGetCompanyDashboardQuery, useGetDashboardActiveTripsQuery, useGetDashboardEarningsQuery, useGetDashboardRatingQuery,
+  useGetCompanyDashboardQuery, useGetDashboardPendingJobsQuery, useGetDashboardActiveTripsQuery, useGetDashboardEarningsQuery, useGetDashboardRatingQuery,
 } = dashboardApi;

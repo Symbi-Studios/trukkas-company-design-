@@ -2,6 +2,16 @@
 // forwarder's booking; the haulage runs as trips (see ./trips.js) — one per
 // dispatched truck, up to `job.trucksRequired`.
 export const JOB_CATEGORIES = ['Container', 'Break-bulk', 'General Cargo'];
+export const MIN_BID_AMOUNT = 1000;
+
+export function getBidValidationError(amount, message = '') {
+  const value = typeof amount === 'string' && amount.trim() ? Number(amount) : typeof amount === 'number' ? amount : NaN;
+  if (!Number.isFinite(value) || value > Number.MAX_SAFE_INTEGER || value < MIN_BID_AMOUNT) {
+    return 'Enter a valid bid amount of at least ₦1,000.';
+  }
+  if (typeof message !== 'string' || message.length > 500) return 'Enter a message of 500 characters or fewer.';
+  return null;
+}
 
 export const JOB_TYPES = [
   { value: 'Port-to-Port', description: 'Pickup and delivery are both port terminals.' },

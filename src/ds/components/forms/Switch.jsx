@@ -8,8 +8,8 @@ export function Switch({ checked, label, hint, disabled, onChange, style }) {
                  background: checked ? 'var(--tk-blue)' : '#D7DBE5',
                  transition: 'var(--tk-transition)', display: 'flex',
                  justifyContent: checked ? 'flex-end' : 'flex-start' }}>
-        <span style={{ width: 18, height: 18, borderRadius: 999, background: '#fff',
-                       boxShadow: '0 1px 2px rgba(0,8,36,.2)', transition: 'var(--tk-transition)' }} />
+        {checked === null ? <span className="tk-meta" aria-label="Unavailable">—</span> : <span style={{ width: 18, height: 18, borderRadius: 999, background: '#fff',
+                       boxShadow: '0 1px 2px rgba(0,8,36,.2)', transition: 'var(--tk-transition)' }} />}
       </span>
       {label && (
         <span style={{ display: 'grid', gap: 2 }}>

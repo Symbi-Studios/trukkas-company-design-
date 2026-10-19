@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '../router.js';
 import {
   Avatar, Badge, Button, Card, Checkbox, EmptyState, Icon, IconButton, LabelValue, Modal, PageHeader,
@@ -9,8 +9,10 @@ import {
 import { useCollection } from '../mock/useCollection.js';
 import { syncTopBarSearch } from '../pageSearch.js';
 import { placeBid, toggleSaveJob } from '../mock/api.js';
+import { useSendJobMessageMutation } from '../store/features/jobs/jobsApi.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import {
-  JOB_CATEGORIES, JOB_SORTS, JOB_TYPES, closesInLabel, closesInTone, isMarketplaceJob, jobTitle, suggestedBidRange,
+  JOB_CATEGORIES, JOB_SORTS, JOB_TYPES, MIN_BID_AMOUNT, closesInLabel, closesInTone, getBidValidationError, isMarketplaceJob, jobTitle, suggestedBidRange,
 } from '../domain/jobs.js';
 import { posters } from '../mock/fixtures/companies.js';
 import { formatNaira } from '../mock/format.js';
@@ -68,14 +70,14 @@ export function JobFlag({ job }) {
   return null;
 }
 
-function JobRow({ job, selected, onSelect, onOpen, onSave }) {
+function JobRow({ job, selected, saving, onSelect, onOpen, onSave }) {
   const closes = closesInLabel(job.closesInDays);
   return (
     <div
       role="button" tabIndex={0}
       className={`${styles.jobRow} ${selected ? styles.jobRowActive : ''}`}
       onClick={() => onSelect(job)}
-      onKeyDown={(e) => { if (e.key === 'Enter') onSelect(job); }}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(job); } }}
     >
       <CargoThumb category={job.category} width={88} height={70} />
       <div className={styles.jobMain}>
@@ -108,7 +110,7 @@ function JobRow({ job, selected, onSelect, onOpen, onSave }) {
         <span className={styles.jobButtons}>
           <Button size="sm" variant={selected ? 'primary' : 'secondary'} onClick={(e) => { e.stopPropagation(); onOpen(job); }}>View Details</Button>
           <IconButton
-            icon={job.saved ? 'bookmark-check' : 'bookmark'} tone="outline" size={32} label={job.saved ? 'Unsave job' : 'Save job'}
+            icon={job.saved ? 'bookmark-check' : 'bookmark'} tone="outline" size={32} label={job.saved ? 'Unsave job' : 'Save job'} disabled={saving}
             style={{ color: job.saved ? 'var(--tk-blue)' : undefined }}
             onClick={(e) => { e.stopPropagation(); onSave(job); }}
           />
@@ -225,6 +227,7 @@ function JobInspector({ job, onClose, onBid, onContact, onOpen, onShare }) {
 }
 
 export function RequirementList({ items }) {
+  if (!Array.isArray(items)) return <span className="tk-meta">—</span>;
   return (
     <ul className={styles.requirements}>
       {items.map((req) => (
@@ -239,6 +242,7 @@ function BidModal({ job, open, onClose, onSubmit }) {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const submitting = useRef(false);
 
   useEffect(() => {
     if (open && job) { setAmount(String(job.budget)); setMessage(''); setError(''); }
@@ -248,23 +252,29 @@ function BidModal({ job, open, onClose, onSubmit }) {
   const [low, high] = suggestedBidRange(job);
   async function submit(event) {
     event.preventDefault();
+    if (submitting.current) return;
+    const validationError = getBidValidationError(amount, message);
+    if (validationError) { setError(validationError); return; }
+    submitting.current = true;
     setBusy(true);
+    setError('');
     try {
       await onSubmit(job.id, Number(amount), message);
     } catch (err) {
       setError(err.message);
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
   return (
     <Modal
-      open={open} onClose={onClose} title="Place a Bid" description={`${jobTitle(job)} · ${job.origin} → ${job.destination}`} width={500}
-      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button form="bid-form" type="submit" icon="send" disabled={busy}>{busy ? 'Submitting…' : 'Place Bid'}</Button></>}
+      open={open} onClose={() => { if (!submitting.current) onClose(); }} title="Place a Bid" description={`${jobTitle(job)} · ${job.origin} → ${job.destination}`} width={500}
+      footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button form="bid-form" type="submit" icon="send" disabled={busy || !!getBidValidationError(amount, message)}>{busy ? 'Submitting…' : 'Place Bid'}</Button></>}
     >
       <form id="bid-form" onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
         <TextField
-          label={job.trucksRequired > 1 ? 'Bid Amount per Truck (₦)' : 'Bid Amount (₦)'} type="number" min="0" required
+          label={job.trucksRequired > 1 ? 'Bid Amount per Truck (₦)' : 'Bid Amount (₦)'} type="number" min={MIN_BID_AMOUNT} required disabled={busy}
           value={amount} onChange={(e) => setAmount(e.target.value)} error={error || undefined}
           hint={`Suggested range: ${formatNaira(low)} – ${formatNaira(high)}`}
         />
@@ -273,7 +283,7 @@ function BidModal({ job, open, onClose, onSubmit }) {
             {job.trucksRequired} trucks required · Total {formatNaira(Number(amount || 0) * job.trucksRequired)}. Each truck you dispatch becomes its own trip.
           </span>
         )}
-        <Textarea label="Add a message (optional)" rows={4} maxLength={500} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Introduce your company and why you're the best fit for this job..." />
+        <Textarea label="Add a message (optional)" rows={4} maxLength={500} value={message} onChange={(e) => setMessage(e.target.value)} disabled={busy} placeholder="Introduce your company and why you're the best fit for this job..." />
       </form>
     </Modal>
   );
@@ -302,6 +312,7 @@ export function HowItWorksModal({ open, onClose }) {
 
 export function Jobs() {
   const navigate = useNavigate();
+  const [sendMessage] = useSendJobMessageMutation();
   const jobs = useCollection('jobs') || [];
   const [category, setCategory] = useState('all');
   const [draft, setDraft] = useState(EMPTY_FILTERS);
@@ -317,6 +328,8 @@ export function Jobs() {
   const [contactJob, setContactJob] = useState(null);
   const [howOpen, setHowOpen] = useState(false);
   const [toast, showToast] = useToast();
+  const saving = useRef(new Set());
+  const [savingJobs, setSavingJobs] = useState(new Set());
 
   useEffect(() => {
     const onSearch = (event) => { setQuery(event.detail || ''); setPage(1); };
@@ -360,11 +373,11 @@ export function Jobs() {
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pageRows = visible.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const selected = market.find((j) => j.id === selectedId) || null;
+  const selected = pageRows.find((j) => j.id === selectedId) || null;
 
   useEffect(() => {
-    if (selectedId === null && pageRows[0] && window.matchMedia('(min-width: 1200px)').matches) setSelectedId(pageRows[0].id);
-  }, [pageRows, selectedId]);
+    if (selectedId !== '' && !selected && pageRows[0] && window.matchMedia('(min-width: 1200px)').matches) setSelectedId(pageRows[0].id);
+  }, [pageRows, selectedId, selected]);
 
   const setField = (key) => (value) => setDraft((d) => ({ ...d, [key]: value }));
   const apply = () => { setFilters(draft); setPage(1); };
@@ -374,6 +387,21 @@ export function Jobs() {
     await placeBid(jobId, amount, message);
     setBidJob(null);
     showToast(`Bid submitted for ${jobId}.`);
+  }
+
+  async function handleSave(job) {
+    if (saving.current.has(job.id)) return;
+    saving.current.add(job.id);
+    setSavingJobs(new Set(saving.current));
+    try {
+      const updated = await toggleSaveJob(job.id);
+      showToast(updated.saved ? 'Job saved.' : 'Removed from saved jobs.');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : getApiErrorMessage(err));
+    } finally {
+      saving.current.delete(job.id);
+      setSavingJobs(new Set(saving.current));
+    }
   }
 
   return (
@@ -439,10 +467,10 @@ export function Jobs() {
             <div className={styles.jobList}>
               {pageRows.map((job) => (
                 <JobRow
-                  key={job.id} job={job} selected={job.id === selectedId}
+                  key={job.id} job={job} selected={job.id === selectedId} saving={savingJobs.has(job.id)}
                   onSelect={(j) => setSelectedId(j.id)}
                   onOpen={(j) => navigate(`/jobs/${j.id}`)}
-                  onSave={async (j) => { await toggleSaveJob(j.id); showToast(j.saved ? 'Removed from saved jobs.' : 'Job saved.'); }}
+                  onSave={handleSave}
                 />
               ))}
             </div>
@@ -471,7 +499,10 @@ export function Jobs() {
         open={!!contactJob} onClose={() => setContactJob(null)} title="Contact Forwarder"
         recipient={contactJob ? posterFor(contactJob.postedBy).name : ''}
         placeholder="Ask about pickup windows, cargo handling or documents..."
-        onSend={async () => { setContactJob(null); showToast('Message sent to the forwarder.'); }}
+        onSend={async (content) => {
+          await sendMessage({ jobId: contactJob.id, receiverId: contactJob.contactId, apiBacked: contactJob.apiBacked, content }).unwrap();
+          setContactJob(null); showToast('Message sent to the forwarder.');
+        }}
       />
       <HowItWorksModal open={howOpen} onClose={() => setHowOpen(false)} />
       <Toast message={toast} />

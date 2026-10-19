@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
-  Avatar, Badge, Banner, Button, Checkbox, DataTable, DropdownMenu, Icon, IconButton, Modal, SectionCard, Select, Tag, TextField, Textarea,
+  Avatar, Badge, Banner, Button, Checkbox, DataTable, DropdownMenu, Icon, IconButton, Modal, SectionCard, Select, SkeletonRow, Tag, TextField, Textarea,
 } from '../../ds.js';
-import { useCollection } from '../../mock/useCollection.js';
-import { deleteRole, inviteTeamMember, removeTeamMember, saveRole, updateTeamMember } from '../../mock/api.js';
+import { useGetSettingsRolesQuery, useGetSettingsTeamQuery, useInviteSettingsMemberMutation, useUpdateSettingsMemberMutation, useRemoveSettingsMemberMutation, useResendSettingsInviteMutation, useSaveSettingsRoleMutation, useDeleteSettingsRoleMutation } from '../../store/features/settings/settingsTeamApi.js';
+import { useGetMyProfileAccessQuery } from '../../store/features/profile/profileApi.js';
+import { getApiErrorMessage } from '../../store/api/getApiErrorMessage.js';
 import { PERMISSION_GROUPS, grantsFinance, roleById } from '../../domain/access.js';
 import { PinPrompt } from '../../components/SecurityInputs.jsx';
 import styles from './Settings.module.css';
@@ -11,26 +12,29 @@ import styles from './Settings.module.css';
 const STATUS_TONE = { Active: 'success', Invited: 'info', Suspended: 'warning' };
 
 function InviteModal({ open, onClose, roles, onDone }) {
-  const [draft, setDraft] = useState({ name: '', email: '', phone: '', roleId: 'dispatcher' });
+  const [draft, setDraft] = useState({ name: '', email: '', phone: '', roleId: '' });
+  const [inviteMember] = useInviteSettingsMemberMutation();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
-  useEffect(() => { if (open) { setDraft({ name: '', email: '', phone: '', roleId: 'dispatcher' }); setError(''); } }, [open]);
+  useEffect(() => { if (open) { setDraft({ name: '', email: '', phone: '', roleId: '' }); setError(''); } }, [open]);
   const role = roleById(roles, draft.roleId);
-  const needsPin = grantsFinance(role?.permissions);
+  const needsPin = grantsFinance(role?.permissions ?? []);
 
   async function invite(pin) {
-    const member = await inviteTeamMember(draft, pin);
+    const member = await inviteMember({ ...draft, pin }).unwrap();
     setPinOpen(false);
     onDone(member);
   }
   async function submit(event) {
     event.preventDefault();
+    if (busy) return;
     setError('');
     if (!draft.name.trim() || !/^\S+@\S+\.\S+$/.test(draft.email)) { setError('Enter a name and a valid email.'); return; }
-    if (needsPin) { setPinOpen(true); return; }
+    if (!role) { setError('Choose a role from the company role list.'); return; }
+    if (needsPin) { setError('The team API does not support PIN approval for finance roles yet.'); return; }
     setBusy(true);
-    try { await invite(); } catch (err) { setError(err.message); } finally { setBusy(false); }
+    try { await invite(); } catch (err) { setError(getApiErrorMessage(err)); } finally { setBusy(false); }
   }
 
   return (
@@ -40,8 +44,8 @@ function InviteModal({ open, onClose, roles, onDone }) {
         <TextField label="Full Name" required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
         <TextField label="Work Email" type="email" required value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
         <TextField label="Phone (optional)" value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} placeholder="+234 800 000 0000" />
-        <Select label="Role" value={draft.roleId} options={roles.filter((r) => r.id !== 'owner').map((r) => ({ value: r.id, label: r.name }))} onChange={(e) => setDraft({ ...draft, roleId: e.target.value })} />
-        {role && <span className="tk-meta">{role.description} · {role.permissions.length} permissions</span>}
+        <Select label="Role" value={draft.roleId} options={roles.filter((r) => r.id && r.id !== 'owner').map((r) => ({ value: r.id, label: r.name }))} onChange={(e) => setDraft({ ...draft, roleId: e.target.value })} />
+        {role && <span className="tk-meta">{role.description} · {role.permissions?.length ?? '—'} permissions</span>}
         {needsPin && <Banner tone="info" title="PIN required">This role can move money, so granting it needs your transaction PIN.</Banner>}
         {error && <p className={styles.error}>{error}</p>}
       </form>
@@ -51,31 +55,47 @@ function InviteModal({ open, onClose, roles, onDone }) {
 }
 
 export function TeamSettings({ onToast }) {
-  const members = useCollection('teamMembers') || [];
-  const roles = useCollection('roles') || [];
+  const { data, error: loadError, isLoading } = useGetSettingsTeamQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { data: roleData } = useGetSettingsRolesQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { data: access } = useGetMyProfileAccessQuery();
+  const [updateMember, { isLoading: updating }] = useUpdateSettingsMemberMutation();
+  const [removeMember, { isLoading: removing }] = useRemoveSettingsMemberMutation();
+  const [resendInvite, { isLoading: resending }] = useResendSettingsInviteMutation();
+  const members = data?.members ?? [];
+  const roles = roleData?.roles ?? [];
+  const canManage = access?.isOwner === true;
+  const busy = updating || removing || resending;
   const [inviteOpen, setInviteOpen] = useState(false);
   const [menu, setMenu] = useState(null);
   const [pending, setPending] = useState(null);
   const [error, setError] = useState('');
 
+  async function updateTeamMember(id, changes, pin) { return updateMember({ id, changes, pin }).unwrap(); }
+  async function run(action, message) {
+    if (busy || !canManage) return;
+    setMenu(null); setError('');
+    try { await action(); onToast(message); } catch (err) { setError(getApiErrorMessage(err)); }
+  }
+
   async function changeRole(member, roleId) {
     setError('');
     const role = roleById(roles, roleId);
-    if (grantsFinance(role?.permissions)) { setPending({ member, roleId }); return; }
-    try { await updateTeamMember(member.id, { roleId }); onToast(`${member.name} is now ${role.name}.`); } catch (err) { setError(err.message); }
+    if (grantsFinance(role?.permissions ?? [])) { setError('The team API does not support PIN approval for finance roles yet.'); return; }
+    await run(() => updateTeamMember(member.id, { roleId }), `${member.name} is now ${role?.name ?? '—'}.`);
   }
 
   return (
     <>
       <SectionCard
         title="Team Members" description="People who can sign in to your company workspace."
-        action={<Button icon="user-plus" onClick={() => setInviteOpen(true)}>Invite Member</Button>}
+        action={<Button icon="user-plus" disabled={!canManage || !roleData || busy} onClick={() => setInviteOpen(true)}>Invite Member</Button>}
         pad="none"
       >
-        {error && <div style={{ padding: '0 var(--tk-card-pad) 12px' }}><Banner tone="danger" title="Couldn’t update member">{error}</Banner></div>}
+        {(error || loadError || data?.warning) && <div style={{ padding: '0 var(--tk-card-pad) 12px' }}><Banner tone="danger" title="Couldn’t update member">{error || (loadError ? getApiErrorMessage(loadError) : data.warning)}</Banner></div>}
+        {isLoading ? <SkeletonRow columns={5} /> : !data && !loadError && <span className="tk-meta">—</span>}
         <DataTable
           rows={members}
-          rowKey={(m) => m.id}
+          rowKey={(m, i) => `${m.kind}:${m.id ?? i}`}
           columns={[
             {
               key: 'member', header: 'Member', render: (m) => (
@@ -85,24 +105,24 @@ export function TeamSettings({ onToast }) {
             {
               key: 'role', header: 'Role', width: 190, render: (m) => (m.roleId === 'owner'
                 ? <Badge tone="purple">Owner</Badge>
-                : <Select value={m.roleId} options={roles.filter((r) => r.id !== 'owner').map((r) => ({ value: r.id, label: r.name }))} onChange={(e) => changeRole(m, e.target.value)} style={{ minWidth: 160 }} />),
+                : <Select value={m.roleId ?? ''} placeholder={m.roleName} disabled={!canManage || busy || !m.id || m.kind === 'invite'} options={roles.filter((r) => r.id && r.id !== 'owner').map((r) => ({ value: r.id, label: r.name }))} onChange={(e) => changeRole(m, e.target.value)} style={{ minWidth: 160 }} />),
             },
             { key: 'status', header: 'Status', render: (m) => <Badge tone={STATUS_TONE[m.status]} dot>{m.status}</Badge> },
-            { key: '2fa', header: '2FA', render: (m) => (m.twoFactor ? <Tag tone="success" icon={<Icon name="shield-check" size={11} />}>On</Tag> : <Tag>Off</Tag>) },
+            { key: '2fa', header: '2FA', render: (m) => (m.twoFactor === null ? <Tag>—</Tag> : m.twoFactor ? <Tag tone="success" icon={<Icon name="shield-check" size={11} />}>On</Tag> : <Tag>Off</Tag>) },
             { key: 'active', header: 'Last Active', render: (m) => <span className="tk-meta">{m.lastActive}</span> },
             {
               key: 'actions', header: '', width: 56, render: (m) => (m.roleId === 'owner' ? null : (
                 <span style={{ position: 'relative' }}>
-                  <IconButton icon="ellipsis" tone="outline" size={30} label={`Actions for ${m.name}`} onClick={() => setMenu(menu === m.id ? null : m.id)} />
+                  <IconButton icon="ellipsis" tone="outline" size={30} disabled={!canManage || busy || !m.id} label={`Actions for ${m.name}`} onClick={() => setMenu(menu === m.id ? null : m.id)} />
                   {menu === m.id && (
                     <span style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20 }}>
                       <DropdownMenu width={200} items={[
-                        ...(m.status === 'Invited' ? [{ label: 'Resend Invite', icon: 'send', onClick: () => { setMenu(null); onToast(`Invite re-sent to ${m.email}.`); } }] : []),
+                        ...(m.status === 'Invited' ? [{ label: 'Resend Invite', icon: 'send', onClick: () => run(() => resendInvite(m.id).unwrap(), `Invite re-sent to ${m.email}.`) }] : []),
                         m.status === 'Suspended'
-                          ? { label: 'Reactivate', icon: 'user-check', onClick: async () => { setMenu(null); await updateTeamMember(m.id, { status: 'Active' }); onToast(`${m.name} reactivated.`); } }
-                          : { label: 'Suspend Access', icon: 'user-x', onClick: async () => { setMenu(null); await updateTeamMember(m.id, { status: 'Suspended' }); onToast(`${m.name} suspended.`); } },
+                          ? { label: 'Reactivate', icon: 'user-check', onClick: () => run(() => updateTeamMember(m.id, { status: 'Active' }), `${m.name} reactivated.`) }
+                          : { label: 'Suspend Access', icon: 'user-x', onClick: () => run(() => m.kind === 'invite' ? Promise.reject({ status: 'CUSTOM_ERROR', error: 'Pending invitations cannot be suspended. Remove the invitation to cancel it.' }) : updateTeamMember(m.id, { status: 'Suspended' }), `${m.name} suspended.`) },
                         { divider: true },
-                        { label: 'Remove from Team', icon: 'trash-2', tone: 'danger', onClick: async () => { setMenu(null); await removeTeamMember(m.id); onToast(`${m.name} removed.`); } },
+                        { label: 'Remove from Team', icon: 'trash-2', tone: 'danger', onClick: () => run(() => removeMember({ id: m.id, kind: m.kind }).unwrap(), `${m.name === '—' ? m.email : m.name} removed.`) },
                       ]} />
                     </span>
                   )}
@@ -123,64 +143,71 @@ export function TeamSettings({ onToast }) {
 }
 
 export function RolesSettings({ onToast }) {
-  const roles = useCollection('roles') || [];
-  const members = useCollection('teamMembers') || [];
-  const [selectedId, setSelectedId] = useState('fleet-manager');
+  const { data, error: loadError, isLoading } = useGetSettingsRolesQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { data: access } = useGetMyProfileAccessQuery();
+  const [saveRole, { isLoading: saving }] = useSaveSettingsRoleMutation();
+  const [deleteRole, { isLoading: deleting }] = useDeleteSettingsRoleMutation();
+  const roles = data?.roles ?? [];
+  const canManage = access?.isOwner === true;
+  const busy = saving || deleting;
+  const [selectedId, setSelectedId] = useState('');
   const [draft, setDraft] = useState(null);
   const [error, setError] = useState('');
   const selected = roleById(roles, selectedId) || roles[0];
 
-  useEffect(() => { if (selected) setDraft({ ...selected, permissions: [...selected.permissions] }); setError(''); }, [selected?.id, selected]);
-  if (!draft) return null;
+  useEffect(() => { if (selected) setDraft({ ...selected, permissions: [...(selected.permissions ?? [])] }); else setDraft(null); setError(''); }, [selected?.id, selected]);
+  if (!draft) return <SectionCard title="Roles & Permissions" description="Control what each role can see and do. Permissions marked with a lock also need the transaction PIN." action={<Button variant="secondary" icon="plus" disabled={!canManage || busy || !data?.supportedKeys} onClick={create}>New Role</Button>}>{isLoading ? <SkeletonRow columns={2} /> : <span className="tk-meta">{loadError ? getApiErrorMessage(loadError) : error || '—'}</span>}</SectionCard>;
 
   const dirty = JSON.stringify([...draft.permissions].sort()) !== JSON.stringify([...(selected?.permissions || [])].sort()) || draft.name !== selected?.name || draft.description !== selected?.description;
   const toggle = (key) => setDraft((d) => ({ ...d, permissions: d.permissions.includes(key) ? d.permissions.filter((p) => p !== key) : [...d.permissions, key] }));
 
   async function save() {
     setError('');
-    try { const role = await saveRole(draft); setSelectedId(role.id); onToast(`${role.name} role saved.`); } catch (err) { setError(err.message); }
+    if (busy || !canManage) return;
+    try { const role = await saveRole(draft).unwrap(); setSelectedId(role.id); onToast(`${role.name} role saved.`); } catch (err) { setError(getApiErrorMessage(err)); }
   }
   async function create() {
-    const role = await saveRole({ name: 'New Role', description: 'Custom role', permissions: ['jobs.view'] });
-    setSelectedId(role.id);
+    if (busy || !canManage) return;
+    try { const role = await saveRole({ name: 'New Role', description: 'Custom role', permissions: [] }).unwrap(); setSelectedId(role.id); }
+    catch (err) { setError(getApiErrorMessage(err)); }
   }
 
   return (
     <SectionCard title="Roles & Permissions" description="Control what each role can see and do. Permissions marked with a lock also need the transaction PIN."
-      action={<Button variant="secondary" icon="plus" onClick={create}>New Role</Button>}>
+      action={<Button variant="secondary" icon="plus" disabled={!canManage || busy || !data?.supportedKeys} onClick={create}>New Role</Button>}>
       <div className={styles.rolesGrid}>
         <div className={styles.roleList}>
-          {roles.map((r) => (
-            <button key={r.id} type="button" className={r.id === selected?.id ? styles.active : ''} onClick={() => setSelectedId(r.id)}>
-              <strong>{r.name}{r.locked && <Icon name="lock" size={12} color="var(--tk-ink-400)" />}{!r.system && <Tag tone="blue">Custom</Tag>}</strong>
-              <small>{members.filter((m) => m.roleId === r.id).length} member(s) · {r.permissions.length} permissions</small>
+          {roles.map((r, i) => (
+            <button key={r.id ?? i} type="button" className={r.id === selected?.id ? styles.active : ''} disabled={!r.id} onClick={() => setSelectedId(r.id)}>
+              <strong>{r.name}{r.locked && <Icon name="lock" size={12} color="var(--tk-ink-400)" />}{r.system === false && <Tag tone="blue">Custom</Tag>}</strong>
+              <small>{r.memberCount ?? '—'} member(s) · {r.permissions?.length ?? '—'} permissions</small>
             </button>
           ))}
         </div>
         <div>
           <div className={styles.form} style={{ maxWidth: 'none' }}>
-            <TextField label="Role Name" value={draft.name} disabled={draft.locked} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-            <Textarea label="Description" rows={1} value={draft.description} disabled={draft.locked} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+            <TextField label="Role Name" value={draft.name} disabled={draft.locked || !canManage || busy} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+            <Textarea label="Description" rows={1} value={draft.description} disabled={draft.locked || !canManage || busy} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
           </div>
           {PERMISSION_GROUPS.map((group) => (
             <div key={group.group} className={styles.permGroup}>
               <h4><Icon name={group.icon} size={15} color="var(--tk-blue)" />{group.group}</h4>
               <div className={styles.permList}>
                 {group.permissions.map((p) => (
-                  <Checkbox key={p.key} disabled={draft.locked} checked={draft.permissions.includes(p.key)} onChange={() => toggle(p.key)}
+                  <Checkbox key={p.key} disabled={draft.locked || !canManage || busy || !data?.supportedKeys?.includes(p.key)} indeterminate={!data?.supportedKeys?.includes(p.key) || selected?.permissions === null} checked={draft.permissions.includes(p.key)} onChange={() => toggle(p.key)}
                     label={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{p.label}{p.pin && <Icon name="lock-keyhole" size={12} color="var(--tk-warning)" />}</span>} />
                 ))}
               </div>
             </div>
           ))}
-          {error && <p className={styles.error}>{error}</p>}
+          {(error || loadError) && <p className={styles.error}>{error || getApiErrorMessage(loadError)}</p>}
           {!draft.locked && (
             <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-              <Button icon="check" disabled={!dirty} onClick={save}>Save Role</Button>
-              {dirty && <Button variant="outline" onClick={() => setDraft({ ...selected, permissions: [...selected.permissions] })}>Discard</Button>}
+              <Button icon="check" disabled={!dirty || !canManage || busy || selected?.permissions === null} onClick={save}>Save Role</Button>
+              {dirty && <Button variant="outline" onClick={() => setDraft({ ...selected, permissions: [...(selected.permissions ?? [])] })}>Discard</Button>}
               {!draft.system && (
-                <Button variant="danger" icon="trash-2" style={{ marginLeft: 'auto' }}
-                  onClick={async () => { try { await deleteRole(draft.id); setSelectedId('viewer'); onToast('Role deleted.'); } catch (err) { setError(err.message); } }}>
+                <Button variant="danger" icon="trash-2" disabled={!canManage || busy} style={{ marginLeft: 'auto' }}
+                  onClick={async () => { try { await deleteRole(draft.id).unwrap(); setSelectedId(''); onToast('Role deleted.'); } catch (err) { setError(getApiErrorMessage(err)); } }}>
                   Delete Role
                 </Button>
               )}

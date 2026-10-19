@@ -28,6 +28,7 @@ export const TRIP_COST_CATEGORIES = ['Fuel', 'Tolls & Levies', 'Driver Allowance
 /** Tab bucket: Upcoming (labelled "Assigned": not picked up yet), Active (on the road), Completed, Cancelled. */
 export function tripPhase(trip) {
   if (!trip) return null;
+  if (trip.apiBacked) return trip.phase;
   if (trip.status === 'Cancelled') return 'Cancelled';
   if (trip.status === 'Completed') return 'Completed';
   if (trip.status === 'Assigned') return 'Upcoming';
@@ -35,6 +36,7 @@ export function tripPhase(trip) {
 }
 
 export function isOpenTrip(trip) {
+  if (trip.apiBacked) return trip.open === true;
   return trip.status !== 'Completed' && trip.status !== 'Cancelled';
 }
 

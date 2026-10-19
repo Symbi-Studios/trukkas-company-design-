@@ -20,6 +20,7 @@ import { AppLoadingScreen } from "./components/AppLoadingScreen.jsx";
 import { useCollection } from "./mock/useCollection.js";
 import { onScreenSearch } from "./pageSearch.js";
 import { searchWorkspace } from "./domain/search.js";
+import { useGetCompanyTripsQuery } from "./store/features/trips/tripsApi.js";
 
 const PUBLIC_ROUTES = new Set([
   "/login",
@@ -47,7 +48,10 @@ export function CompanyShell({ children }) {
   const unreadCount = notificationCount ?? null;
   const router = useRouter();
   const jobs = useCollection("jobs") || [];
-  const trips = useCollection("trips") || [];
+  const { data: companyTrips } = useGetCompanyTripsQuery(undefined, {
+    skip: !account || loggingOut || PUBLIC_ROUTES.has(pathname) || !globalSearch.trim(),
+  });
+  const trips = companyTrips || [];
   const trucks = useCollection("trucks") || [];
   const drivers = useCollection("drivers") || [];
   const payouts = useCollection("payoutRequests") || [];

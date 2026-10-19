@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useSelector } from 'react-redux';
 import { useNavigate } from '../router.js';
 import { Avatar, Badge, Button, Card, DataTable, EmptyState, Icon, Modal, PageHeader, SectionCard, Select, SkeletonRow, Textarea, TextField } from '../ds.js';
 import {
-  EMPTY_PROFILE, useGetMyProfileQuery, useGetMyProfileAccessQuery, useGetMyProfileLoginHistoryQuery,
+  EMPTY_PROFILE, isProfileContactValid, useGetMyProfileQuery, useGetMyProfileAccessQuery, useGetMyProfileLoginHistoryQuery,
   useUpdateMyProfileMutation, useUploadMyProfilePhotoMutation,
   useRemoveMyProfilePhotoMutation, useRequestProfileContactChangeMutation, useVerifyProfileContactChangeMutation,
+  useRequestProfileEmailVerificationMutation, useVerifyProfileEmailMutation,
 } from '../store/features/profile/profileApi.js';
 import { useGetOnboardingSecurityQuery } from '../store/features/auth/onboardingApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
@@ -18,47 +20,75 @@ import styles from './settings/Settings.module.css';
 
 const TIMEZONES = ['Africa/Lagos (WAT, UTC+1)', 'Africa/Accra (GMT, UTC+0)', 'Africa/Nairobi (EAT, UTC+3)', 'Europe/London (UTC+0/+1)'];
 
-/** Change email or phone: send a code to the new value, then confirm it. */
-function ChangeContactModal({ channel, open, onClose, onDone }) {
+/** Contact modal, also opened from the dashboard for current-email verification. */
+function ChangeContactModal({ channel, open, onClose, onDone, verifyCurrent = false, currentValue = '' }) {
   const [value, setValue] = useState('');
   const [code, setCode] = useState('');
-  const [requestChange, { isLoading: sending }] = useRequestProfileContactChangeMutation();
-  const [verifyChange, { isLoading: verifying }] = useVerifyProfileContactChangeMutation();
+  const [requestChange, { isLoading: sendingChange }] = useRequestProfileContactChangeMutation();
+  const [verifyChange, { isLoading: verifyingChange }] = useVerifyProfileContactChangeMutation();
+  const [requestEmailVerification, { isLoading: sendingEmail }] = useRequestProfileEmailVerificationMutation();
+  const [verifyEmail, { isLoading: verifyingEmail }] = useVerifyProfileEmailMutation();
+  const sending = sendingChange || sendingEmail;
+  const verifying = verifyingChange || verifyingEmail;
   const submitting = useRef(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
-  useEffect(() => { if (open) { setValue(''); setCode(''); setSent(false); setError(''); } }, [open, channel]);
+  const [expiresAt, setExpiresAt] = useState(null);
+  const [resendAt, setResendAt] = useState(null);
+  useEffect(() => { if (open) { setValue(verifyCurrent ? currentValue : ''); setCode(''); setSent(false); setError(''); setExpiresAt(null); } }, [open, channel, verifyCurrent, currentValue]);
+  useEffect(() => {
+    if (!resendAt) return;
+    const timer = setTimeout(() => setResendAt(null), Math.max(0, resendAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [resendAt]);
+  useEffect(() => {
+    if (!open || !verifyCurrent || !sent || !expiresAt) return;
+    const timer = setTimeout(() => { setSent(false); setCode(''); setError('This code has expired. Send a new code.'); }, Math.max(0, expiresAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [open, verifyCurrent, sent, expiresAt]);
   const isEmail = channel === 'email';
+  const validContact = isProfileContactValid(channel, value);
 
   async function send() {
     if (submitting.current) return;
     setError('');
-    if (isEmail ? !/^\S+@\S+\.\S+$/.test(value) : value.replace(/\D/g, '').length < 10) { setError(isEmail ? 'Enter a valid email.' : 'Enter a valid phone number.'); return; }
+    if (verifyCurrent && resendAt > Date.now()) return;
+    if (!validContact) { setError(isEmail ? 'Enter a valid email.' : 'Enter a valid phone number.'); return; }
     submitting.current = true;
     try {
-      await requestChange({ channel, value }).unwrap();
+      if (verifyCurrent) {
+        const receipt = await requestEmailVerification().unwrap();
+        if (receipt.verified) { onDone(); return; }
+        setExpiresAt(receipt.expiresAt);
+        setResendAt(receipt.resendAt);
+      } else await requestChange({ channel, value }).unwrap();
       setSent(true);
-    } catch (err) { setError(getApiErrorMessage(err)); }
+    } catch (err) { setError(getApiErrorMessage(err)); if (verifyCurrent && err.retryAt) setResendAt(err.retryAt); }
     finally { submitting.current = false; }
   }
   async function confirm(c = code) {
-    if (submitting.current) return;
+    if (submitting.current || !sent || !/^\d{6}$/.test(c)) return;
+    if (verifyCurrent && expiresAt !== null && Date.now() >= expiresAt) { setSent(false); setCode(''); setError('This code has expired. Send a new code.'); return; }
     setError('');
     submitting.current = true;
-    try { await verifyChange({ channel, value, code: c }).unwrap(); onDone(); }
+    try {
+      if (verifyCurrent) await verifyEmail({ code: c }).unwrap();
+      else await verifyChange({ channel, value, code: c }).unwrap();
+      onDone();
+    }
     catch (err) { setError(getApiErrorMessage(err)); setCode(''); }
     finally { submitting.current = false; }
   }
 
   return (
-    <Modal open={open} onClose={() => { if (!sending && !verifying) onClose(); }} width={440} title={isEmail ? 'Change Email Address' : 'Change Phone Number'}
-      description={isEmail ? 'We’ll send a code to your new email to confirm it.' : 'We’ll text a code to your new number to confirm it.'}
-      footer={<><Button variant="outline" disabled={sending || verifying} onClick={onClose}>Cancel</Button>{sent ? <Button disabled={code.length < 6 || verifying} onClick={() => confirm()}>Confirm</Button> : <Button disabled={sending} onClick={send}>Send Code</Button>}</>}>
+    <Modal open={open} onClose={() => { if (!sending && !verifying) onClose(); }} width={440} title={verifyCurrent ? 'Verify Email Address' : isEmail ? 'Change Email Address' : 'Change Phone Number'}
+      description={verifyCurrent ? 'Confirm the email address on your account.' : isEmail ? 'We’ll send a code to your new email to confirm it.' : 'We’ll text a code to your new number to confirm it.'}
+      footer={<><Button variant="outline" disabled={sending || verifying} onClick={onClose}>Cancel</Button>{sent ? <Button disabled={!/^\d{6}$/.test(code) || verifying || sending} onClick={() => confirm()}>Confirm</Button> : <Button disabled={sending || !validContact || (verifyCurrent && resendAt > Date.now())} onClick={send}>Send Code</Button>}</>}>
       <div style={{ display: 'grid', gap: 14, justifyItems: 'stretch' }}>
-        <TextField label={isEmail ? 'New Email' : 'New Phone Number'} type={isEmail ? 'email' : 'tel'} value={value} disabled={sent || sending} onChange={(e) => setValue(e.target.value)} placeholder={isEmail ? 'you@company.com' : '+234 800 000 0000'} />
+        <TextField label={verifyCurrent ? 'Email Address' : isEmail ? 'New Email' : 'New Phone Number'} type={isEmail ? 'email' : 'tel'} value={value} disabled={verifyCurrent || sent || sending} onChange={(e) => setValue(e.target.value)} placeholder={isEmail ? 'you@company.com' : '+234 800 000 0000'} />
         {sent && (
           <>
-            <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => confirm(v)} />
+            <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => confirm(v)} disabled={sending || verifying} />
           </>
         )}
         {error && <p className={styles.error}>{error}</p>}
@@ -68,7 +98,13 @@ function ChangeContactModal({ channel, open, onClose, onDone }) {
 }
 
 export function Profile() {
+  return <Suspense fallback={null}><ProfileContent /></Suspense>;
+}
+
+function ProfileContent() {
   const navigate = useNavigate();
+  const searchParams = useSearchParams();
+  const verifyEmail = searchParams.get('verify') === 'email';
   const account = useSelector((state) => state.auth.account);
   const { data, error, isLoading } = useGetMyProfileQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
   const { data: security, error: securityError } = useGetOnboardingSecurityQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
@@ -86,6 +122,16 @@ export function Profile() {
   const [contact, setContact] = useState(null);
   const [toast, showToast] = useToast();
   const fileInput = useRef(null);
+
+  function closeContact() {
+    setContact(null);
+    if (verifyEmail) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('verify');
+      const query = params.toString();
+      navigate(`/profile${query ? `?${query}` : ''}`, { replace: true });
+    }
+  }
 
   if (!account) return null;
   const form = { ...profile, ...draft };
@@ -188,7 +234,7 @@ export function Profile() {
             {[
               { icon: 'key-round', label: 'Password', value: security?.passwordUpdatedOn && security.passwordUpdatedOn !== '—' ? `Changed ${security.passwordUpdatedOn}` : '—', ok: security?.passwordUpdatedOn && security.passwordUpdatedOn !== '—', tab: 'security' },
               { icon: 'shield-check', label: 'Two-factor authentication', value: security?.twoFactor?.enabled === true ? `On · ${security.twoFactor.method ?? '—'}` : security?.twoFactor?.enabled === false ? 'Off' : '—', ok: security?.twoFactor?.enabled, disabled: security?.twoFactor?.available === false, tab: 'security' },
-              { icon: 'lock-keyhole', label: 'Transaction PIN', value: security?.pin.set === true ? `Set · ${security.pin.updatedOn ?? '—'}` : security?.pin.set === false ? 'Not set' : '—', ok: security?.pin.set, tab: 'pin' },
+              { icon: 'lock-keyhole', label: 'Transaction PIN', value: security?.pin?.set === true ? `Set · ${security.pin.updatedOn ?? '—'}` : security?.pin?.set === false ? 'Not set' : '—', ok: security?.pin?.set, tab: 'pin' },
             ].map((item) => (
               <button key={item.label} type="button" disabled={item.disabled} className={styles.row} onClick={() => navigate(`/company-settings?tab=${item.tab}`)}
                 style={{ width: '100%', background: 'none', border: 0, borderTop: '1px solid var(--tk-line)', cursor: 'pointer', textAlign: 'left' }}>
@@ -212,8 +258,9 @@ export function Profile() {
         </aside>
       </div>
 
-      <ChangeContactModal channel={contact} open={!!contact} onClose={() => setContact(null)}
-        onDone={() => { const ch = contact; setContact(null); showToast(ch === 'email' ? 'Email updated.' : 'Phone number updated.'); }} />
+      <ChangeContactModal channel={contact ?? (verifyEmail ? 'email' : null)} open={!!contact || (verifyEmail && !!data)} onClose={closeContact}
+        verifyCurrent={!contact && verifyEmail} currentValue={profile.email}
+        onDone={() => { const ch = contact; closeContact(); showToast(!ch && verifyEmail ? 'Email verified.' : ch === 'email' ? 'Email updated.' : 'Phone number updated.'); }} />
       <Toast message={toast} />
     </div>
   );

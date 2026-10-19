@@ -4,6 +4,7 @@
 import { jobTitle } from './jobs.js';
 import { shortPlace } from './trips.js';
 import { plateSlug } from './vehicles.js';
+import { tripDetailHref } from './tripLinks.js';
 
 const route = (job) => (job ? `${shortPlace(job.origin)} → ${shortPlace(job.destination)}` : '');
 
@@ -23,8 +24,8 @@ export function searchWorkspace(query, { jobs = [], trips = [], trucks = [], dri
     {
       section: 'Trips',
       items: trips
-        .filter((trip) => hit(trip.id, trip.jobId, trip.truckPlate, trip.driverName, route(jobById.get(trip.jobId))))
-        .map((trip) => ({ key: trip.id, icon: 'route', label: trip.id, meta: [route(jobById.get(trip.jobId)), trip.truckPlate, trip.driverName].filter(Boolean).join(' · '), tag: trip.status, to: `/trips/${trip.id}` })),
+        .filter((trip) => hit(trip.number, trip.id, trip.jobId, trip.truckPlate, trip.driverName, route(trip.apiBacked ? trip.job : jobById.get(trip.jobId))))
+        .map((trip) => ({ key: trip.id, icon: 'route', label: trip.number ?? trip.id, meta: [route(trip.apiBacked ? trip.job : jobById.get(trip.jobId)), trip.truckPlate, trip.driverName].filter(Boolean).join(' · '), tag: trip.status, to: tripDetailHref(trip.id) })),
     },
     {
       section: 'Vehicles',

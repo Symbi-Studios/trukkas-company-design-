@@ -19,7 +19,7 @@ export function Textarea({ label, hint, maxLength, value, rows = 4, style, ...re
       {label && <span style={{ font: '500 13px/18px var(--tk-font-sans)', color: 'var(--tk-ink-500)' }}>{label}</span>}
       <div style={{ ...shell(false, f, false), height: 'auto', padding: '10px 12px', alignItems: 'stretch',
                     flexDirection: 'column', gap: 4 }}>
-        <textarea rows={rows} value={value} onFocus={() => setF(true)} onBlur={() => setF(false)}
+        <textarea rows={rows} maxLength={maxLength} value={value} onFocus={() => setF(true)} onBlur={() => setF(false)}
                   {...rest} style={{ ...input, resize: 'vertical', width: '100%' }} />
         {maxLength != null && (
           <span className="tk-meta" style={{ alignSelf: 'flex-end' }}>

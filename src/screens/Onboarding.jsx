@@ -19,6 +19,7 @@ import {
   UNSUPPORTED_ONBOARDING_DOCUMENTS,
 } from '../store/features/auth/onboardingApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { isAdultDate } from '../store/features/auth/onboardingContracts.js';
 import { COMPANY_REQUIREMENTS, complianceFor, documentsFor } from '../domain/documents.js';
 import { VEHICLE_CLASSES } from '../domain/vehicles.js';
 import { maskEmail, maskPhone, passwordStrength } from '../domain/security.js';
@@ -49,6 +50,7 @@ const STATES = [
 const REGIONS = ['South West', 'South South', 'South East', 'North Central', 'North West', 'North East', 'Cross-border (ECOWAS)'];
 const FLEET_SIZES = ['1–5 trucks', '6–20 trucks', '21–50 trucks', '51–100 trucks', '100+ trucks'];
 const RESEND_SECONDS = 30;
+const OTP_LIFETIME_MS = 10 * 60 * 1000;
 
 function useCountdown() {
   const [left, setLeft] = useState(0);
@@ -61,7 +63,7 @@ function useCountdown() {
 }
 
 /** "Send code → enter 6 digits" block for email and phone verification. */
-function VerifyStep({ channel, target, sessionToken, onVerified, onChangeTarget }) {
+function VerifyStep({ channel, target, sessionToken, otpExpiresAt, onVerified, onChangeTarget }) {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -70,11 +72,28 @@ function VerifyStep({ channel, target, sessionToken, onVerified, onChangeTarget 
   const [verifyPhone] = useVerifyAccountPhoneMutation();
   const verifying = useRef(false);
   const verified = useRef(false);
+  const [expiresAt, setExpiresAt] = useState(otpExpiresAt);
+  const [expired, setExpired] = useState(() => Date.now() >= otpExpiresAt);
+
+  useEffect(() => {
+    const checkExpiry = () => {
+      const ended = Date.now() >= expiresAt;
+      setExpired(ended);
+      if (ended && !verified.current) setError('This code has expired. Request a new code.');
+    };
+    checkExpiry();
+    const timer = setInterval(checkExpiry, 1000);
+    return () => clearInterval(timer);
+  }, [expiresAt]);
 
   async function send() {
+    if (left > 0 || resending || verifying.current || verified.current) return;
     setError('');
     try {
       await resendCode({ sessionToken }).unwrap();
+      setCode('');
+      setExpiresAt(Date.now() + OTP_LIFETIME_MS);
+      setExpired(false);
       restart();
     } catch (err) { setError(getApiErrorMessage(err)); }
   }
@@ -82,6 +101,11 @@ function VerifyStep({ channel, target, sessionToken, onVerified, onChangeTarget 
 
   async function verify(value = code) {
     if (verifying.current || resending || !/^\d{6}$/.test(value)) return;
+    if (!verified.current && Date.now() >= expiresAt) {
+      setExpired(true);
+      setError('This code has expired. Request a new code.');
+      return;
+    }
     verifying.current = true;
     setBusy(true); setError('');
     try {
@@ -98,12 +122,12 @@ function VerifyStep({ channel, target, sessionToken, onVerified, onChangeTarget 
     <div className={styles.verify}>
       <span className={styles.verifyIcon}><Icon name={channel === 'email' ? 'mail' : 'message-square'} size={26} /></span>
       <p className={styles.lead}>We sent a 6-digit code to <strong>{channel === 'email' ? maskEmail(target) : maskPhone(target)}</strong>. It expires in 10 minutes.</p>
-      <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => verify(v)} error={error} disabled={busy} />
+      <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => verify(v)} error={error} disabled={busy || resending || (expired && !verified.current)} />
       <div className={styles.verifyActions}>
         <Button variant="ghost" disabled={left > 0 || resending || busy || verified.current} onClick={send}>{left > 0 ? `Resend in ${left}s` : 'Resend code'}</Button>
         <Button variant="ghost" disabled={busy} onClick={onChangeTarget}>{channel === 'email' ? 'Change email' : 'Change number'}</Button>
       </div>
-      <Button fullWidth disabled={busy || code.length < 6} onClick={() => verify()}>{busy ? 'Verifying…' : 'Verify'}</Button>
+      <Button fullWidth disabled={busy || resending || !/^\d{6}$/.test(code) || (expired && !verified.current)} onClick={() => verify()}>{busy ? 'Verifying…' : 'Verify'}</Button>
     </div>
   );
 }
@@ -132,6 +156,7 @@ export function Onboarding() {
   const [created, setCreated] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', terms: false, phone: '+234 ', dateOfBirth: '' });
   const [sessionToken, setSessionToken] = useState(null);
+  const [otpExpiresAt, setOtpExpiresAt] = useState(null);
   const [biz, setBiz] = useState({ name: '', rcNumber: '', entity: 'Limited Liability Company', founded: '', email: '', phone: '', address: '', state: 'Lagos', fleetSize: '', regions: [], operatingStates: null, role: 'Director', directorName: '', directorDob: '' });
   const [truck, setTruck] = useState({ plate: '', vehicleClass: 'Head', make: '', model: '', year: '' });
   const [uploadType, setUploadType] = useState(null);
@@ -236,8 +261,9 @@ export function Onboarding() {
     setBusy(true); setError('');
     try {
       const result = await startRegistration({ phone: form.phone }).unwrap();
-      if (!result.sessionToken) throw new Error('The API did not return a phone verification session.');
+      if (typeof result.sessionToken !== 'string' || !result.sessionToken.trim()) throw new Error('The API did not return a phone verification session.');
       setSessionToken(result.sessionToken);
+      setOtpExpiresAt(Date.now() + OTP_LIFETIME_MS);
       setForm((value) => ({ ...value, phoneEntered: true }));
     } catch (err) { setError(err instanceof Error ? err.message : getApiErrorMessage(err)); }
     finally { setBusy(false); }
@@ -264,7 +290,7 @@ export function Onboarding() {
     setError('');
     if (!truck.plate.trim() || !truck.make.trim() || !truck.model.trim() || !truck.year) { setError('Enter plate, make, model and year.'); return; }
     try {
-      throw new Error('Truck registration is unavailable from this form until its vehicle types are supported.');
+      throw new Error('Truck registration also requires cargo/body details that this form does not collect yet.');
     } catch (err) { setError(err.message); }
   }
 
@@ -336,22 +362,19 @@ export function Onboarding() {
           {current.key === 'birth' && (
             <form className={styles.form} onSubmit={(event) => {
               event.preventDefault();
-              const birth = new Date(`${form.dateOfBirth}T00:00:00`);
-              const adult = new Date();
-              adult.setFullYear(adult.getFullYear() - 18);
-              if (!form.dateOfBirth || Number.isNaN(birth.getTime()) || birth > adult) { setError('You must be at least 18 years old to register.'); return; }
+              if (!isAdultDate(form.dateOfBirth)) { setError('You must be at least 18 years old to register.'); return; }
               go(2);
             }}>
               <TextField label="Date of birth" type="date" autoComplete="bday" required value={form.dateOfBirth} max={new Date().toISOString().slice(0, 10)} onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })} />
               {error && <p className={styles.error}>{error}</p>}
-              <Button type="submit" fullWidth size="lg" disabled={!form.dateOfBirth} iconRight="arrow-right">Continue</Button>
+              <Button type="submit" fullWidth size="lg" disabled={!isAdultDate(form.dateOfBirth)} iconRight="arrow-right">Continue</Button>
             </form>
           )}
 
           {current.key === 'phone' && (
             form.phoneEntered ? (
               <VerifyStep
-                channel="sms" target={form.phone.trim()} sessionToken={sessionToken}
+                key={sessionToken} channel="sms" target={form.phone.trim()} sessionToken={sessionToken} otpExpiresAt={otpExpiresAt}
                 onVerified={createAccount}
                 onChangeTarget={() => setForm({ ...form, phoneEntered: false })}
               />
@@ -396,7 +419,7 @@ export function Onboarding() {
                   {REGIONS.map((r) => {
                     const on = biz.regions.includes(r);
                     return (
-                      <button key={r} type="button" aria-pressed={on} className={on ? styles.chipOn : ''} onClick={() => setBiz({ ...biz, regions: on ? biz.regions.filter((x) => x !== r) : [...biz.regions, r] })}>
+                      <button key={r} type="button" aria-pressed={on} className={on ? styles.chipOn : ''} onClick={() => setBiz({ ...biz, operatingZonesKnown: true, regions: on ? biz.regions.filter((x) => x !== r) : [...biz.regions, r] })}>
                         {on && <Icon name="check" size={13} />}{r}
                       </button>
                     );

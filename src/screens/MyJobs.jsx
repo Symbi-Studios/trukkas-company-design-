@@ -102,7 +102,7 @@ export function MyJobs() {
         <div className={styles.toolbar}>
           <SearchField placeholder="Search by job ID, trip ID, route, cargo, forwarder..." value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); syncTopBarSearch(e.target.value); }} />
           <Select value={forwarder} placeholder="All Forwarders" options={forwarders} onChange={(e) => { setForwarder(e.target.value); setPage(1); }} />
-          {(forwarder || query) && <Button variant="ghost" onClick={() => { setForwarder(''); setQuery(''); syncTopBarSearch(''); }}>Clear</Button>}
+          {(forwarder || query) && <Button variant="ghost" onClick={() => { setForwarder(''); setQuery(''); setPage(1); syncTopBarSearch(''); }}>Clear</Button>}
         </div>
         {pageRows.length === 0 ? (
           <EmptyState icon="briefcase" title="No jobs in this view" description="Jobs appear here once you place a bid in Find Jobs." action={<Button variant="outline" onClick={() => navigate('/jobs')}>Find Jobs</Button>} />
@@ -150,7 +150,7 @@ export function MyJobs() {
                 },
                 {
                   key: 'actions', header: '', width: 84, align: 'right', render: (r) => (
-                    <span className={styles.actions}>
+                    <span className={styles.actions} onKeyDown={(e) => e.stopPropagation()}>
                       {r.earnings.rows.length > 0 && <IconButton icon="receipt" tone="outline" size={30} label={`Earnings receipt for ${r.job.id}`} onClick={(e) => { e.stopPropagation(); openReceipt(r); }} />}
                       <IconButton icon="chevron-right" size={30} label={`Open ${r.job.id}`} onClick={(e) => { e.stopPropagation(); navigate(`/jobs/${r.job.id}`); }} />
                     </span>

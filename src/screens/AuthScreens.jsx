@@ -85,6 +85,7 @@ export function LoginScreen() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (busy) return;
     setError('');
     if (!email.trim() || !password) {
       setError('Enter your email and password.');
@@ -175,7 +176,7 @@ export function LoginScreen() {
         <div className={styles.formLink}>
           <Link href="/forgot-password">Forgot password?</Link>
         </div>
-        <Button type="submit" fullWidth disabled={busy}>
+        <Button type="submit" fullWidth disabled={busy || !/^\S+@\S+\.\S+$/.test(email.trim()) || !password}>
           {busy ? 'Signing in…' : 'Sign in'}
         </Button>
       </form>
@@ -192,6 +193,7 @@ export function ForgotPasswordScreen() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (busy) return;
     setError('');
     if (!email.trim()) {
       setError('Enter your registered email address.');
@@ -233,7 +235,7 @@ export function ForgotPasswordScreen() {
             disabled={busy}
             placeholder="admin@speedlinelogistics.com"
           />
-          <Button type="submit" fullWidth disabled={busy}>
+          <Button type="submit" fullWidth disabled={busy || !/^\S+@\S+\.\S+$/.test(email.trim())}>
             {busy ? 'Sending code…' : 'Send reset code'}
           </Button>
         </form>
@@ -264,6 +266,7 @@ export function ResetPasswordScreen() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (busy) return;
     setError('');
     if (!email.trim() || !token.trim() || !newPassword) {
       setError('Enter your email, reset code, and new password.');
@@ -349,7 +352,7 @@ export function ResetPasswordScreen() {
           disabled={busy}
           placeholder="Enter the password again"
         />
-        <Button type="submit" fullWidth disabled={busy}>
+        <Button type="submit" fullWidth disabled={busy || !/^\S+@\S+\.\S+$/.test(email.trim()) || !/^\d{6}$/.test(token.trim()) || newPassword.length < 8 || newPassword !== confirmation}>
           {busy ? 'Updating password…' : 'Reset password'}
         </Button>
       </form>

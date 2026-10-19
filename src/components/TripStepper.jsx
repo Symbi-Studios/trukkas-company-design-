@@ -8,7 +8,7 @@ export function TripStepper({ trip, showBar = true, compact = false }) {
   const cancelled = trip.status === 'Cancelled';
   return (
     <div className={styles.wrap}>
-      {showBar && <ProgressBar value={trip.progress} height={6} color={cancelled ? 'var(--tk-danger)' : 'var(--tk-blue)'} />}
+      {showBar && (trip.progress === null ? <span className="tk-meta">—</span> : <ProgressBar value={trip.progress} height={6} color={cancelled ? 'var(--tk-danger)' : 'var(--tk-blue)'} />)}
       <ol className={`${styles.steps} ${compact ? styles.compact : ''}`}>
         {TRIP_STAGES.map((stage, index) => {
           const state = cancelled ? 'pending'
@@ -18,7 +18,7 @@ export function TripStepper({ trip, showBar = true, compact = false }) {
             <li key={stage} className={styles[state]}>
               <span className={styles.dot}>{state === 'done' && <Icon name="check" size={11} color="#fff" />}</span>
               <strong>{stage}</strong>
-              <small>{trip.stageDates?.[stage] || 'Pending'}</small>
+              <small>{trip.stageDates?.[stage] || (trip.apiBacked ? '—' : 'Pending')}</small>
             </li>
           );
         })}

@@ -21,6 +21,7 @@ import { checkPassword, setPassword, updateRegisteredAccount } from './accounts.
 import { TRIP_PROGRESS, dispatchSummary, isDriverFree, isOpenTrip, isTruckFree } from '../domain/trips.js';
 import { formatDisplayDate, statusFromExpiry } from '../domain/documents.js';
 import { SERVICE_FEE_RATE, eligibleTrips, payoutTotals } from '../domain/payouts.js';
+import { getBidValidationError } from '../domain/jobs.js';
 
 seed('trucks', trucks);
 seed('drivers', drivers);
@@ -157,6 +158,8 @@ export async function updateDriver(id, changes) {
 
 // ---- Jobs (marketplace + bidding) --------------------------------------
 export async function placeBid(jobId, amount, message = '') {
+  const error = getBidValidationError(amount, message);
+  if (error) throw new Error(error);
   await delay();
   const job = getRow('jobs', 'id', jobId);
   if (!job || job.status !== 'Pending') throw new Error('This job is no longer open for bidding.');
@@ -169,14 +172,14 @@ export async function placeBid(jobId, amount, message = '') {
 export async function withdrawBid(jobId) {
   await delay();
   const job = getRow('jobs', 'id', jobId);
-  if (!job || job.status !== 'Quoted') return job;
+  if (!job || job.status !== 'Quoted') throw new Error('This bid is no longer available to withdraw.');
   return patchRow('jobs', 'id', jobId, { status: 'Pending', myBid: null });
 }
 
 export async function toggleSaveJob(jobId) {
   await delay(40);
   const job = getRow('jobs', 'id', jobId);
-  if (!job) return null;
+  if (!job) throw new Error('This job could not be found.');
   return patchRow('jobs', 'id', jobId, { saved: !job.saved });
 }
 

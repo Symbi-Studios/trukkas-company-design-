@@ -16,16 +16,16 @@ const chip = {
  */
 export function RouteMap({
   title = 'Live Location', description, origin, destination, distanceKm, progress, lastUpdated,
-  truckLabel, height = 240, style,
+  truckLabel, height = 240, style, routeCoordinates, duration, markerCoordinates, showUnavailableDistance = false,
 }) {
-  const marker = progress != null ? positionAlong(origin, destination, progress) : null;
-  const src = osmEmbedUrl(origin, destination, marker);
+  const marker = markerCoordinates ?? (!routeCoordinates && progress != null ? positionAlong(origin, destination, progress) : null);
+  const src = osmEmbedUrl(origin, destination, marker, routeCoordinates);
   return (
     <MapPanel
       title={title}
       description={description || (lastUpdated ? `Last updated: ${lastUpdated}` : undefined)}
       height={height}
-      onExpand={() => window.open(osmDirectionsUrl(origin, destination), '_blank', 'noopener,noreferrer')}
+      onExpand={() => { if (routeCoordinates && !src) return; window.open(osmDirectionsUrl(origin, destination, routeCoordinates), '_blank', 'noopener,noreferrer'); }}
       style={style}
     >
       <span className={styles.hook} aria-hidden="true" />
@@ -46,10 +46,10 @@ export function RouteMap({
         <Icon name="arrow-right" size={12} color="var(--tk-ink-400)" />
         <Icon name="map-pin" size={13} color="var(--tk-danger)" />{shortPlace(destination)}
       </span>
-      {distanceKm != null && (
+      {(distanceKm != null || showUnavailableDistance) && (
         <span style={{ ...chip, right: 10, bottom: 26, textAlign: 'center' }}>
-          ~ {distanceKm.toLocaleString()} km
-          <span style={{ font: '400 11px/14px var(--tk-font-sans)', color: 'var(--tk-ink-500)' }}>{estimateDuration(distanceKm)}</span>
+          {typeof distanceKm === 'number' && Number.isFinite(distanceKm) ? `~ ${distanceKm.toLocaleString()} km` : '—'}
+          <span style={{ font: '400 11px/14px var(--tk-font-sans)', color: 'var(--tk-ink-500)' }}>{duration === undefined ? estimateDuration(distanceKm) : duration ?? '—'}</span>
         </span>
       )}
       {truckLabel && (

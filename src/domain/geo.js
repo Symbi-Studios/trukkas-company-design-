@@ -36,10 +36,10 @@ export function positionAlong(origin, destination, progress = 0) {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 }
 
-export function osmEmbedUrl(origin, destination, marker) {
-  const a = coordsFor(origin);
-  const b = coordsFor(destination) || a;
-  if (!a) return null;
+export function osmEmbedUrl(origin, destination, marker, routeCoordinates) {
+  const a = routeCoordinates ? routeCoordinates.origin : coordsFor(origin);
+  const b = routeCoordinates ? routeCoordinates.destination : coordsFor(destination) || a;
+  if (!a || !b) return null;
   const pad = 0.8;
   const bbox = [
     Math.min(a[1], b[1]) - pad, Math.min(a[0], b[0]) - pad,
@@ -49,9 +49,9 @@ export function osmEmbedUrl(origin, destination, marker) {
   return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${pin[0].toFixed(4)},${pin[1].toFixed(4)}`;
 }
 
-export function osmDirectionsUrl(origin, destination) {
-  const a = coordsFor(origin);
-  const b = coordsFor(destination);
+export function osmDirectionsUrl(origin, destination, routeCoordinates) {
+  const a = routeCoordinates ? routeCoordinates.origin : coordsFor(origin);
+  const b = routeCoordinates ? routeCoordinates.destination : coordsFor(destination);
   if (!a || !b) return 'https://www.openstreetmap.org';
   return `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${a[0]},${a[1]};${b[0]},${b[1]}`;
 }

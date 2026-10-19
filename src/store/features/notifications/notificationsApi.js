@@ -1,4 +1,5 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
+import { jobDetailHref } from '../../../domain/jobLinks.js';
 
 const text = (value) => typeof value === 'string' && value.trim() ? value : null;
 const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
@@ -27,7 +28,7 @@ function notificationView(notification) {
     body: text(notification.body) ?? '—',
     read: typeof notification.isRead === 'boolean' ? notification.isRead : null,
     createdAt,
-    link: jobId ? `/jobs/${encodeURIComponent(jobId)}` : null,
+    link: jobId ? jobDetailHref(jobId) : null,
   };
 }
 

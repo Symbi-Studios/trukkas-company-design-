@@ -1,10 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useSelector } from 'react-redux';
 import { useNavigate } from '../router.js';
-import { Badge, Button, Card, Icon, PageHeader, SectionCard, Switch, TextField } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
-import { updateCompanyProfile } from '../mock/api.js';
+import { Badge, Button, Card, Icon, PageHeader, SectionCard, SkeletonRow, Switch, TextField } from '../ds.js';
+import { EMPTY_COMPANY_SETTINGS, useGetCompanySettingsQuery, useUpdateCompanySettingsMutation, useGetSettingsNotificationsQuery, useUpdateSettingsNotificationsMutation } from '../store/features/settings/settingsApi.js';
+import { useGetMyProfileAccessQuery } from '../store/features/profile/profileApi.js';
+import { useGetOnboardingSecurityQuery } from '../store/features/auth/onboardingApi.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { Toast, useToast } from '../components/Toast.jsx';
 import { PayoutAccountSettings } from './settings/PayoutAccountSettings.jsx';
 import { RolesSettings, TeamSettings } from './settings/TeamSettings.jsx';
@@ -31,15 +35,18 @@ const NOTIFICATION_PREFS = [
   { key: 'security', label: 'Security alerts', hint: 'PIN changes, bank changes and new team members. Always on for owners.', locked: true },
 ];
 
-function ProfileSection({ company, onToast }) {
+function ProfileSection({ company, canEdit, onToast }) {
   const navigate = useNavigate();
   const [draft, setDraft] = useState(null);
-  const form = draft || company;
-  const set = (key) => (e) => setDraft({ ...form, [key]: e.target.value });
+  const [updateCompany, { isLoading: saving }] = useUpdateCompanySettingsMutation();
+  const form = { ...company, ...draft };
+  const set = (key) => (e) => setDraft((previous) => ({ ...previous, [key]: e.target.value }));
   async function save() {
-    await updateCompanyProfile(draft || {});
-    setDraft(null);
-    onToast('Company profile saved.');
+    if (saving || !draft) return;
+    const changes = Object.fromEntries(Object.entries(draft).filter(([key, value]) => value !== company[key]));
+    if (!Object.keys(changes).length) { setDraft(null); return; }
+    try { await updateCompany(changes).unwrap(); setDraft(null); onToast('Company profile saved.'); }
+    catch (error) { onToast(getApiErrorMessage(error)); }
   }
   return (
     <>
@@ -54,7 +61,7 @@ function ProfileSection({ company, onToast }) {
           <TextField label="Year Founded" value={form.founded || ''} onChange={set('founded')} />
           <TextField label="Industry" value={form.industry || ''} onChange={set('industry')} />
           <div className={styles.formActions}>
-            <Button onClick={save} disabled={!draft}>Save Changes</Button>
+            <Button onClick={save} disabled={!draft || saving || !canEdit}>Save Changes</Button>
             {draft && <Button variant="outline" onClick={() => setDraft(null)}>Discard</Button>}
           </div>
         </div>
@@ -68,37 +75,56 @@ function ProfileSection({ company, onToast }) {
   );
 }
 
-function NotificationsSection({ onToast }) {
-  const [prefs, setPrefs] = useState(Object.fromEntries(NOTIFICATION_PREFS.map((p) => [p.key, true])));
+function NotificationsSection({ onToast, canEdit }) {
+  const { data, error, isLoading } = useGetSettingsNotificationsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const [update, { isLoading: saving }] = useUpdateSettingsNotificationsMutation();
+  const [draft, setDraft] = useState(null);
+  const prefs = { ...data, ...draft };
+  async function save() {
+    if (!draft || saving) return;
+    try { await update(draft).unwrap(); setDraft(null); onToast('Notification preferences saved.'); }
+    catch (requestError) { onToast(getApiErrorMessage(requestError)); }
+  }
   return (
     <SectionCard title="Notifications" description="Choose what we email you about.">
+      {isLoading && <SkeletonRow columns={2} />}
+      {error && <p className={styles.error}>{getApiErrorMessage(error)}</p>}
       <div style={{ display: 'grid', gap: 16 }}>
         {NOTIFICATION_PREFS.map((p) => (
-          <Switch key={p.key} label={p.label} hint={p.hint} checked={prefs[p.key]} disabled={p.locked} onChange={(v) => setPrefs({ ...prefs, [p.key]: v })} />
+          <Switch key={p.key} label={p.label} hint={p.hint} checked={prefs[p.key] ?? null} disabled onChange={(v) => setDraft({ ...draft, [p.key]: v })} />
         ))}
-        <Button style={{ justifySelf: 'start' }} onClick={() => onToast('Notification preferences saved.')}>Save Preferences</Button>
+        <Button style={{ justifySelf: 'start' }} disabled onClick={save}>Save Preferences</Button>
       </div>
     </SectionCard>
   );
 }
 
 export function CompanySettings() {
-  const company = useCollection('companyProfile')?.[0];
-  const security = (useCollection('security') || [])[0];
+  return <Suspense fallback={null}><CompanySettingsContent /></Suspense>;
+}
+
+function CompanySettingsContent() {
+  const searchParams = useSearchParams();
+  const requested = searchParams.get('tab');
+  const account = useSelector((state) => state.auth.account);
+  const { data, error, isLoading } = useGetCompanySettingsQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const { data: access, error: accessError } = useGetMyProfileAccessQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const { data: security } = useGetOnboardingSecurityQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const company = data?.company ?? EMPTY_COMPANY_SETTINGS;
+  const canEdit = access?.canEdit === true;
   const [tab, setTab] = useState('profile');
   const [toast, showToast] = useToast();
 
   useEffect(() => {
-    const requested = new URLSearchParams(window.location.search).get('tab');
     if (SECTIONS.some((s) => s.value === requested)) setTab(requested);
-  }, []);
+  }, [requested]);
 
-  if (!company) return null;
-  const flag = { security: security && !security.twoFactor.enabled, pin: security && !security.pin.set };
+  if (!account) return null;
+  const flag = { security: security?.twoFactor?.available === true && security.twoFactor.enabled === false, pin: security?.pin?.set === false };
 
   return (
     <div className={styles.page}>
-      <PageHeader title="Company Settings" description="Company profile, payout account, team access, security and transaction PIN." />
+      <PageHeader title="Company Settings" description={error || accessError ? getApiErrorMessage(error || accessError) : 'Company profile, payout account, team access, security and transaction PIN.'} />
       <div className={styles.shell}>
         <Card pad="none" className={styles.nav} role="tablist" aria-label="Settings sections">
           {SECTIONS.map((s) => (
@@ -110,13 +136,13 @@ export function CompanySettings() {
           ))}
         </Card>
         <div className={styles.content}>
-          {tab === 'profile' && <ProfileSection company={company} onToast={showToast} />}
+          {tab === 'profile' && (isLoading ? <Card><SkeletonRow columns={3} /></Card> : <ProfileSection company={company} canEdit={canEdit} onToast={showToast} />)}
           {tab === 'payout' && <PayoutAccountSettings onToast={showToast} />}
           {tab === 'team' && <TeamSettings onToast={showToast} />}
           {tab === 'roles' && <RolesSettings onToast={showToast} />}
           {tab === 'security' && <SecuritySettings onToast={showToast} />}
           {tab === 'pin' && <PinSettings onToast={showToast} />}
-          {tab === 'notifications' && <NotificationsSection onToast={showToast} />}
+          {tab === 'notifications' && <NotificationsSection canEdit={canEdit} onToast={showToast} />}
         </div>
       </div>
       <Toast message={toast} />

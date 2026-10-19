@@ -1,5 +1,6 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { clearSession, setCredentials } from '../features/auth/authSlice.js';
+import { getApiErrorMessage } from './getApiErrorMessage.js';
 
 const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://trukkas-backend.onrender.com/api/v1';
 const baseUrl = configuredBaseUrl.replace(/\/+$/, '');
@@ -32,9 +33,17 @@ let activeRefresh = null;
 
 let requestSequence = 0;
 
+const privateLogField = /authorization|cookie|token|password|secret|credential|otp|^code$|pin|email|phone|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment/i;
 function bodyForLog(body) {
-  // Keep duplicate form fields and File objects visible in the console.
-  if (body instanceof FormData || body instanceof URLSearchParams) return Array.from(body.entries());
+  // Never expose credentials, personal detail fields, or conversation content.
+  if (body instanceof FormData || body instanceof URLSearchParams) {
+    return Array.from(body.entries(), ([key, value]) => [key, privateLogField.test(key) ? '[REDACTED]' : bodyForLog(value)]);
+  }
+  if (typeof File !== 'undefined' && body instanceof File) return '[FILE]';
+  if (Array.isArray(body)) return body.map(bodyForLog);
+  if (body && typeof body === 'object') {
+    return Object.fromEntries(Object.entries(body).map(([key, value]) => [key, privateLogField.test(key) ? '[REDACTED]' : bodyForLog(value)]));
+  }
   return body;
 }
 
@@ -66,7 +75,7 @@ async function runLoggedBaseQuery(query, args, api, extraOptions, label = api.en
     method: (config.method || 'GET').toUpperCase(),
     url: requestUrlForLog(args),
     params: config.params,
-    configuredHeaders: Object.fromEntries(new Headers(config.headers).entries()),
+    configuredHeaders: bodyForLog(Object.fromEntries(new Headers(config.headers).entries())),
     body: bodyForLog(config.body),
     startedAt: new Date(startedAt).toISOString(),
   };
@@ -103,7 +112,7 @@ async function runLoggedBaseQuery(query, args, api, extraOptions, label = api.en
     ...details,
     method,
     url,
-    headers: request ? Object.fromEntries(request.headers.entries()) : details.configuredHeaders,
+    headers: request ? bodyForLog(Object.fromEntries(request.headers.entries())) : details.configuredHeaders,
   });
   console.info('Response:', {
     requestId,
@@ -112,14 +121,33 @@ async function runLoggedBaseQuery(query, args, api, extraOptions, label = api.en
     statusText: response?.statusText,
     ok: response?.ok,
     url: response?.url,
-    headers: response ? Object.fromEntries(response.headers.entries()) : undefined,
+    headers: response ? bodyForLog(Object.fromEntries(response.headers.entries())) : undefined,
     redirected: response?.redirected,
     type: response?.type,
     durationMs,
     completedAt: new Date().toISOString(),
     body: bodyForLog(responseBody),
   });
-  if (result.error) console.error('API/transport error:', result.error);
+  if (result.error) {
+    const message = getApiErrorMessage(result.error);
+    const transportMessage = typeof result.error.error === 'string' ? result.error.error : null;
+    // RTK Query returns handled request failures as data. console.error would
+    // turn these (including recoverable 401s) into Next.js development overlays.
+    console.warn(prefix + method + ' ' + url + ' → '
+      + (statusCode ?? result.error.status ?? 'REQUEST_ERROR') + ': ' + message
+      + (transportMessage && transportMessage !== message ? ' ' + transportMessage : ''), {
+      requestId,
+      endpoint: label,
+      method,
+      url,
+      status: result.error.status ?? null,
+      statusCode,
+      message,
+      transportMessage,
+      durationMs,
+      body: bodyForLog(responseBody),
+    });
+  }
   console.groupEnd();
   return result;
 }

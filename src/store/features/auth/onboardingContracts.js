@@ -3,6 +3,19 @@ const fleetSizes = {
   '1–5 trucks': '1-5', '6–20 trucks': '6-20', '21–50 trucks': '21-50',
   '51–100 trucks': '51-100', '100+ trucks': '100+',
 };
+const operatingZones = {
+  'South West': 'SOUTH_WEST', 'South South': 'SOUTH_SOUTH', 'South East': 'SOUTH_EAST',
+  'North Central': 'NORTH_CENTRAL', 'North West': 'NORTH_WEST', 'North East': 'NORTH_EAST',
+  'Cross-border (ECOWAS)': 'ECOWAS',
+};
+
+export function isAdultDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const birth = new Date(`${value}T00:00:00Z`);
+  const today = new Date();
+  const cutoff = Date.UTC(today.getUTCFullYear() - 18, today.getUTCMonth(), today.getUTCDate());
+  return Number.isFinite(birth.getTime()) && birth.toISOString().slice(0, 10) === value && birth.getTime() <= cutoff;
+}
 
 export function companyFormView(user, companyProfile) {
   const company = companyProfile ?? user?.companyProfile;
@@ -17,10 +30,11 @@ export function companyFormView(user, companyProfile) {
     directorName: text(company?.director?.name) ?? '',
     directorDob: text(company?.director?.dateOfBirth)?.slice(0, 10) ?? '',
     role: text(company?.director?.role) ?? '',
-    // The API stores states; the screen's zone chips cannot represent them.
-    // Keep those values separately and never clear them when resuming setup.
+    // Preserve state selections separately from the existing zone chips.
     operatingStates: Array.isArray(company?.operatingRegions) ? company.operatingRegions.filter((value) => text(value)) : null,
-    regions: [],
+    operatingZonesKnown: Array.isArray(company?.operatingZones),
+    regions: Array.isArray(company?.operatingZones)
+      ? Object.entries(operatingZones).filter(([, value]) => company.operatingZones.includes(value)).map(([label]) => label) : [],
   };
 }
 
@@ -31,20 +45,19 @@ export function companyFormBody(form) {
   if (!text(form.directorName) || !/^\d{4}-\d{2}-\d{2}$/.test(form.directorDob ?? '')) {
     throw new Error('Enter the director’s full name and date of birth.');
   }
-  const birth = new Date(`${form.directorDob}T00:00:00Z`);
-  const adult = new Date();
-  adult.setUTCFullYear(adult.getUTCFullYear() - 18);
-  if (!Number.isFinite(birth.getTime()) || birth.toISOString().slice(0, 10) !== form.directorDob || birth > adult) {
+  if (!isAdultDate(form.directorDob)) {
     throw new Error('The director must be at least 18 years old.');
   }
   if (form.directorName.trim().length > 120 || (form.role ?? '').length > 80) throw new Error('The director’s name or role is too long.');
-  if (form.regions?.length) {
-    throw new Error('Operating zones and ECOWAS are not supported yet. Clear those selections to save the other company details.');
+  if (!Array.isArray(form.regions) || form.regions.some((region) => !Object.hasOwn(operatingZones, region))) {
+    throw new Error('Choose supported operating areas.');
   }
   const body = {
     businessName: form.name.trim(), cacNumber: form.rcNumber.trim(),
     businessAddress: form.address.trim(), state: form.state,
     directorName: form.directorName.trim(), directorDateOfBirth: form.directorDob,
+    ...(form.operatingZonesKnown !== false || form.regions.length > 0
+      ? { operatingZones: [...new Set(form.regions.map((region) => operatingZones[region]))] } : {}),
     ...(text(form.role) ? { directorRole: form.role.trim() } : {}),
   };
   if (text(form.founded)) {

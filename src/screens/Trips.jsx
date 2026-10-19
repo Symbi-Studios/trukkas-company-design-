@@ -4,23 +4,22 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '../router.js';
 import {
   Avatar, Badge, Banner, Button, Card, DataTable, EmptyState, Icon, PageHeader,
-  Pagination, SearchField, Select, StatCard, Tabs,
+  Pagination, SearchField, Select, Skeleton, SkeletonRow, StatCard, Tabs,
 } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
+import { useGetCompanyTripsQuery } from '../store/features/trips/tripsApi.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { tripDetailHref } from '../domain/tripLinks.js';
 import { syncTopBarSearch } from '../pageSearch.js';
 import { jobTitle } from '../domain/jobs.js';
 import {
-  TRIP_STAGES, TRIP_TABS, dispatchSummary, shortPlace, tripHealth, tripHealthTone, tripPhase, tripsForJob, withJobs,
+  TRIP_STAGES, TRIP_TABS, shortPlace, tripHealth, tripHealthTone,
 } from '../domain/trips.js';
 import { CargoThumb } from '../components/CargoThumb.jsx';
 import styles from './Trips.module.css';
 
-const monthOf = (date) => date?.replace(/ \d+,/, '');
-
 export function Trips() {
   const navigate = useNavigate();
-  const rawTrips = useCollection('trips') || [];
-  const jobs = useCollection('jobs') || [];
+  const { currentData, error, isFetching } = useGetCompanyTripsQuery(undefined, { refetchOnMountOrArgChange: true });
   const [tab, setTab] = useState('all');
   const [query, setQuery] = useState('');
   const [month, setMonth] = useState('');
@@ -37,23 +36,21 @@ export function Trips() {
     return () => window.removeEventListener('trukkas:global-search', onSearch);
   }, []);
 
-  const trips = useMemo(() => withJobs(rawTrips, jobs).sort((a, b) => b.id.localeCompare(a.id)), [rawTrips, jobs]);
-  const needsDispatch = useMemo(() => jobs
-    .filter((job) => job.status === 'In Progress')
-    .map((job) => ({ job, ...dispatchSummary(job, tripsForJob(rawTrips, job.id)) }))
-    .filter((row) => row.remaining > 0), [jobs, rawTrips]);
+  const trips = useMemo(() => currentData ?? [], [currentData]);
+  // No company API documents the prototype's per-job, multi-truck dispatch summary.
+  const needsDispatch = null;
 
-  const phaseCount = (phase) => trips.filter((t) => tripPhase(t) === phase).length;
-  const counts = { all: trips.length, Upcoming: phaseCount('Upcoming'), Active: phaseCount('Active'), Completed: phaseCount('Completed'), Cancelled: phaseCount('Cancelled') };
-  const months = [...new Set(trips.map((t) => monthOf(t.pickupDate)))];
+  const phaseCount = (phase) => currentData && trips.every((trip) => trip.phase !== null) ? trips.filter((t) => t.phase === phase).length : '—';
+  const counts = { all: currentData ? trips.length : '—', Upcoming: phaseCount('Upcoming'), Active: phaseCount('Active'), Completed: phaseCount('Completed'), Cancelled: phaseCount('Cancelled') };
+  const months = [...new Set(trips.map((t) => t.pickupMonth).filter(Boolean))];
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return trips
-      .filter((t) => tab === 'all' || tripPhase(t) === tab)
-      .filter((t) => (!month || monthOf(t.pickupDate) === month) && (!stage || (stage === 'Delayed' ? t.delayed && tripPhase(t) === 'Active' : t.status === stage)))
+      .filter((t) => tab === 'all' || t.phase === tab)
+      .filter((t) => (!month || t.pickupMonth === month) && (!stage || (stage === 'Delayed' ? t.delayed && t.phase === 'Active' : t.status === stage)))
       .filter((t) => (!truck || t.truckPlate === truck) && (!driver || t.driverName === driver))
-      .filter((t) => !q || [t.id, t.jobId, t.truckPlate, t.driverName, t.job?.origin, t.job?.destination, jobTitle(t.job), t.job?.cargoType]
+      .filter((t) => !q || [t.number, t.job.number, t.id, t.jobId, t.truckPlate, t.driverName, t.job?.origin, t.job?.destination, jobTitle(t.job), t.job?.cargoType]
         .some((v) => String(v || '').toLowerCase().includes(q)));
   }, [trips, tab, month, stage, truck, driver, query]);
 
@@ -61,7 +58,8 @@ export function Trips() {
   const currentPage = Math.min(page, pageCount);
   const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const openTrip = (trip) => navigate(`/trips/${trip.id}`);
+  const openTrip = (trip) => navigate(tripDetailHref(trip.id));
+  const metric = (value) => isFetching && !currentData ? <Skeleton width={65} height={28} /> : value;
 
   return (
     <div className={styles.page}>
@@ -72,14 +70,14 @@ export function Trips() {
       />
 
       <section className={styles.stats} aria-label="Trip summary">
-        <StatCard icon="truck" label="Total Trips" value={counts.all} caption="All time" />
-        <StatCard icon="circle-play" label="Assigned Trips" value={counts.Upcoming} caption="Awaiting pickup" />
-        <StatCard icon="navigation" tint="green" label="Active Trips" value={counts.Active} caption="On the road" />
-        <StatCard icon="circle-check" tint="navy" label="Completed Trips" value={counts.Completed} caption="Delivered" />
-        <StatCard icon="circle-x" tint="red" label="Cancelled Trips" value={counts.Cancelled} caption="All time" />
+        <StatCard icon="truck" label="Total Trips" value={metric(counts.all)} caption="All time" />
+        <StatCard icon="circle-play" label="Assigned Trips" value={metric(counts.Upcoming)} caption="Awaiting pickup" />
+        <StatCard icon="navigation" tint="green" label="Active Trips" value={metric(counts.Active)} caption="On the road" />
+        <StatCard icon="circle-check" tint="navy" label="Completed Trips" value={metric(counts.Completed)} caption="Delivered" />
+        <StatCard icon="circle-x" tint="red" label="Cancelled Trips" value={metric(counts.Cancelled)} caption="All time" />
       </section>
 
-      {needsDispatch.length > 0 && (
+      {needsDispatch?.length > 0 && (
         <Banner
           tone="warning" icon="truck"
           title={`${needsDispatch.reduce((sum, row) => sum + row.remaining, 0)} truck(s) still to dispatch on won jobs`}
@@ -118,13 +116,13 @@ export function Trips() {
         </div>
         {moreOpen && (
           <div className={styles.moreFilters}>
-            <Select label="Truck" value={truck} placeholder="All Trucks" options={[...new Set(trips.map((t) => t.truckPlate))]} onChange={(e) => { setTruck(e.target.value); setPage(1); }} />
-            <Select label="Driver" value={driver} placeholder="All Drivers" options={[...new Set(trips.map((t) => t.driverName).filter(Boolean))]} onChange={(e) => { setDriver(e.target.value); setPage(1); }} />
+            <Select label="Truck" value={truck} placeholder="All Trucks" options={[...new Set(trips.map((t) => t.truckPlate).filter((value) => value !== '—'))]} onChange={(e) => { setTruck(e.target.value); setPage(1); }} />
+            <Select label="Driver" value={driver} placeholder="All Drivers" options={[...new Set(trips.map((t) => t.driverName).filter((value) => value !== '—'))]} onChange={(e) => { setDriver(e.target.value); setPage(1); }} />
             <Button variant="ghost" onClick={() => { setTruck(''); setDriver(''); setMonth(''); setStage(''); setQuery(''); syncTopBarSearch(''); }}>Clear filters</Button>
           </div>
         )}
 
-        {pageRows.length === 0 ? (
+        {isFetching && !currentData ? <SkeletonRow columns={7} /> : error ? <EmptyState icon="route" title={getApiErrorMessage(error)} /> : !currentData ? <span className="tk-meta">—</span> : pageRows.length === 0 ? (
           <div style={{ padding: 40 }}>
             <EmptyState icon="route" title="No trips match this view" description="Try another tab or clear your filters. Trips appear here once you dispatch trucks on a won job." action={<Button variant="outline" onClick={() => navigate('/jobs')}>Find Jobs</Button>} />
           </div>
@@ -140,11 +138,11 @@ export function Trips() {
                   key: 'id', header: 'Trip / Job ID', width: 176, render: (t) => (
                     <span className={styles.idCell}>
                       <CargoThumb category={t.job?.category} width={36} height={36} radius="var(--tk-r-sm)" />
-                      <span><strong>{t.id}</strong><small>{t.jobId}</small></span>
+                      <span><strong>{t.number}</strong><small>{t.job.number}</small></span>
                     </span>
                   ),
                 },
-                { key: 'route', header: 'Route', width: 144, render: (t) => <span className={styles.twoLine}><strong>{shortPlace(t.job?.origin)} → {shortPlace(t.job?.destination)}</strong><small>{t.job?.distanceKm?.toLocaleString()} km</small></span> },
+                { key: 'route', header: 'Route', width: 144, render: (t) => <span className={styles.twoLine}><strong>{shortPlace(t.job?.origin)} → {shortPlace(t.job?.destination)}</strong><small>{t.job?.distanceKm === null ? '—' : `${t.job.distanceKm.toLocaleString()} km`}</small></span> },
                 { key: 'cargo', header: 'Cargo', render: (t) => <span className={styles.twoLine}><strong>{jobTitle(t.job)}</strong><small>{t.job?.cargoType}</small></span> },
                 {
                   key: 'truck', header: 'Truck / Driver', width: 152, render: (t) => (
@@ -166,7 +164,7 @@ export function Trips() {
           </div>
         )}
         <Pagination
-          page={currentPage} pageCount={pageCount} pageSize={pageSize} total={filtered.length}
+          page={currentPage} pageCount={pageCount} pageSize={pageSize} total={currentData ? filtered.length : undefined}
           onPage={(p) => setPage(Math.max(1, Math.min(pageCount, p)))}
           onPageSize={(size) => { setPageSize(size); setPage(1); }}
         />

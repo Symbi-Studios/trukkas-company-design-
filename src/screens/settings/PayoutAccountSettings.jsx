@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
-import { Banner, Button, Icon, SectionCard, Select, TextField } from '../../ds.js';
-import { useCollection } from '../../mock/useCollection.js';
+import { useCallback, useEffect, useState } from 'react';
+import { Banner, Button, EmptyState, Icon, SectionCard, Select, SkeletonRow, TextField } from '../../ds.js';
 import { BANKS, resolveAccountName, updateBankAccount } from '../../mock/api.js';
+import { useGetOnboardingBankQuery, useGetOnboardingBanksQuery, useResolveOnboardingBankMutation, useSaveOnboardingBankMutation } from '../../store/features/auth/onboardingApi.js';
+import { useGetMyProfileAccessQuery } from '../../store/features/profile/profileApi.js';
+import { getApiErrorMessage } from '../../store/api/getApiErrorMessage.js';
 import { PinPrompt } from '../../components/SecurityInputs.jsx';
 import styles from './Settings.module.css';
 
 /** Bank account form with mock name enquiry. Used in settings and onboarding. */
-export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Account', requirePin = true, onCancel, banks = BANKS, resolveAccount = resolveAccountName, saveAccount = updateBankAccount }) {
+export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Account', requirePin = true, onCancel, banks = BANKS, resolveAccount = resolveAccountName, saveAccount = updateBankAccount, approvalUnavailable = false, disabled = false }) {
   const [bankCode, setBankCode] = useState(initial?.bankCode || '');
   const [accountNumber, setAccountNumber] = useState('');
   const [accountName, setAccountName] = useState('');
@@ -41,17 +43,20 @@ export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Acc
 
   async function submit(event) {
     event.preventDefault();
-    if (saving) return;
+    if (saving || disabled) return;
     setError('');
     if (!accountName) { setError('Enter a valid bank and 10-digit account number.'); return; }
-    if (requirePin) { setPinOpen(true); return; }
+    if (requirePin) {
+      if (approvalUnavailable) { setError('The bank API does not support PIN-approved account changes yet.'); return; }
+      setPinOpen(true); return;
+    }
     try { await save(); } catch (err) { setError(err.message); }
   }
 
   return (
     <form onSubmit={submit} className={styles.form}>
-      <Select label="Bank" value={bankCode} placeholder="Select your bank" options={banks.map((b) => ({ value: b.code, label: b.name }))} onChange={(e) => setBankCode(e.target.value)} />
-      <TextField label="Account Number (NUBAN)" inputMode="numeric" maxLength={10} value={accountNumber} onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))} placeholder="10-digit account number" />
+      <Select label="Bank" value={bankCode} placeholder="Select your bank" disabled={saving || disabled} options={banks.map((b) => ({ value: b.code, label: b.name }))} onChange={(e) => setBankCode(e.target.value)} />
+      <TextField label="Account Number (NUBAN)" inputMode="numeric" maxLength={10} disabled={saving || disabled} value={accountNumber} onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))} placeholder="10-digit account number" />
       <div className={styles.full}>
         {resolving && <span className="tk-meta">Verifying account name…</span>}
         {accountName && <span className={styles.resolved}><Icon name="circle-check" size={16} />{accountName}</span>}
@@ -59,8 +64,8 @@ export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Acc
         <p className={styles.hint} style={{ marginTop: 8 }}>The account name must match your registered company name. Payouts can’t be sent to personal accounts.</p>
       </div>
       <div className={styles.formActions}>
-        {onCancel && <Button variant="outline" onClick={onCancel}>Cancel</Button>}
-        <Button type="submit" icon="landmark" disabled={!accountName || saving}>{submitLabel}</Button>
+        {onCancel && <Button variant="outline" disabled={saving} onClick={onCancel}>Cancel</Button>}
+        <Button type="submit" icon="landmark" disabled={!accountName || saving || disabled}>{submitLabel}</Button>
       </div>
       <PinPrompt open={pinOpen} onClose={() => setPinOpen(false)} confirmLabel="Approve Change"
         description="Changing where payouts are sent requires your transaction PIN." onConfirm={save} />
@@ -69,15 +74,39 @@ export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Acc
 }
 
 export function PayoutAccountSettings({ onToast }) {
-  const wallet = useCollection('walletSummary')?.[0];
-  const bank = wallet?.bankAccount;
+  const { data: bank, error, isLoading } = useGetOnboardingBankQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { data: banks, error: banksError } = useGetOnboardingBanksQuery();
+  const { data: access } = useGetMyProfileAccessQuery();
+  const [resolveBank] = useResolveOnboardingBankMutation();
+  const [saveBank] = useSaveOnboardingBankMutation();
   const [editing, setEditing] = useState(false);
+  const resolveAccount = useCallback(async (bankCode, accountNumber) => {
+    const selected = banks?.find((row) => row.code === bankCode);
+    if (!selected) throw new Error('Choose a supported bank.');
+    try {
+      const result = await resolveBank({ bankName: selected.name, accountNumber }).unwrap();
+      if (!result.accountName || result.accountName === '—') throw new Error('The API could not confirm the account name.');
+      return result;
+    } catch (err) { throw new Error(err instanceof Error ? err.message : getApiErrorMessage(err)); }
+  }, [banks, resolveBank]);
+  async function saveAccount({ bankCode, accountNumber }) {
+    if (access?.canEdit !== true) throw new Error('You need settings.edit permission to save a payout account.');
+    if (bank) throw new Error('The bank API does not support PIN-approved account changes yet.');
+    const selected = banks?.find((row) => row.code === bankCode);
+    if (!selected) throw new Error('Choose a supported bank.');
+    try {
+      const result = await saveBank({ bankName: selected.name, accountNumber }).unwrap();
+      if (!result) throw new Error('The API did not confirm the saved bank account.');
+      return result;
+    } catch (err) { throw new Error(err instanceof Error ? err.message : getApiErrorMessage(err)); }
+  }
 
   return (
     <>
       <SectionCard title="Payout Account" description="Where Trukkas sends your payouts and withdrawals.">
-        {!bank && !editing && (
-          <Banner tone="warning" title="No payout account yet" action={<Button size="sm" onClick={() => setEditing(true)}>Add Bank Account</Button>}>
+        {isLoading ? <SkeletonRow columns={2} /> : error || banksError ? <EmptyState icon="landmark" title={getApiErrorMessage(error || banksError)} /> : bank === undefined && <span className="tk-meta">—</span>}
+        {bank === null && !editing && (
+          <Banner tone="warning" title="No payout account yet" action={<Button size="sm" disabled={access?.canEdit !== true} onClick={() => setEditing(true)}>Add Bank Account</Button>}>
             Add a company bank account to request payouts and withdraw your wallet balance.
           </Banner>
         )}
@@ -91,12 +120,12 @@ export function PayoutAccountSettings({ onToast }) {
                 <small>Verified · updated {bank.updatedOn || '—'}</small>
               </span>
             </div>
-            <div><Button variant="outline" icon="pencil" onClick={() => setEditing(true)}>Change Bank Account</Button></div>
+            <div><Button variant="outline" icon="pencil" disabled={access?.canEdit !== true} onClick={() => setEditing(true)}>Change Bank Account</Button></div>
           </div>
         )}
         {editing && (
           <BankAccountForm
-            initial={bank} requirePin={!!bank} onCancel={() => setEditing(false)}
+            initial={bank} requirePin={!!bank} onCancel={() => setEditing(false)} banks={banks ?? []} resolveAccount={resolveAccount} saveAccount={saveAccount} approvalUnavailable disabled={access?.canEdit !== true}
             onSaved={(b) => { setEditing(false); onToast(`Payouts will now go to ${b.bankName} •••• ${b.last4}.`); }}
           />
         )}

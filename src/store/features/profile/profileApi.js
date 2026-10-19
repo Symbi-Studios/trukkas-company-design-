@@ -217,8 +217,19 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
           body.timezone = timezone;
         }
         if (!Object.keys(body).length) return unavailable('There are no profile changes to save.');
+        const account = api.getState().auth.account;
         const result = await baseQuery({ url: '/profile', method: 'PATCH', body });
-        return result.error ? result : profileResult(result.data, api);
+        if (result.error) return result;
+        if (api.getState().auth.account !== account) return unavailable('Your company session changed. Reload your profile.');
+        const saved = profileResult(result.data, api);
+        if (saved.error) return saved;
+        const user = unwrapApiResponseData(result.data).user;
+        const confirmed = Object.entries(body).every(([key, expected]) => {
+          const actual = user[key];
+          if (expected === '' && ['middleName', 'title', 'bio'].includes(key)) return actual === null || actual === '';
+          return typeof actual === 'string' && actual.trim() === expected;
+        });
+        return confirmed ? saved : unavailable('The API did not confirm the saved profile changes. Reload your profile before retrying.');
       },
       onQueryStarted: syncProfile,
       invalidatesTags: (_data, error) => error ? [] : ['Profile'],

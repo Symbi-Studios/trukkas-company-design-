@@ -25,7 +25,7 @@ export function DriverAssignTruckModal({ driver, open, onClose, onDone }) {
       return {
         id: truck.id, title: truck.plate, subtitle: `${truck.makeModel} · ${truck.location}`,
         media: <span className={styles.truckIcon}><Icon name="truck" size={18} /></span>,
-        badge: <Badge tone={truck.status === 'Approved' ? 'success' : 'neutral'}>{truck.status}</Badge>,
+        badge: <Badge tone={truck.status === 'Approved' || truck.status === 'Active' ? 'success' : truck.status === 'On Trip' ? 'info' : truck.status === 'In Maintenance' ? 'warning' : 'neutral'}>{truck.status}</Badge>,
         blocked: onTrip ? 'On an active trip — change drivers after it completes.' : null,
         warning: !onTrip && truck.driver && truck.driver !== '—' ? `Currently driven by ${truck.driver}; they will be unassigned.` : null,
       };

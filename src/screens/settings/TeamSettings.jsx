@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Avatar, Badge, Banner, Button, Checkbox, DataTable, DropdownMenu, Icon, IconButton, Modal, SectionCard, Select, SkeletonRow, Tag, TextField, Textarea,
 } from '../../ds.js';
-import { useGetSettingsRolesQuery, useGetSettingsTeamQuery, useInviteSettingsMemberMutation, useUpdateSettingsMemberMutation, useRemoveSettingsMemberMutation, useResendSettingsInviteMutation, useSaveSettingsRoleMutation, useDeleteSettingsRoleMutation, settingsPermissionState, toggleSettingsPermission } from '../../store/features/settings/settingsTeamApi.js';
+import { useGetSettingsRolesQuery, useGetSettingsTeamQuery, useInviteSettingsMemberMutation, useUpdateSettingsMemberMutation, useRemoveSettingsMemberMutation, useResendSettingsInviteMutation, useSaveSettingsRoleMutation, useDeleteSettingsRoleMutation, settingsPermissionState, toggleSettingsPermission, settingsRoleNeedsApproval } from '../../store/features/settings/settingsTeamApi.js';
 import { useGetMyProfileAccessQuery } from '../../store/features/profile/profileApi.js';
 import { useGetOnboardingSecurityQuery, useSaveOnboardingPinMutation } from '../../store/features/auth/onboardingApi.js';
 import { getApiErrorMessage } from '../../store/api/getApiErrorMessage.js';
@@ -90,7 +90,7 @@ export function TeamSettings({ onToast }) {
   async function run(action, message) {
     if (busy || !canManage) return;
     setMenu(null); setError('');
-    try { await action(); onToast(message); } catch (err) { setError(getApiErrorMessage(err)); }
+    try { await action(); onToast(message); } catch (err) { setError(err instanceof Error ? err.message : getApiErrorMessage(err)); }
   }
 
   async function changeRole(member, roleId) {
@@ -170,14 +170,17 @@ export function TeamSettings({ onToast }) {
 export function RolesSettings({ onToast }) {
   const { data, error: loadError, isLoading } = useGetSettingsRolesQuery(undefined, { refetchOnMountOrArgChange: true });
   const { data: access } = useGetMyProfileAccessQuery();
+  const { data: security } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
+  const [savePin, { isLoading: savingPin }] = useSaveOnboardingPinMutation();
   const [saveRole, { isLoading: saving }] = useSaveSettingsRoleMutation();
   const [deleteRole, { isLoading: deleting }] = useDeleteSettingsRoleMutation();
   const roles = data?.roles ?? [];
   const canManage = access?.isOwner === true;
-  const busy = saving || deleting;
+  const busy = saving || deleting || savingPin;
   const [selectedId, setSelectedId] = useState('');
   const [draft, setDraft] = useState(null);
   const [error, setError] = useState('');
+  const [pendingRole, setPendingRole] = useState(null);
   const selected = roleById(roles, selectedId) || roles[0];
 
   useEffect(() => { if (selected) setDraft({ ...selected, permissions: [...(selected.permissions ?? [])] }); else setDraft(null); setError(''); }, [selected?.id, selected]);
@@ -189,7 +192,22 @@ export function RolesSettings({ onToast }) {
   async function save() {
     setError('');
     if (busy || !canManage) return;
-    try { const role = await saveRole(draft).unwrap(); setSelectedId(role.id); onToast(`${role.name} role saved.`); } catch (err) { setError(getApiErrorMessage(err)); }
+    const approval = settingsRoleNeedsApproval(draft, selected, security?.pin?.set);
+    if (approval === null) { setError('Load your transaction PIN status before saving role permissions.'); return; }
+    if (approval) { setPendingRole({ ...draft, permissions: [...draft.permissions] }); return; }
+    try { await persistRole(draft); } catch (err) { setError(err.message); }
+  }
+  async function persistRole(values, pin) {
+    if (!canManage) throw new Error('Only the company owner can manage roles.');
+    try {
+      const role = await saveRole({ ...values, pin }).unwrap();
+      setSelectedId(role.id); setPendingRole(null); onToast(`${role.name} role saved.`);
+    } catch (err) { throw new Error(getApiErrorMessage(err)); }
+  }
+  async function createPin(values) {
+    if (!canManage || security?.pin?.set !== false) throw new Error('Load your transaction PIN status before creating a PIN.');
+    try { await savePin(values).unwrap(); }
+    catch (err) { throw new Error(getApiErrorMessage(err)); }
   }
   async function create() {
     if (busy || !canManage) return;
@@ -241,6 +259,8 @@ export function RolesSettings({ onToast }) {
           <p className={styles.hint} style={{ marginTop: 12 }}>These settings control what the app shows each person. Trukkas also enforces them on the server.</p>
         </div>
       </div>
+      <PinPrompt open={!!pendingRole} onClose={() => setPendingRole(null)} confirmLabel="Save Role" description={pendingRole?.name}
+        securityState={security ?? null} createPin={createPin} onConfirm={(pin) => persistRole(pendingRole, pin)} />
     </SectionCard>
   );
 }

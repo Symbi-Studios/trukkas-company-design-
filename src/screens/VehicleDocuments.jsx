@@ -1,9 +1,11 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useNavigate } from '../router.js';
-import { Badge, Button, Card, DataTable, DonutChart, EmptyState, Icon, SearchField, Select } from '../ds.js';
+import { Badge, Button, Card, DataTable, DonutChart, EmptyState, Icon, SearchField, Select, SkeletonRow } from '../ds.js';
 import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
+import { useGetFleetDocumentsQuery, useUploadFleetDocumentMutation } from '../store/features/fleet/fleetApi.js';
+import { fleetDocumentSupported } from '../store/features/fleet/fleetContracts.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { VEHICLE_REQUIREMENTS, documentStatusTone } from '../domain/documents.js';
 import { UploadDocumentModal } from '../components/DocumentCompliance.jsx';
 import { Toast, useToast } from '../components/Toast.jsx';
@@ -11,22 +13,32 @@ import { VehicleDetailFrame } from './VehicleDetailFrame.jsx';
 
 
 export function VehicleDocuments() {
-  const navigate = useNavigate();
   const { truck } = useFleetVehicle();
+  const { currentData: documents, error, isLoading } = useGetFleetDocumentsQuery(truck?.id, { skip: !truck, refetchOnMountOrArgChange: true });
+  const [uploadDocument] = useUploadFleetDocumentMutation();
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('All Document Types');
   const [uploadType, setUploadType] = useState(null);
   const [toast, showToast] = useToast();
 
-  const truckDocs = [];
+  const truckDocs = !error ? documents ?? [] : [];
   const types = useMemo(() => ['All Document Types', ...new Set(truckDocs.map((d) => d.type))], [truckDocs]);
   const filtered = truckDocs.filter((d) =>
     (typeFilter === 'All Document Types' || d.type === typeFilter)
     && (!query || [d.name, d.type].some((v) => v.toLowerCase().includes(query.toLowerCase()))));
 
-  const summary = { total: '—', valid: '—', expiringSoon: '—', expired: '—' };
-  const compliance = { rows: VEHICLE_REQUIREMENTS.map((req) => ({ req, doc: null, status: '—' })), summary: { missing: '—', requiredMet: '—', requiredTotal: '—' } };
+  const completeStatuses = documents && !error && documents.every((doc) => ['Valid', 'Expiring Soon', 'Expired'].includes(doc.status));
+  const summary = { total: !error ? documents?.length ?? '—' : '—', ...Object.fromEntries([['valid', 'Valid'], ['expiringSoon', 'Expiring Soon'], ['expired', 'Expired']].map(([key, status]) => [key, completeStatuses ? documents.filter((doc) => doc.status === status).length : '—'])) };
+  const compliance = { rows: VEHICLE_REQUIREMENTS.map((req) => {
+    const doc = truckDocs.find((item) => item.type === req.type);
+    return { req, doc, status: doc?.status ?? (documents && !error && fleetDocumentSupported(req.type) ? 'Missing' : '—') };
+  }), summary: { missing: '—', requiredMet: '—', requiredTotal: VEHICLE_REQUIREMENTS.filter((req) => req.required).length } };
   const missing = compliance.summary.missing;
+  const chartData = completeStatuses ? [
+    { label: 'Valid', value: summary.valid, color: 'var(--tk-success)' },
+    { label: 'Expiring Soon', value: summary.expiringSoon, color: 'var(--tk-warning)' },
+    { label: 'Expired', value: summary.expired, color: 'var(--tk-danger)' },
+  ] : [];
 
   if (!truck) return <VehicleDetailFrame tab="documents" title="Vehicle not found" />;
 
@@ -42,8 +54,8 @@ export function VehicleDocuments() {
             <h3 className="tk-title" style={{ margin: 0, fontSize: 14 }}>Document Compliance</h3>
             <div style={{ display: 'grid', justifyItems: 'center', gap: 10 }}>
               <DonutChart size={130} thickness={16}
-                data={[]}
-                centerValue="—" centerLabel="Documents Valid" />
+                data={chartData}
+                centerValue={summary.valid} centerLabel="Documents Valid" />
               <div style={{ display: 'grid', gap: 6, width: '100%' }}>
                 {[['Valid', summary.valid, 'var(--tk-success)'], ['Expiring Soon', summary.expiringSoon, 'var(--tk-warning)'], ['Expired', summary.expired, 'var(--tk-danger)'], ['Missing', missing, 'var(--tk-ink-300)']].map(([label, value, color]) => (
                   <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, font: '400 13px/18px var(--tk-font-sans)' }}>
@@ -88,7 +100,7 @@ export function VehicleDocuments() {
         <SearchField style={{ flex: 1 }} placeholder="Search documents..." value={query} onChange={(e) => setQuery(e.target.value)} />
         <Select value={typeFilter} options={types} onChange={(e) => setTypeFilter(e.target.value)} style={{ width: 200 }} />
       </div>
-      {truck.apiBacked ? <span className="tk-meta">—</span> : filtered.length === 0 ? (
+      {isLoading ? <SkeletonRow columns={6} /> : error ? <EmptyState icon="file-text" title={getApiErrorMessage(error)} /> : filtered.length === 0 ? (
         <EmptyState icon="file-text" title="No documents found" />
       ) : (
         <DataTable rows={filtered} rowKey={(d) => d.id} columns={[
@@ -99,16 +111,19 @@ export function VehicleDocuments() {
           { key: 'uploadedOn', header: 'Uploaded On', render: (d) => d.uploadedOn },
           { key: 'actions', header: 'Actions', render: (d) => (
             <span style={{ display: 'flex', gap: 6 }}>
-              <Button size="sm" variant="outline" icon="eye" onClick={() => (d.url ? window.open(d.url, '_blank', 'noopener') : navigate(`/documents/${d.id}`))}>View</Button>
+              <Button size="sm" variant="outline" icon="eye" onClick={() => d.url ? window.open(d.url, '_blank', 'noopener,noreferrer') : showToast('The API did not return a document URL.')}>View</Button>
               {VEHICLE_REQUIREMENTS.some((r) => r.type === d.type) && <Button size="sm" variant="outline" icon="refresh-cw" onClick={() => setUploadType(d.type)}>Replace</Button>}
             </span>
           ) },
         ]} />
       )}
       <UploadDocumentModal
-        open={!!uploadType} onClose={() => setUploadType(null)} ownerType="vehicle" ownerId={truck.plate} ownerLabel={truck.plate}
+        open={!!uploadType} onClose={() => setUploadType(null)} ownerType="vehicle" ownerId={truck.id} ownerLabel={truck.plate}
         requirements={VEHICLE_REQUIREMENTS} initialType={uploadType}
-        submitDocument={async () => { throw new Error('Vehicle compliance uploads with document type and expiry are not supported by the documented API.'); }}
+        submitDocument={async (draft) => {
+          try { return await uploadDocument({ truckId: truck.id, ...draft }).unwrap(); }
+          catch (err) { throw new Error(getApiErrorMessage(err)); }
+        }}
         onDone={(doc) => { setUploadType(null); showToast(`${doc.name} submitted for review.`); }}
       />
       <Toast message={toast} />

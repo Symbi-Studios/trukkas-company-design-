@@ -105,9 +105,11 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
         if (!text(id)) return unavailable('This job has no API ID.');
         const result = await collection(baseQuery, api, '/company/reviews', 'reviews', { jobId: id, sort: 'newest' });
         if (result.error) return result;
-        if (result.data.length > 1) return unavailable('The API returned multiple job reviews without identifying which one rates the company.');
-        const review = result.data.length ? jobReviewView(result.data[0]) : null;
-        if (result.data.length && !review) return unavailable('The API did not return a valid job rating.');
+        if (result.data.some((review) => !['COMPANY', 'DRIVER'].includes(review.reviewed?.type))) return unavailable('The API did not identify whether a job review rates the company or a driver.');
+        const companyReviews = result.data.filter((review) => review.reviewed.type === 'COMPANY');
+        if (companyReviews.length > 1) return unavailable('The API returned multiple company reviews for this job.');
+        const review = companyReviews.length ? jobReviewView(companyReviews[0]) : null;
+        if (companyReviews.length && !review) return unavailable('The API did not return a valid job rating.');
         return { data: { review } };
       },
       providesTags: ['CompanyJobs', 'CompanyDashboard'],

@@ -17,6 +17,8 @@ import {
 import { CargoThumb } from '../components/CargoThumb.jsx';
 import styles from './Trips.module.css';
 
+const matchesPhase = (trip, phase) => trip.phase === phase && (phase !== 'Upcoming' || trip.driverAssigned === true);
+
 export function Trips() {
   const navigate = useNavigate();
   const { currentData, error, isFetching } = useGetCompanyTripsQuery(undefined, { refetchOnMountOrArgChange: true });
@@ -40,14 +42,15 @@ export function Trips() {
   // No company API documents the prototype's per-job, multi-truck dispatch summary.
   const needsDispatch = null;
 
-  const phaseCount = (phase) => currentData && trips.every((trip) => trip.phase !== null) ? trips.filter((t) => t.phase === phase).length : '—';
+  const phaseCount = (phase) => currentData && trips.every((trip) => trip.phase !== null && (phase !== 'Upcoming' || trip.phase !== 'Upcoming' || trip.driverAssigned !== null))
+    ? trips.filter((trip) => matchesPhase(trip, phase)).length : '—';
   const counts = { all: currentData ? trips.length : '—', Upcoming: phaseCount('Upcoming'), Active: phaseCount('Active'), Completed: phaseCount('Completed'), Cancelled: phaseCount('Cancelled') };
   const months = [...new Set(trips.map((t) => t.pickupMonth).filter(Boolean))];
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return trips
-      .filter((t) => tab === 'all' || t.phase === tab)
+      .filter((t) => tab === 'all' || matchesPhase(t, tab))
       .filter((t) => (!month || t.pickupMonth === month) && (!stage || (stage === 'Delayed' ? t.delayed && t.phase === 'Active' : t.status === stage)))
       .filter((t) => (!truck || t.truckPlate === truck) && (!driver || t.driverName === driver))
       .filter((t) => !q || [t.number, t.job.number, t.id, t.jobId, t.truckPlate, t.driverName, t.job?.origin, t.job?.destination, jobTitle(t.job), t.job?.cargoType]
@@ -118,7 +121,7 @@ export function Trips() {
           <div className={styles.moreFilters}>
             <Select label="Truck" value={truck} placeholder="All Trucks" options={[...new Set(trips.map((t) => t.truckPlate).filter((value) => value !== '—'))]} onChange={(e) => { setTruck(e.target.value); setPage(1); }} />
             <Select label="Driver" value={driver} placeholder="All Drivers" options={[...new Set(trips.map((t) => t.driverName).filter((value) => value !== '—'))]} onChange={(e) => { setDriver(e.target.value); setPage(1); }} />
-            <Button variant="ghost" onClick={() => { setTruck(''); setDriver(''); setMonth(''); setStage(''); setQuery(''); syncTopBarSearch(''); }}>Clear filters</Button>
+            <Button variant="ghost" onClick={() => { setTruck(''); setDriver(''); setMonth(''); setStage(''); setQuery(''); setPage(1); syncTopBarSearch(''); }}>Clear filters</Button>
           </div>
         )}
 

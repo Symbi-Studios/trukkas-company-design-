@@ -31,7 +31,7 @@ function companyResult(response, api) {
       ...EMPTY_COMPANY_SETTINGS, name: text(user.businessName) ?? '—', rcNumber: text(user.cacNumber) ?? '—',
       address: text(user.businessAddress) ?? '—', email: text(details?.companyEmail) ?? '—', phone: text(details?.companyPhone) ?? '—',
       founded: Number.isInteger(details?.yearFounded) && details.yearFounded >= 1900 ? String(details.yearFounded) : '—',
-      industry: text(details?.industry) ?? text(user.industry) ?? '—',
+      industry: text(details?.industry) ?? '—',
       verification: ({ VERIFIED: 'Verified', IN_REVIEW: 'Pending Review', PENDING: 'Pending', REJECTED: 'Rejected' })[user.kycStatus] ?? '—',
     },
     accountChanges: { companyName: text(user.businessName) ?? '—', cacNumber: text(user.cacNumber), businessAddress: text(user.businessAddress), businessType: text(user.businessType), onboardingCompany: companyFormView(user) },
@@ -91,8 +91,23 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
           body[fields[key]] = key === 'founded' ? (next ? Number(next) : null) : key === 'phone' ? next.replace(/\s/g, '') || null : ['email', 'industry'].includes(key) ? next || null : next;
         }
         if (!Object.keys(body).length) return settingsUnavailable('There are no company changes to save.');
+        const account = api.getState().auth.account;
         const result = await baseQuery({ url: '/profile', method: 'PATCH', body });
-        return result.error ? result : companyResult(result.data, api);
+        if (result.error) return result;
+        if (api.getState().auth.account !== account) return settingsUnavailable('Your company session changed. Reload company settings.');
+        const saved = companyResult(result.data, api);
+        if (saved.error) return saved;
+        const user = unwrapApiResponseData(result.data).user;
+        const nested = ['companyEmail', 'companyPhone', 'yearFounded', 'industry'];
+        const confirmed = Object.entries(body).every(([key, expected]) => {
+          const actual = nested.includes(key) ? user.companyProfile?.[key] : user[key];
+          if (key === 'yearFounded') return expected === null ? actual == null : actual === expected;
+          if (expected === null) return actual == null || actual === '';
+          if (typeof actual !== 'string') return false;
+          return key === 'companyEmail' ? actual.trim().toLowerCase() === expected.toLowerCase()
+            : key === 'companyPhone' ? actual.replace(/\s/g, '') === expected : actual.trim() === expected;
+        });
+        return confirmed ? saved : settingsUnavailable('The API did not confirm the saved company changes. Reload company settings before retrying.');
       },
       onQueryStarted: syncCompany,
       invalidatesTags: (_data, error) => error ? [] : ['CompanySettings', 'Profile'],

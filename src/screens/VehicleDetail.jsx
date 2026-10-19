@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from '../router.js';
 import { ActivityFeed, Avatar, Badge, Button, Card, EmptyState, Icon, LabelValue, Modal, SectionCard, TextField } from '../ds.js';
 import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
-import { useGetFleetDriversQuery, useGetFleetTripsQuery } from '../store/features/fleet/fleetApi.js';
+import { useGetFleetDriversQuery, useGetFleetTripsQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
 import { total } from '../store/features/fleet/fleetContracts.js';
 import { fleetDetailHref } from '../domain/fleetLinks.js';
+import { driverDetailHref } from '../domain/driverLinks.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { formatNaira } from '../mock/format.js';
 import { VehicleDetailFrame } from './VehicleDetailFrame.jsx';
 import { FleetAssignDriverModal as AssignDriverModal, FleetRemoveDriverModal as RemoveDriverModal } from '../components/FleetAssignModals.jsx';
@@ -34,11 +36,20 @@ export function VehicleDetail() {
   const [assignOpen, setAssignOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [toast, showToast] = useToast();
-  const driver = drivers?.find((item) => item.id === truck?.driverId) ?? truck?.assignedDriver;
-  const onTrip = trips?.some((trip) => !['Completed', 'Cancelled', 'Disputed', '—'].includes(trip.status));
+  const [update, { isLoading: saving }] = useUpdateFleetVehicleMutation();
+  const updating = useRef(false);
+  const membership = drivers?.find((item) => item.id === truck?.driverId);
+  const driver = truck?.assignedDriver ? { ...membership, ...truck.assignedDriver } : null;
+  const onTrip = truck?.onTrip || trips?.some((trip) => !['Completed', 'Cancelled', 'Disputed', '—'].includes(trip.status));
   const changesLocked = !trips || onTrip || !truck?.driverKnown;
   const totalEarnings = total(trips, 'budget');
-  const unavailableAction = () => showToast('This fleet action is currently unavailable from the API.');
+  async function saveSetting(fields) {
+    if (updating.current) return false;
+    updating.current = true;
+    try { await update({ id: truck.id, ...fields }).unwrap(); return true; }
+    catch (err) { showToast(getApiErrorMessage(err)); return false; }
+    finally { updating.current = false; }
+  }
 
   if (!truck) {
     return (
@@ -49,7 +60,7 @@ export function VehicleDetail() {
   }
 
   async function saveNotes() {
-    unavailableAction();
+    if (await saveSetting({ notes: notesDraft })) setNotesOpen(false);
   }
 
   return (
@@ -75,7 +86,7 @@ export function VehicleDetail() {
                   </div>
                   <LabelValue label="Licence" value={driver.licenseNumber} style={{ padding: '4px 0' }} />
                   <LabelValue label="Licence Expiry" value={driver.licenseExpiry} style={{ padding: '4px 0' }} />
-                  <Button variant="secondary" icon="user-round" fullWidth onClick={() => showToast('Driver profiles for backend IDs are currently unavailable.')}>View Driver Profile</Button>
+                  <Button variant="secondary" icon="user-round" fullWidth onClick={() => navigate(driverDetailHref(driver.id))}>View Driver Profile</Button>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <Button variant="outline" size="sm" icon="repeat" disabled={changesLocked} onClick={() => setAssignOpen(true)}>Replace</Button>
                     <Button variant="danger" size="sm" icon="user-minus" disabled={changesLocked} onClick={() => setRemoveOpen(true)}>Remove</Button>
@@ -97,15 +108,15 @@ export function VehicleDetail() {
               {statusMenuOpen && (
                 <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 6px)', zIndex: 20, background: '#fff', border: '1px solid var(--tk-line)', borderRadius: 'var(--tk-r-lg)', boxShadow: 'var(--tk-shadow-menu)', padding: 6 }}>
                   {['Active', 'In Maintenance', 'Inactive'].map((s) => (
-                    <button key={s} type="button" onClick={() => { setStatusMenuOpen(false); unavailableAction(); }}
+                    <button key={s} type="button" disabled={saving} onClick={() => { setStatusMenuOpen(false); saveSetting({ status: s }); }}
                       style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 10px', border: 0, background: 'transparent', cursor: 'pointer', borderRadius: 'var(--tk-r-sm)', font: '500 13px/18px var(--tk-font-sans)' }}>{s}</button>
                   ))}
                 </div>
               )}
             </div>
-            <Button fullWidth variant="outline" icon="wrench" onClick={unavailableAction}>Mark for Maintenance</Button>
+            <Button fullWidth variant="outline" icon="wrench" disabled={saving} onClick={() => saveSetting({ status: 'In Maintenance' })}>Mark for Maintenance</Button>
             <Button fullWidth variant="outline" icon="file-text" onClick={() => navigate(fleetDetailHref(truck.id, 'documents'))}>View Documents</Button>
-            <Button fullWidth variant="danger" icon="power" onClick={unavailableAction}>{truck.status === 'Inactive' ? 'Activate Truck' : 'Deactivate Truck'}</Button>
+            <Button fullWidth variant="danger" icon="power" disabled={saving} onClick={() => saveSetting({ status: truck.status === 'Inactive' ? 'Active' : 'Inactive' })}>{truck.status === 'Inactive' ? 'Activate Truck' : 'Deactivate Truck'}</Button>
           </Card>
           <Card style={{ display: 'grid', gap: 6 }}>
             <h3 className="tk-title" style={{ margin: 0, fontSize: 14 }}>Fleet Summary</h3>
@@ -175,7 +186,7 @@ export function VehicleDetail() {
       <RemoveDriverModal truck={truck} open={removeOpen} onClose={() => setRemoveOpen(false)} onDone={() => { setRemoveOpen(false); showToast(`Driver removed from ${truck.plate}.`); }} />
       <Toast message={toast} />
       <Modal open={notesOpen} onClose={() => setNotesOpen(false)} title="Edit Notes" width={440}
-        footer={<><Button variant="outline" onClick={() => setNotesOpen(false)}>Cancel</Button><Button onClick={saveNotes}>Save</Button></>}>
+        footer={<><Button variant="outline" disabled={saving} onClick={() => setNotesOpen(false)}>Cancel</Button><Button disabled={saving} onClick={saveNotes}>Save</Button></>}>
         <TextField label="Additional Notes" value={notesDraft} onChange={(e) => setNotesDraft(e.target.value)} />
       </Modal>
     </VehicleDetailFrame>

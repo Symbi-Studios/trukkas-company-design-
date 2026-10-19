@@ -1,9 +1,28 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
-import { count, driverView, fleetTripView, maintenanceView, rows, text, truckView } from './fleetContracts.js';
+import { getApiErrorMessage } from '../../api/getApiErrorMessage.js';
+import { count, driverView, fleetDocumentTypes, fleetDocumentView, fleetTripView, maintenanceView, rows, safeUrl, text, truckView, vehicleClassToWire } from './fleetContracts.js';
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const signedIn = (api) => api.getState().auth.account ? null : unavailable('Sign in to manage your fleet.');
 const changedTags = ['CompanyFleet', 'CompanyJobs', 'CompanyTrips', 'CompanyTrip', 'CompanyDashboard', 'CompanyMaintenance'];
+const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+const validFile = (file, photo = false) => typeof File !== 'undefined' && file instanceof File && file.size > 0 && file.size <= (photo ? 5 : 10) * 1024 * 1024 && (photo ? ['image/jpeg', 'image/png', 'image/webp'] : ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']).includes(file.type);
+
+async function uploadDocument(baseQuery, truckId, { type, file, expiryDate, name }) {
+  const wireType = fleetDocumentTypes[type];
+  if (!wireType) return unavailable(`The vehicle API does not document ${type} uploads.`);
+  if (!validFile(file)) return unavailable('Choose a PDF, JPEG, PNG or WebP file up to 10 MB.');
+  if (expiryDate && !validDate(expiryDate)) return unavailable('Enter a valid expiry date.');
+  const body = new FormData();
+  body.append('file', file); body.append('type', wireType);
+  if (expiryDate) body.append('expiryDate', expiryDate);
+  if (text(name)) body.append('name', name.trim());
+  const result = await baseQuery({ url: `/company/fleet/${encodeURIComponent(truckId)}/documents`, method: 'POST', body });
+  if (result.error) return result;
+  const saved = unwrapApiResponseData(result.data)?.document;
+  const doc = saved?.type === wireType ? fleetDocumentView(saved) : null;
+  return doc && doc.url ? { data: doc } : unavailable('The API did not confirm the document upload. Reload the vehicle before trying again.');
+}
 
 async function allPages(baseQuery, api, url, key, params) {
   const collection = [];
@@ -26,23 +45,127 @@ async function allPages(baseQuery, api, url, key, params) {
 export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet', 'CompanyMaintenance', 'CompanyJobs', 'CompanyTrips', 'CompanyTrip', 'CompanyDashboard'] }).injectEndpoints({
   endpoints: (builder) => ({
     addFleetVehicle: builder.mutation({
-      async queryFn(_draft, api) {
+      async queryFn({ draft, createdTruckId }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
-        return unavailable('The add-truck API requires containerTypeId, containerSizeId and containerWeight. This form does not collect those references, and its vehicle details and compliance documents are not covered by that contract.');
+        const vehicleClass = vehicleClassToWire(draft?.vehicleClass);
+        if (!vehicleClass || !text(draft.plate) || !/^\d{4}$/.test(draft.year ?? '')) return unavailable('Enter a vehicle class, registration number and four-digit year.');
+        if (Object.entries({ make: 60, model: 60, color: 30, vin: 30, engineNumber: 40 }).some(([key, limit]) => (text(draft[key])?.length ?? 0) > limit)) return unavailable('Check the lengths of the make, model, colour, VIN and engine number.');
+        const unsupported = [
+          ['Purchase Date', draft.purchaseDate], ['Current Location', draft.location], ['Odometer Reading', draft.odometer],
+          ['Ownership', draft.ownership && draft.ownership !== 'Company Owned' ? draft.ownership : null],
+          ...Object.entries({ engineCapacity: 'Engine Capacity', gvw: 'Gross Vehicle Weight', loadCapacity: 'Load Capacity', fuelTankCapacity: 'Fuel Tank Capacity' }).map(([key, label]) => [label, draft.specs?.[key]]),
+          ...Object.entries({ engineType: 'Diesel', transmission: 'Automatic', axleConfig: '6 x 4', axles: '3', emissionStandard: 'Euro 5', trailerCompatibility: 'Yes (Standard 40FT)' })
+            .filter(([key, initial]) => text(draft.specs?.[key]) && draft.specs[key] !== initial).map(([key]) => [({ engineType: 'Engine Type', transmission: 'Transmission', axleConfig: 'Axle Configuration', axles: 'Number of Axles', emissionStandard: 'Emission Standard', trailerCompatibility: 'Trailer Compatibility' })[key], draft.specs[key]]),
+        ].filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '');
+        if (unsupported.length) return unavailable(`The vehicle API cannot save these fields yet: ${unsupported.map(([label]) => label).join(', ')}. Clear these entries or restore the original selections before submitting.`);
+        const docs = Object.entries(draft.docs ?? {}).filter(([, doc]) => doc.files?.length).map(([type, doc]) => ({ type, file: doc.files[0]?.file, expiryDate: doc.expiry, name: doc.files[0]?.name }));
+        const unsupportedDoc = docs.find((doc) => !fleetDocumentTypes[doc.type]);
+        if (unsupportedDoc) return unavailable(`The vehicle API does not document ${unsupportedDoc.type} uploads. Remove that file before submitting.`);
+        if (docs.some((doc) => !validFile(doc.file) || doc.expiryDate && !validDate(doc.expiryDate))) return unavailable('Check document files and expiry dates. Documents must be PDF, JPEG, PNG or WebP, up to 10 MB.');
+        const photos = Object.values(draft.photos ?? {}).flatMap((items) => items.map((item) => item.file));
+        if (photos.some((file) => !validFile(file, true))) return unavailable('Truck photos must be JPEG, PNG or WebP, up to 5 MB each.');
+        if ((draft.notes ?? '').length > 2000) return unavailable('Enter notes of up to 2000 characters.');
+        if (!text(createdTruckId)) {
+          const urls = [];
+          for (let offset = 0; offset < photos.length; offset += 5) {
+            const batch = photos.slice(offset, offset + 5), body = new FormData();
+            batch.forEach((file) => body.append('photos', file));
+            const upload = await baseQuery({ url: '/uploads/truck-photos', method: 'POST', body });
+            if (upload.error) return upload;
+            const saved = unwrapApiResponseData(upload.data)?.photos;
+            if (!Array.isArray(saved) || saved.length !== batch.length || saved.some((url) => !safeUrl(url))) return unavailable('The API did not confirm the truck photos.');
+            urls.push(...saved);
+          }
+          const truck = {
+            plateNumber: draft.plate.trim().toUpperCase(), year: draft.year, vehicleClass,
+            ...Object.fromEntries(['make', 'model', 'color', 'vin', 'engineNumber'].filter((key) => text(draft[key])).map((key) => [key, draft[key].trim()])),
+            ...(draft.vehicleClass !== 'Trailer' && text(draft.specs?.fuelType) ? { fuelType: draft.specs.fuelType.toUpperCase() } : {}),
+            ...(urls.length ? { truckUrl: urls } : {}),
+          };
+          const created = await baseQuery({ url: '/dashboard/trucks', method: 'POST', body: { trucks: [truck] } });
+          if (created.error) return created;
+          const saved = rows(unwrapApiResponseData(created.data)?.trucks);
+          if (saved?.length !== 1 || !text(saved[0].id) || saved[0].plateNumber !== truck.plateNumber) return unavailable('The create response could not be confirmed. Reload the fleet before trying again.');
+          createdTruckId = saved[0].id;
+        }
+        // A partial save carries the created ID back to the form so retrying
+        // finishes documents/settings instead of creating a second vehicle.
+        const partial = (result) => ({ error: { status: 'CUSTOM_ERROR', error: 'Vehicle setup is incomplete.', data: { message: `The vehicle was created, but some details could not be saved. ${getApiErrorMessage(result.error)} Retry to finish saving, or open the vehicle from My Fleet.`, createdTruckId } } });
+        if (text(draft.notes)) {
+          const result = await baseQuery({ url: `/dashboard/trucks/${encodeURIComponent(createdTruckId)}`, method: 'PATCH', body: { notes: draft.notes.trim() } });
+          if (result.error) return partial(result);
+          if (unwrapApiResponseData(result.data)?.truck?.notes !== draft.notes.trim()) return partial(unavailable('The API did not confirm the notes.'));
+        }
+        for (const doc of docs) { const result = await uploadDocument(baseQuery, createdTruckId, doc); if (result.error) return partial(result); }
+        if (text(draft.driverId) && draft.vehicleClass !== 'Trailer') {
+          const result = await baseQuery({ url: `/company/fleet/${encodeURIComponent(createdTruckId)}/driver`, method: 'PUT', body: { driverId: draft.driverId } });
+          if (result.error) return partial(result);
+          const confirm = await baseQuery(`/company/fleet/${encodeURIComponent(createdTruckId)}`);
+          if (confirm.error || unwrapApiResponseData(confirm.data)?.truck?.driver?.id !== draft.driverId) return partial(unavailable('The API did not confirm the driver assignment.'));
+        }
+        return { data: { id: createdTruckId } };
       },
+      invalidatesTags: changedTags,
     }),
     getFleet: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
-        // The company/fleet responses have no schema; this endpoint documents
-        // the complete owned-truck collection and company driver relation.
-        const result = await baseQuery('/dashboard/trucks');
+        const result = await allPages(baseQuery, api, '/company/fleet', 'trucks');
         if (result.error) return result;
-        const trucks = rows(unwrapApiResponseData(result.data)?.trucks);
-        if (!trucks || trucks.some((truck) => !text(truck.id)) || new Set(trucks.map((truck) => truck.id)).size !== trucks.length) return unavailable('The API did not return the company’s trucks.');
-        return { data: trucks.map(truckView) };
+        return { data: result.data.map((truck) => truckView(truck)) };
       },
       providesTags: ['CompanyFleet'],
+    }),
+    getFleetVehicle: builder.query({
+      async queryFn(id, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        if (!text(id)) return unavailable('This vehicle has no API ID.');
+        const result = await baseQuery(`/company/fleet/${encodeURIComponent(id)}`);
+        if (result.error) return result;
+        const truck = unwrapApiResponseData(result.data)?.truck;
+        return truck?.id === id ? { data: truckView(truck, true) } : unavailable('The API did not identify this vehicle.');
+      },
+      providesTags: ['CompanyFleet'],
+    }),
+    getFleetDocuments: builder.query({
+      async queryFn(id, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        if (!text(id)) return unavailable('This vehicle has no API ID.');
+        const result = await baseQuery(`/company/fleet/${encodeURIComponent(id)}/documents`);
+        if (result.error) return result;
+        const documents = rows(unwrapApiResponseData(result.data)?.documents)?.map(fleetDocumentView);
+        return documents && documents.every(Boolean) && new Set(documents.map((doc) => doc.id)).size === documents.length ? { data: documents } : unavailable('The API did not return valid vehicle documents.');
+      },
+      providesTags: ['CompanyFleet'],
+    }),
+    uploadFleetDocument: builder.mutation({
+      async queryFn({ truckId, ...draft }, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        if (!text(truckId)) return unavailable('This vehicle has no API ID.');
+        return uploadDocument(baseQuery, truckId, draft);
+      },
+      invalidatesTags: changedTags,
+    }),
+    updateFleetVehicle: builder.mutation({
+      async queryFn({ id, status, notes, remindersEnabled }, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        if (!text(id)) return unavailable('This vehicle has no API ID.');
+        const body = {};
+        if (status !== undefined) {
+          const wireStatus = { Active: 'ACTIVE', Inactive: 'INACTIVE' }[status];
+          if (!wireStatus) return unavailable('Maintenance and approval status are managed by Trukkas. Schedule a maintenance request from the Maintenance tab.');
+          body.status = wireStatus;
+        }
+        if (notes !== undefined) { if (typeof notes !== 'string' || notes.length > 2000) return unavailable('Enter notes of up to 2000 characters.'); body.notes = notes.trim(); }
+        if (remindersEnabled !== undefined) { if (typeof remindersEnabled !== 'boolean') return unavailable('Choose a reminder preference.'); body.remindersEnabled = remindersEnabled; }
+        if (!Object.keys(body).length) return unavailable('Choose a vehicle setting to update.');
+        const result = await baseQuery({ url: `/dashboard/trucks/${encodeURIComponent(id)}`, method: 'PATCH', body });
+        if (result.error) return result;
+        const saved = unwrapApiResponseData(result.data)?.truck;
+        const confirmed = saved?.id === id && Object.entries(body).every(([key, value]) => key === 'notes' && value === '' ? saved.notes === '' || saved.notes === null : saved[key] === value);
+        return confirmed ? { data: { id } } : unavailable('The API did not confirm the vehicle update. Reload the vehicle before trying again.');
+      },
+      invalidatesTags: changedTags,
     }),
     getFleetDrivers: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
@@ -61,12 +184,10 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
         if (!text(truckId) || (driverId !== null && !text(driverId))) return unavailable('Select a truck and driver.');
         const result = await baseQuery({ url: `/company/fleet/${encodeURIComponent(truckId)}/driver`, method: 'PUT', body: { driverId } });
         if (result.error) return result;
-        // The write response is unspecified. Confirm the relation with the
-        // documented owned-truck read before reporting success.
-        const confirmation = await baseQuery('/dashboard/trucks');
+        const confirmation = await baseQuery(`/company/fleet/${encodeURIComponent(truckId)}`);
         if (confirmation.error) return unavailable('The assignment response could not be confirmed. Reload the fleet before trying again.');
-        const truck = rows(unwrapApiResponseData(confirmation.data)?.trucks)?.find((item) => item.id === truckId);
-        const confirmed = driverId === null ? truck?.driverProfile === null : truck?.driverProfile?.user?.id === driverId;
+        const truck = unwrapApiResponseData(confirmation.data)?.truck;
+        const confirmed = truck?.id === truckId && (driverId === null ? truck.driver === null : truck.driver?.id === driverId);
         return confirmed ? { data: { truckId, driverId } } : unavailable('The API did not confirm the driver assignment. Reload the fleet before trying again.');
       },
       invalidatesTags: changedTags,
@@ -135,6 +256,18 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
       },
       providesTags: ['CompanyFleet', 'CompanyTrips'],
     }),
+    exportFleetVehicle: builder.query({
+      async queryFn(truckId, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        if (!text(truckId)) return unavailable('This vehicle has no API ID.');
+        const result = await baseQuery({ url: '/company/export/fleet', params: { truckId }, responseHandler: async (response) => {
+          const contentType = response.headers.get('content-type') ?? '';
+          return contentType.includes('application/json') ? response.json() : { content: await response.text(), contentType };
+        } });
+        if (result.error) return result;
+        return typeof result.data?.content === 'string' && result.data.contentType.toLowerCase().includes('text/csv') ? { data: { content: result.data.content } } : unavailable('The API did not return a CSV file.');
+      },
+    }),
     exportFleetTrips: builder.query({
       async queryFn({ truckId, search, status }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
@@ -157,4 +290,4 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
   }),
 });
 
-export const { useAddFleetVehicleMutation, useGetFleetQuery, useGetFleetDriversQuery, useAssignFleetDriverMutation, useGetFleetMaintenanceQuery, useRequestFleetMaintenanceMutation, useCompleteFleetMaintenanceMutation, useGetFleetTripsQuery, useLazyExportFleetTripsQuery } = fleetApi;
+export const { useAddFleetVehicleMutation, useGetFleetQuery, useGetFleetVehicleQuery, useGetFleetDocumentsQuery, useUploadFleetDocumentMutation, useUpdateFleetVehicleMutation, useLazyExportFleetVehicleQuery, useGetFleetDriversQuery, useAssignFleetDriverMutation, useGetFleetMaintenanceQuery, useRequestFleetMaintenanceMutation, useCompleteFleetMaintenanceMutation, useGetFleetTripsQuery, useLazyExportFleetTripsQuery } = fleetApi;

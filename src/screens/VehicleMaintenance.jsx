@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { Badge, Button, Card, DataTable, DonutChart, DropdownMenu, EmptyState, Icon, Modal, SearchField, Select, SkeletonRow, StatCard, Switch, TextField } from '../ds.js';
 import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
-import { useCompleteFleetMaintenanceMutation, useGetFleetMaintenanceQuery, useRequestFleetMaintenanceMutation } from '../store/features/fleet/fleetApi.js';
+import { useCompleteFleetMaintenanceMutation, useGetFleetMaintenanceQuery, useRequestFleetMaintenanceMutation, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
 import { total } from '../store/features/fleet/fleetContracts.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { Toast, useToast } from '../components/Toast.jsx';
@@ -45,6 +45,8 @@ export function VehicleMaintenance() {
   const { truck } = useFleetVehicle();
   const { data: records, error, isLoading } = useGetFleetMaintenanceQuery(truck?.id, { skip: !truck, refetchOnMountOrArgChange: true });
   const [completeMaintenance] = useCompleteFleetMaintenanceMutation();
+  const [updateVehicle, { isLoading: savingReminders }] = useUpdateFleetVehicleMutation();
+  const updatingReminders = useRef(false);
   const [busyRecord, setBusyRecord] = useState(null);
   const completing = useRef(false);
   const [toast, showToast] = useToast();
@@ -124,7 +126,13 @@ export function VehicleMaintenance() {
               <strong style={{ display: 'block', font: '600 13px/18px var(--tk-font-sans)' }}>Maintenance Reminders</strong>
               <span className="tk-meta">Get notified when maintenance is due or overdue for this truck.</span>
               <Switch style={{ marginTop: 10 }} label="Enable Reminders" checked={truck.remindersEnabled}
-                disabled={truck.remindersEnabled === null} onChange={() => showToast('Maintenance reminder settings are currently unavailable from the API.')} />
+                disabled={truck.remindersEnabled === null || savingReminders} onChange={async () => {
+                  if (updatingReminders.current) return;
+                  updatingReminders.current = true;
+                  try { await updateVehicle({ id: truck.id, remindersEnabled: !truck.remindersEnabled }).unwrap(); }
+                  catch (err) { showToast(getApiErrorMessage(err)); }
+                  finally { updatingReminders.current = false; }
+                }} />
             </span>
           </Card>
         </>

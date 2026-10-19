@@ -9,6 +9,7 @@ import { useAddFleetVehicleMutation, useGetFleetDriversQuery, useGetFleetQuery }
 import { useGetCompanyTripsQuery } from '../store/features/trips/tripsApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { VEHICLE_CLASSES } from '../domain/vehicles.js';
+import { fleetDetailHref } from '../domain/fleetLinks.js';
 import { VEHICLE_PHOTO_SLOTS, VEHICLE_REQUIREMENTS, formatDisplayDate } from '../domain/documents.js';
 import { FileDrop } from '../components/FileDrop.jsx';
 import { PickList, driverOptions } from '../components/AssignModals.jsx';
@@ -53,6 +54,7 @@ export function AddVehicle() {
   const trips = useMemo(() => companyTrips.map((trip) => ({ ...trip, driverId: drivers.find((driver) => driver.truckPlate === trip.truckPlate)?.id })), [companyTrips, drivers]);
   const [addVehicle] = useAddFleetVehicleMutation();
   const submitting = useRef(false);
+  const partialSave = useRef(null);
   const [step, setStep] = useState(0);
   const [visited, setVisited] = useState(0);
   const [draft, setDraft] = useState(EMPTY);
@@ -108,8 +110,11 @@ export function AddVehicle() {
     submitting.current = true; setBusy(true);
     setSubmitError('');
     try {
-      await addVehicle(draft).unwrap();
+      if (partialSave.current && partialSave.current.draft !== draft) throw { status: 'CUSTOM_ERROR', error: 'This vehicle was already created. Restore the submitted details to retry, or open the vehicle from My Fleet to finish its setup.' };
+      const saved = await addVehicle({ draft, createdTruckId: partialSave.current?.id }).unwrap();
+      navigate(fleetDetailHref(saved.id));
     } catch (err) {
+      if (err?.data?.createdTruckId) partialSave.current = { id: err.data.createdTruckId, draft };
       setSubmitError(getApiErrorMessage(err));
     } finally {
       submitting.current = false; setBusy(false);

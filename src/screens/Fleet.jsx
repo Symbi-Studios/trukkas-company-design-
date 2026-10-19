@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from '../router.js';
 import {
   ActivityFeed, Badge, Button, Card, DataTable, DonutChart, DropdownMenu, EmptyState, Icon, LegendList,
   PageHeader, SearchField, SkeletonRow, StatCard,
 } from '../ds.js';
-import { useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
+import { useGetFleetQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
 import { EMPTY_DASHBOARD, useGetCompanyDashboardQuery } from '../store/features/dashboard/dashboardApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { fleetDetailHref } from '../domain/fleetLinks.js';
@@ -28,6 +28,15 @@ export function Fleet() {
   const trucks = fleet ?? [];
   const { data: dashboard = EMPTY_DASHBOARD } = useGetCompanyDashboardQuery(undefined, { refetchOnMountOrArgChange: true });
   const [toast, showToast] = useToast();
+  const [updateVehicle, { isLoading: updating }] = useUpdateFleetVehicleMutation();
+  const mutating = useRef(false);
+  async function changeStatus(truck) {
+    if (mutating.current) return;
+    mutating.current = true; setRowMenu(null);
+    try { await updateVehicle({ id: truck.id, status: truck.status === 'Inactive' ? 'Active' : 'Inactive' }).unwrap(); }
+    catch (err) { showToast(getApiErrorMessage(err)); }
+    finally { mutating.current = false; }
+  }
   const statusCount = (statuses) => {
     const values = statuses.map((status) => dashboard.fleetStatus.find((item) => item.label === status)?.value);
     return values.some((value) => typeof value !== 'number') ? null : values.reduce((sum, value) => sum + value, 0);
@@ -116,7 +125,7 @@ export function Fleet() {
                 {
                   key: 'actions', header: 'Actions', width: 56, render: (t) => (
                     <span style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
-                      <Button size="sm" variant="outline" icon="ellipsis" onClick={() => setRowMenu(rowMenu === t.id ? null : t.id)} />
+                      <Button size="sm" variant="outline" icon="ellipsis" disabled={updating} onClick={() => setRowMenu(rowMenu === t.id ? null : t.id)} />
                       {rowMenu === t.id && (
                         <span style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20 }}>
                           <DropdownMenu width={200} items={[
@@ -124,7 +133,7 @@ export function Fleet() {
                             { label: 'View Documents', icon: 'file-text', onClick: () => { setRowMenu(null); navigate(fleetDetailHref(t.id, 'documents')); } },
                             { label: 'Mark for Maintenance', icon: 'wrench', onClick: () => { setRowMenu(null); unavailableAction(); } },
                             { divider: true },
-                            { label: t.status === 'Inactive' ? 'Activate Truck' : 'Deactivate Truck', icon: 'power', tone: 'danger', onClick: () => { setRowMenu(null); unavailableAction(); } },
+                            { label: t.status === 'Inactive' ? 'Activate Truck' : 'Deactivate Truck', icon: 'power', tone: 'danger', onClick: () => changeStatus(t) },
                           ]} />
                         </span>
                       )}

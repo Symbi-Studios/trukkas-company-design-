@@ -17,21 +17,48 @@ export function dateLabel(value) {
   return date ? new Intl.DateTimeFormat('en-NG', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Africa/Lagos' }).format(date) : '—';
 }
 const personName = (user) => [text(user?.firstName), text(user?.lastName)].filter(Boolean).join(' ') || '—';
-
-export function truckView(source) {
+const boolean = (value) => typeof value === 'boolean' ? value : null;
+const classes = { HEAD: 'Head', TRAILER: 'Trailer', TANKER: 'Tanker', SPECIALIZED: 'Specialized', OTHER: 'Other' };
+export const vehicleClassToWire = (value) => Object.keys(classes).find((key) => classes[key] === value) ?? null;
+const fuelLabel = (value) => ({ DIESEL: 'Diesel', PETROL: 'Petrol', CNG: 'CNG', LNG: 'LNG', ELECTRIC: 'Electric' })[value] ?? text(value) ?? '—';
+const timestamp = (value) => instant(value) ? new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Lagos' }).format(instant(value)) : '—';
+export const fleetDocumentTypes = { Registration: 'REGISTRATION', 'Road Worthiness': 'ROADWORTHINESS', Insurance: 'INSURANCE', Customs: 'CUSTOMS' };
+export const fleetDocumentSupported = (type) => Object.hasOwn(fleetDocumentTypes, type);
+const documentLabels = { REGISTRATION: 'Registration', ROADWORTHINESS: 'Road Worthiness', INSURANCE: 'Insurance', CUSTOMS: 'Customs', VEHICLE_LICENCE: 'Vehicle Licence', HACKNEY_PERMIT: 'Hackney Permit', OTHER: 'Other' };
+export function fleetDocumentView(source) {
   if (!text(source?.id)) return null;
-  const driver = object(source.driverProfile?.user);
+  return {
+    id: source.id, name: text(source.name) ?? text(source.fileName) ?? '—', type: documentLabels[source.type] ?? '—',
+    url: safeUrl(source.url), expiryDate: dateLabel(source.expiryDate), uploadedOn: dateLabel(source.uploadedAt),
+    status: ({ EXPIRED: 'Expired', EXPIRING_SOON: 'Expiring Soon', OK: 'Valid' })[source.expiryStatus] ?? (source.status === 'UPLOADED' ? 'Uploaded' : '—'),
+  };
+}
+
+export function truckView(source, detail = false) {
+  if (!text(source?.id)) return null;
+  const driver = object(source.driver);
+  const specs = object(source.specifications);
+  const activity = detail ? rows(source.activity) : null;
+  const roadWorthiness = detail ? rows(source.documents)?.find((doc) => doc.type === 'ROADWORTHINESS') : null;
+  const vehicleClass = classes[source.vehicleClass] ?? '—';
+  const status = source.availability === 'ON_TRIP' && source.status === 'ACTIVE' ? 'On Trip'
+    : ({ PENDING_REVIEW: 'Pending Review', ACTIVE: 'Active', INACTIVE: 'Inactive', MAINTENANCE: 'In Maintenance', REJECTED: 'Rejected', APPROVED: 'Approved' })[source.status] ?? '—';
   return {
     apiBacked: true, id: source.id, plate: text(source.plateNumber) ?? '—',
-    status: ({ PENDING_REVIEW: 'Pending Review', APPROVED: 'Approved', REJECTED: 'Rejected' })[source.status] ?? '—',
-    vehicleClass: '—', type: [text(source.containerSize?.name), text(source.containerType?.name)].filter(Boolean).join(' ') || '—',
-    make: '—', model: '—', makeModel: '—', year: text(source.year) ?? '—', vin: '—', engineNumber: '—',
-    purchaseDate: '—', color: '—', ownership: '—', insuranceExpiry: '—', roadWorthinessExpiry: '—',
-    odometer: null, odometerUpdated: '—', location: '—', notes: null, activityLog: null, remindersEnabled: null,
-    driverId: text(driver?.id), driver: driver ? personName(driver) : source.driverProfile === null ? null : '—',
-    driverKnown: source.driverProfile === null || !!text(driver?.id),
-    assignedDriver: driver ? { id: driver.id, name: personName(driver), phone: '—', rating: null, tripsCompleted: '—', licenseClass: '—', licenseNumber: '—', licenseExpiry: '—', status: '—', photo: null } : null,
-    specs: Object.fromEntries(['engineType', 'engineCapacity', 'transmission', 'fuelType', 'axleConfig', 'gvw', 'loadCapacity', 'axles', 'fuelTankCapacity', 'emissionStandard', 'trailerCompatibility'].map((key) => [key, '—'])),
+    status, wireStatus: text(source.status), onTrip: source.availability === 'ON_TRIP' || !!text(source.currentJob?.id),
+    vehicleClass, type: [text(source.containerSize?.name ?? specs?.containerSize?.name), text(source.containerType?.name ?? specs?.containerType?.name)].filter(Boolean).join(' ') || text(source.truckType?.name ?? specs?.truckType?.name) || vehicleClass,
+    make: text(source.make) ?? '—', model: text(source.model) ?? '—', makeModel: text(source.makeModel) ?? ([text(source.make), text(source.model)].filter(Boolean).join(' ') || '—'),
+    year: text(source.year) ?? '—', vin: detail ? text(source.vin) ?? '—' : '—', engineNumber: detail ? text(source.engineNumber) ?? '—' : '—',
+    purchaseDate: '—', color: text(source.color) ?? '—', ownership: detail && source.ownership === 'OWNED' ? 'Company Owned' : '—',
+    insuranceExpiry: dateLabel(detail ? source.insuranceExpiry : source.insurance?.expiresAt), roadWorthinessExpiry: dateLabel(roadWorthiness?.expiryDate),
+    odometer: number(detail ? source.odometerKm : source.mileageKm), odometerUpdated: timestamp(detail ? source.lastActivityAt : source.location?.updatedAt),
+    location: '—', notes: detail ? text(source.notes) : null,
+    activityLog: activity?.map((entry) => ({ id: text(entry.id), title: text(entry.label) ?? '—', detail: '—', time: timestamp(entry.at), tone: entry.kind === 'MAINTENANCE' ? 'warning' : 'info' })) ?? null,
+    remindersEnabled: detail ? boolean(source.remindersEnabled) : null,
+    driverId: text(driver?.id), driver: driver ? text(driver.name) ?? '—' : source.driver === null ? null : '—',
+    driverKnown: source.driver === null || !!text(driver?.id),
+    assignedDriver: driver ? { id: driver.id, name: text(driver.name) ?? '—', phone: text(driver.phone) ?? '—', rating: null, tripsCompleted: '—', licenseClass: '—', licenseNumber: '—', licenseExpiry: '—', status: '—', photo: safeUrl(driver.avatarUrl) } : null,
+    specs: { ...Object.fromEntries(['engineType', 'engineCapacity', 'transmission', 'fuelType', 'axleConfig', 'gvw', 'loadCapacity', 'axles', 'fuelTankCapacity', 'emissionStandard', 'trailerCompatibility'].map((key) => [key, '—'])), fuelType: detail ? fuelLabel(source.fuelType ?? specs?.fuelType) : '—' },
     photos: Array.isArray(source.photos) ? source.photos.map(safeUrl).filter(Boolean).map((url) => ({ url, label: '—' })) : null,
   };
 }

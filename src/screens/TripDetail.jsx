@@ -16,6 +16,8 @@ import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { jobTitle } from '../domain/jobs.js';
 import { tripDetailHref } from '../domain/tripLinks.js';
 import { jobDetailHref } from '../domain/jobLinks.js';
+import { driverDetailHref } from '../domain/driverLinks.js';
+import { fleetDetailHref } from '../domain/fleetLinks.js';
 import {
   TRIP_COST_CATEGORIES, TRIP_SECTIONS, TRIP_STAGES, isOpenTrip, nextTripStage, tripHealth, tripHealthTone, tripPhase,
 } from '../domain/trips.js';
@@ -61,17 +63,18 @@ function InfoStrip({ trip, job }) {
   );
 }
 
-function DriverCard({ trip, onToast }) {
+function DriverCard({ trip }) {
+  const navigate = useNavigate();
   return (
     <SectionCard title="Driver">
       {trip.driverId ? (
         <>
           <div className={styles.person}>
-            <Avatar name={trip.driverName} size={52} />
+            <Avatar name={trip.driverName} src={trip.driverPhoto || undefined} size={52} />
             <span><strong>{trip.driverName}</strong><small>{trip.driverPhone}</small></span>
             <Button variant="secondary" size="sm" icon="phone" disabled={!/^\+?[\d\s()-]{7,}$/.test(trip.driverPhone)} onClick={() => { window.location.href = `tel:${trip.driverPhone.replace(/\s+/g, '')}`; }}>Call</Button>
           </div>
-          <button type="button" className={styles.centerLink} onClick={() => onToast('Driver profile is currently unavailable.')}>View Driver Profile</button>
+          <button type="button" className={styles.centerLink} onClick={() => navigate(driverDetailHref(trip.driverId))}>View Driver Profile</button>
         </>
       ) : <span className="tk-meta">{trip.driverAssigned === false ? 'No driver assigned.' : '—'}</span>}
     </SectionCard>
@@ -79,6 +82,7 @@ function DriverCard({ trip, onToast }) {
 }
 
 function TruckCard({ trip, truck, onToast }) {
+  const navigate = useNavigate();
   return (
     <SectionCard title="Truck">
       <div className={styles.person}>
@@ -90,7 +94,7 @@ function TruckCard({ trip, truck, onToast }) {
         </span>
         {truck && <Badge tone={truck.status === '—' ? 'neutral' : vehicleStatusTone(truck.status)} dot>{truck.status}</Badge>}
       </div>
-      <button type="button" className={styles.centerLink} onClick={() => onToast('Truck details are currently unavailable.')}>View Truck Details</button>
+      <button type="button" className={styles.centerLink} onClick={() => trip.truckId ? navigate(fleetDetailHref(trip.truckId)) : onToast('Truck details are currently unavailable.')}>View Truck Details</button>
     </SectionCard>
   );
 }
@@ -122,15 +126,15 @@ function NotesCard({ trip, compact, onToast }) {
     } catch (err) { onToast(getApiErrorMessage(err)); }
     finally { submitting.current = false; }
   }
-  const notes = trip.notes?.slice().reverse() ?? null;
+  const notes = trip.notes;
   return (
     <SectionCard title="Notes" count={compact ? undefined : trip.notes?.length ?? '—'}>
       <form onSubmit={submit} className={styles.noteForm}>
-        <TextField maxLength={2000} placeholder="Add a note about this trip..." value={note} onChange={(e) => setNote(e.target.value)} style={{ flex: 1 }} />
+        <TextField maxLength={2000} disabled={saving} placeholder="Add a note about this trip..." value={note} onChange={(e) => setNote(e.target.value)} style={{ flex: 1 }} />
         <Button type="submit" disabled={saving || !note.trim()}>{saving ? 'Adding…' : 'Add Note'}</Button>
       </form>
       {notes === null ? <p className="tk-meta" style={{ marginTop: 12 }}>—</p> : notes.length === 0 ? <p className="tk-meta" style={{ marginTop: 12 }}>No notes yet.</p> : (compact ? notes.slice(0, 2) : notes).map((n, i) => (
-        <div key={i} className={styles.noteRow}>
+        <div key={n.id ?? i} className={styles.noteRow}>
           <Avatar name={n.author === 'You' ? 'You' : n.author} size={32} tone="var(--tk-navy)" />
           <span>
             <span><strong>{n.author}</strong> <span className="tk-meta">{n.time}</span></span>
@@ -174,6 +178,7 @@ function TimelineCard({ trip, onViewMap }) {
 function DocumentsSection({ trip, job, onToast }) {
   const fileInput = useRef(null);
   const pendingName = useRef(null);
+  const uploading = useRef(false);
   const [uploadingName, setUploadingName] = useState(null);
   const [uploadDocument] = useUploadCompanyTripDocumentMutation();
   function upload(name = null) {
@@ -184,7 +189,8 @@ function DocumentsSection({ trip, job, onToast }) {
   async function handleFileChange(event) {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (!file) return;
+    if (!file || uploading.current) return;
+    uploading.current = true;
     const displayName = pendingName.current;
     pendingName.current = null;
     setUploadingName(displayName || 'document');
@@ -192,7 +198,7 @@ function DocumentsSection({ trip, job, onToast }) {
       await uploadDocument({ tripId: trip.id, file, name: displayName }).unwrap();
       onToast('Trip document uploaded.');
     } catch (err) { onToast(getApiErrorMessage(err)); }
-    finally { setUploadingName(null); }
+    finally { uploading.current = false; setUploadingName(null); }
   }
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
@@ -267,9 +273,9 @@ function CostsSection({ trip, job, onToast }) {
         )}
         {isOpenTrip(trip) && (
           <form onSubmit={submit} className={styles.costForm}>
-            <Select label="Category" value={draft.category} options={TRIP_COST_CATEGORIES} onChange={(e) => setDraft({ ...draft, category: e.target.value })} />
-            <TextField label="Amount (₦)" type="number" min="0" required value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} />
-            <TextField label="Description" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="e.g. Diesel top-up at Lokoja" />
+            <Select label="Category" disabled={saving} value={draft.category} options={TRIP_COST_CATEGORIES} onChange={(e) => setDraft({ ...draft, category: e.target.value })} />
+            <TextField label="Amount (₦)" disabled={saving} type="number" min="0" required value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} />
+            <TextField label="Description" disabled={saving} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="e.g. Diesel top-up at Lokoja" />
             <Button type="submit" icon="plus" disabled={saving || !Number.isFinite(Number(draft.amount)) || Number(draft.amount) <= 0}>{saving ? 'Adding…' : 'Add Cost'}</Button>
           </form>
         )}
@@ -310,8 +316,8 @@ function CommunicationSection({ trip, onToast }) {
       )}
       {isOpenTrip(trip) && (
         <form onSubmit={submit} className={styles.composer}>
-          <Textarea rows={3} maxLength={500} value={body} onChange={(e) => setBody(e.target.value)} placeholder={`Message ${driverName}...`} />
-          <Button type="submit" icon="send" disabled={sending || !body.trim()}>{sending ? 'Sending…' : 'Send'}</Button>
+          <Textarea rows={3} maxLength={500} disabled={sending} value={body} onChange={(e) => setBody(e.target.value)} placeholder={`Message ${driverName}...`} />
+          <Button type="submit" icon="send" disabled={sending || trip.driverAssigned !== true || !body.trim()}>{sending ? 'Sending…' : 'Send'}</Button>
           {sendError && <p role="alert" style={{ gridColumn: '1 / -1', margin: 0, color: 'var(--tk-danger)', font: '500 13px/18px var(--tk-font-sans)' }}>{sendError}</p>}
         </form>
       )}
@@ -321,7 +327,8 @@ function CommunicationSection({ trip, onToast }) {
 
 export function TripDetailFromQuery() {
   const params = useSearchParams();
-  const tripId = params.get('tripId') ?? '';
+  const ids = params.getAll('tripId');
+  const tripId = ids.length === 1 ? ids[0].trim() : '';
   const requestedSection = params.get('section');
   const section = TRIP_SECTIONS.some((item) => item.value === requestedSection) ? requestedSection : 'overview';
   return <TripDetail key={tripId} tripId={tripId} section={section} />;
@@ -400,14 +407,14 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }) {
   const rail = (
     <aside className={styles.rail}>
       {section === 'timeline' && map}
-      <DriverCard trip={trip} onToast={showToast} />
+      <DriverCard trip={trip} />
       <TruckCard trip={trip} truck={truck} onToast={showToast} />
       {section === 'overview' && (
         <SectionCard title="Trip Documents" action={<button type="button" className={styles.link} onClick={() => navigate(sectionHref('documents'))}>View All ({trip.documents?.length ?? '—'})</button>}>
           {trip.documents === null ? <span className="tk-meta">—</span> : trip.documents.length === 0 ? <span className="tk-meta">No documents yet.</span> : (
             <div className={styles.docMini}>
-              {trip.documents.slice(0, 5).map((doc) => (
-                <div key={doc.name}>
+              {trip.documents.slice(0, 5).map((doc, index) => (
+                <div key={doc.id ?? `${doc.name}-${index}`}>
                   <span className={styles.docIcon} data-kind={doc.status === 'Uploaded' ? doc.kind : 'pending'}><Icon name="file-text" size={16} /></span>
                   <span className={styles.docMain}><strong>{doc.name}</strong><small>{doc.uploadedOn !== '—' ? `Uploaded • ${doc.uploadedOn}` : '—'}</small></span>
                   <IconButton icon="download" tone="outline" size={28} label={`Download ${doc.name}`} disabled={!doc.url} onClick={() => downloadDocument(doc, showToast)} />
@@ -532,7 +539,7 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }) {
                       <li className={styles.active}>
                         <span className={styles.locDot} />
                         <span><strong>Current Location</strong><small>{trip.currentLocation}</small></span>
-                        <span className={styles.locWhen}><small>{trip.lastUpdated}</small></span>
+                        <span className={styles.locWhen}><small>{trip.locationNoteUpdated}</small></span>
                         <Badge tone="info" dot>{trip.status}</Badge>
                       </li>
                     )}

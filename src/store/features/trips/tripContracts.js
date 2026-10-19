@@ -86,7 +86,7 @@ function timelineStage(labelText) {
 export function tripView(source, isDetail = false, jobDetails = null) {
   if (!object(source) || !text(source.id)) return null;
   const route = object(source.route);
-  const cargo = object(isDetail ? source.cargo : null);
+  const cargo = object(source.cargo);
   const driver = source.driver === null && isDetail ? null : object(source.driver) ?? object(jobDetails?.driver);
   const truck = source.truck === null && isDetail ? null : object(source.truck) ?? object(jobDetails?.truck);
   const status = label(source.status, stages);
@@ -102,14 +102,14 @@ export function tripView(source, isDetail = false, jobDetails = null) {
     ?? (containerWeight?.length && containerWeight.every((value) => value !== null) ? containerWeight.reduce((sum, value) => sum + value, 0) : null);
   const extraDocuments = isDetail ? rows(source.extraDocuments)?.map(documentView) ?? null : null;
   const podDocument = isDetail ? proofOfDeliveryDocument(source.pod) : null;
-  const tripDocuments = isDetail ? extraDocuments === null ? (podDocument ? [podDocument] : null) : [...(podDocument ? [podDocument] : []), ...extraDocuments] : null;
+  const tripDocuments = extraDocuments === null ? null : [...(podDocument ? [podDocument] : []), ...extraDocuments];
   const listedForwarderDocuments = isDetail ? forwarderDocuments(source.documents) : null;
   const jobForwarderDocuments = isDetail ? rows(jobDetails?.documents)?.map(documentView) ?? null : null;
   const notes = isDetail ? rows(source.notes) : null;
   const costsPayload = isDetail ? object(source.costs) : null;
   const costs = rows(costsPayload?.items)?.map((item) => ({
     id: text(item.id), category: costLabel(item.category), description: text(item.description) ?? '—',
-    date: dateLabel(item.createdAt), amount: number(item.amount),
+    date: dateLabel(item.createdAt), amount: item.currency === 'NGN' ? number(item.amount) : null,
   })) ?? null;
   const timeline = isDetail ? rows(source.timeline) : null;
   const stageDates = Object.fromEntries(['Assigned', 'Picked Up', 'In Transit', 'At Destination', 'Completed'].map((stage) => [stage, '—']));
@@ -138,14 +138,14 @@ export function tripView(source, isDetail = false, jobDetails = null) {
   const view = {
     apiBacked: true, id: jobId, number: text(source.tripNumber) ?? '—',
     title: text(title) ?? text(cargo?.type) ?? text(source.cargoType) ?? text(jobDetails?.cargoDescription) ?? '—',
-    cargoType: text(cargo?.description) ?? text(cargo?.type) ?? text(source.cargoType) ?? text(jobDetails?.cargoDescription) ?? '—', category: '—',
+    cargoType: text(cargo?.description) ?? text(cargo?.type) ?? text(source.cargoType) ?? text(jobDetails?.cargoDescription) ?? '—', category: label(cargo?.type ?? source.cargoType, { CONTAINER: 'Container', BULK_BREAK: 'Break-bulk' }),
     origin: text(source.origin) ?? text(route?.pickupAddress) ?? text(jobOrigin?.address) ?? '—',
     destination: text(source.destination) ?? text(route?.deliveryAddress) ?? text(jobDestination?.address) ?? '—',
     routeCoordinates: { origin: coordinates(coordinatesPayload?.pickup) ?? coordinates(jobOrigin), destination: coordinates(coordinatesPayload?.delivery) ?? coordinates(jobDestination) },
     distanceKm: number(source.distanceKm) ?? number(jobDetails?.feeBreakdown?.recommendedFare?.distanceKm),
     weightKg: weightTonnes === null ? null : weightTonnes * 1000,
     quantity: count(cargo?.containerCount) ?? (containers ? containers.length : '—'),
-    cargoValue: null, tripType: label(source.movementType ?? jobDetails?.movementType, movementTypes),
+    cargoValue: number(source.cargoValue), tripType: label(source.movementType ?? jobDetails?.movementType, movementTypes),
     specialInstructions: text(source.specialInstructions) ?? text(jobDetails?.specialInstructions) ?? '—',
     trucksRequired: count(cargo?.trucksRequired), documents: forwarderDocs,
   };
@@ -160,10 +160,11 @@ export function tripView(source, isDetail = false, jobDetails = null) {
     truckId: text(truck?.id), truckPlate: text(source.truckPlate) ?? text(truck?.plateNumber) ?? '—',
     driverId: text(driver?.id), driverName: text(source.driverName) ?? text(driver?.name) ?? personName(driver),
     driverAssigned, driverPhone: text(driver?.phone) ?? '—', trailer: null,
-    truck: truck ? { makeModel: text(truck.label) ?? '—', status: '—' } : null,
+    driverPhoto: safeUrl(driver?.avatarUrl),
+    truck: truck ? { makeModel: text(truck.makeModel) ?? text(truck.label) ?? '—', status: label(truck.status, { ACTIVE: 'Active', INACTIVE: 'Inactive', MAINTENANCE: 'In Maintenance', PENDING_REVIEW: 'Pending Review', REJECTED: 'Rejected' }) } : null,
     pickupDate: dateLabel(pickup), pickupTime: timeLabel(pickup), deliveryDate: dateLabel(delivery),
     pickupMonth: instant(pickup) || dateOnly(pickup) ? dateLabel(pickup).replace(/ \d+,/, '') : null,
-    currentLocation: text(locationNote?.location) ?? '—', lastUpdated: timestampLabel(location?.updatedAt), speedKmh: null,
+    currentLocation: text(locationNote?.location) ?? '—', locationNoteUpdated: timestampLabel(locationNote?.updatedAt), lastUpdated: timestampLabel(location?.updatedAt), speedKmh: null,
     liveCoordinates: location ? coordinates(location) : null,
     stageDates, timeline: mappedTimeline,
     documents: tripDocuments,

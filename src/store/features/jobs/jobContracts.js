@@ -84,7 +84,7 @@ export function jobView(value, context = 'detail', bid = null) {
     bidBounds: terms && Object.hasOwn(terms, 'bidRange') ? [decimal(bidRange?.min), decimal(bidRange?.max)] : [decimal(job.bounds?.minAmount), decimal(job.bounds?.maxAmount)],
     bidSlots: { used: count(job.myBidSlots?.used), remaining: count(job.myBidSlots?.remaining), max: count(job.myBidSlots?.max) },
     contactId: text(forwarder?.id),
-    poster: { ...emptyPoster, id: text(forwarder?.id), name: text(forwarder?.businessName) ?? text(forwarder?.name) ?? ([text(forwarder?.firstName), text(forwarder?.lastName)].filter(Boolean).join(' ') || '—'), verified: bool(forwarderTerms?.verified) ?? bool(forwarder?.verified), rating: rating !== null && rating <= 5 ? rating : null, ratingCount: count(forwarderTerms?.ratingCount), jobsCompleted: count(forwarderTerms?.jobsCompleted) },
+    poster: { ...emptyPoster, id: text(forwarder?.id), name: text(forwarder?.businessName) ?? text(forwarder?.name) ?? ([text(forwarder?.firstName), text(forwarder?.lastName)].filter(Boolean).join(' ') || '—'), verified: bool(forwarderTerms?.verified) ?? bool(forwarder?.verified), rating: rating !== null && rating <= 5 ? rating : null, ratingCount: count(forwarderTerms?.ratingCount), jobsPosted: count(forwarderTerms?.jobsPosted), jobsCompleted: count(forwarderTerms?.jobsCompleted) },
     truckId: text(job.truck?.id), driverId: text(job.driver?.id), truckPlate: text(job.truck?.plateNumber) ?? '—',
   };
   mapped.dispatch = { required: 1, dispatched: job.driver === null ? 0 : object(job.driver) ? 1 : null, completed: job.status === 'COMPLETED' ? 1 : ['In Progress', 'Cancelled'].includes(mapped.status) ? 0 : null, remaining: job.status === 'DRIVER_ASSIGNED' && job.driver === null ? 1 : object(job.driver) ? 0 : null };
@@ -101,7 +101,7 @@ export function lifetimeEarningsView(source) {
 export function jobReviewView(source) {
   const rating = number(source?.score);
   if (!text(source?.id) || rating === null || rating < 1 || rating > 5) return null;
-  return { id: source.id, rating, comment: text(source.comment), date: dateLabel(source.createdAt), poster: '—' };
+  return { id: source.id, rating, comment: text(source.comment), date: dateLabel(source.createdAt), poster: text(source.reviewer?.name) ?? '—' };
 }
 
 export function earningsView(source, job) {

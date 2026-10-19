@@ -94,7 +94,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
       <Button variant="secondary" icon={driver.truckPlate ? 'repeat' : 'truck'} disabled={assignmentBlocked} onClick={() => setAssignOpen(true)}>
         {driver.truckPlate ? 'Reassign Truck' : 'Assign to Truck'}
       </Button>
-      {driver.truckPlate && <Button variant="danger" icon="user-minus" disabled={assignmentBlocked || !truck || !!truckError} onClick={() => setRemoveOpen(true)}>Remove from Truck</Button>}
+      {driver.truckPlate && <Button variant="danger" icon="user-minus" disabled={assignmentBlocked || truck?.driverId !== driver.id || !!truckError} onClick={() => setRemoveOpen(true)}>Remove from Truck</Button>}
     </>
   );
 

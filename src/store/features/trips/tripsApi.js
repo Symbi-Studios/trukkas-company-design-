@@ -1,12 +1,12 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
-import { count, object, text, tripCollectionView, tripCostCategoryToWire, tripMessageViews, tripStatusLabel, tripView } from './tripContracts.js';
+import { count, object, safeUrl, text, timestampLabel, tripCollectionView, tripCostCategoryToWire, tripMessageViews, tripStatusLabel, tripView } from './tripContracts.js';
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const numberIs = (value, expected) => typeof value === 'number' && Number.isFinite(value) && value === expected;
 const signedIn = (api) => api.getState().auth.account ? null : unavailable('Sign in to manage company trips.');
 const tripTags = ['CompanyTrips', 'AuthOnboardingSecurity'];
 
-export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips', 'CompanyTrip', 'CompanyTripMessages'] }).injectEndpoints({
+export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips', 'CompanyTrip', 'CompanyTripMessages', 'CompanyJobs', 'CompanyFleet', 'CompanyDashboard'] }).injectEndpoints({
   endpoints: (builder) => ({
     getCompanyTrips: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
@@ -72,7 +72,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
           const result = await baseQuery({ url: `/company/trips/${encodeURIComponent(id)}/messages`, params: { page, limit: 100 } });
           if (result.error) return result;
           const data = unwrapApiResponseData(result.data);
-          const collection = Array.isArray(data?.messages) && data.messages.every((message) => object(message)) ? data.messages : null;
+          const collection = Array.isArray(data?.messages) && data.messages.every((message) => object(message) && text(message.id)) ? data.messages : null;
           const pagination = data?.pagination;
           if (!collection || count(pagination?.page) !== page || count(pagination?.total) === null || count(pagination?.totalPages) === null) {
             return unavailable('The API did not return valid trip messages and pagination.');
@@ -82,7 +82,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
           messages.push(...collection);
           if (messages.length > total || (page < pages && !collection.length)) return unavailable('The API returned incomplete trip message pagination.');
         }
-        if (messages.length !== total) return unavailable('The API did not return the complete trip conversation.');
+        if (messages.length !== total || new Set(messages.map((message) => message.id)).size !== total) return unavailable('The API did not return the complete trip conversation.');
         const view = tripMessageViews(messages, trip.driverId, trip.driverName);
         return view ? { data: view } : unavailable('The API did not return a valid trip conversation.');
       },
@@ -104,7 +104,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         const saved = unwrapApiResponseData(result.data)?.tripUpdate;
         return text(saved?.id) && saved.type === types[type] ? { data: { id: saved.id } } : unavailable('The API did not confirm the issue report. Check the trip before trying again.');
       },
-      invalidatesTags: (_data, error, { tripId }) => error ? [] : [...tripTags, { type: 'CompanyTrip', id: tripId }],
+      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, { type: 'CompanyTrip', id: tripId }],
     }),
     addCompanyTripNote: builder.mutation({
       async queryFn({ tripId, body }, api, _options, baseQuery) {
@@ -116,9 +116,9 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         const result = await baseQuery({ url: `/company/trips/${encodeURIComponent(tripId)}/notes`, method: 'POST', body: { body: noteBody } });
         if (result.error) return result;
         const note = unwrapApiResponseData(result.data)?.note;
-        return text(note?.id) && text(note?.body) ? { data: note } : unavailable('The API did not confirm the trip note. Check the trip before trying again.');
+        return text(note?.id) && text(note?.body) === noteBody ? { data: { id: note.id } } : unavailable('The API did not confirm the trip note. Check the trip before trying again.');
       },
-      invalidatesTags: (_data, error, { tripId }) => error ? [] : [...tripTags, { type: 'CompanyTrip', id: tripId }],
+      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, { type: 'CompanyTrip', id: tripId }],
     }),
     addCompanyTripCost: builder.mutation({
       async queryFn({ tripId, category, amount, description }, api, _options, baseQuery) {
@@ -132,11 +132,11 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         const result = await baseQuery({ url: `/company/trips/${encodeURIComponent(tripId)}/costs`, method: 'POST', body });
         if (result.error) return result;
         const cost = unwrapApiResponseData(result.data)?.cost;
-        return text(cost?.id) && cost.category === wireCategory && numberIs(cost.amount, amount)
-          ? { data: cost }
+        return text(cost?.id) && cost.category === wireCategory && numberIs(cost.amount, amount) && cost.currency === 'NGN'
+          ? { data: { id: cost.id } }
           : unavailable('The API did not confirm the trip cost. Check the trip before trying again.');
       },
-      invalidatesTags: (_data, error, { tripId }) => error ? [] : [...tripTags, { type: 'CompanyTrip', id: tripId }],
+      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, { type: 'CompanyTrip', id: tripId }],
     }),
     uploadCompanyTripDocument: builder.mutation({
       async queryFn({ tripId, file, name }, api, _options, baseQuery) {
@@ -144,7 +144,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         if (blocked) return blocked;
         const trip = tripsApi.endpoints.getCompanyTrip.select(tripId)(api.getState()).data;
         const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
-        if (!trip || typeof File === 'undefined' || !(file instanceof File) || !allowedTypes.has(file.type) || file.size > 10 * 1024 * 1024) {
+        if (!trip || typeof File === 'undefined' || !(file instanceof File) || !allowedTypes.has(file.type) || file.size <= 0 || file.size > 10 * 1024 * 1024) {
           return unavailable('Choose a PDF, JPEG, PNG or WebP file up to 10 MB.');
         }
         const body = new FormData();
@@ -153,11 +153,11 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         const result = await baseQuery({ url: `/company/trips/${encodeURIComponent(tripId)}/documents`, method: 'POST', body });
         if (result.error) return result;
         const document = unwrapApiResponseData(result.data)?.document;
-        return text(document?.id) && text(document?.url) && document.status === 'UPLOADED'
-          ? { data: document }
+        return text(document?.id) && safeUrl(document?.url) && document.status === 'UPLOADED'
+          ? { data: { id: document.id } }
           : unavailable('The API did not confirm the trip document upload. Check the trip before trying again.');
       },
-      invalidatesTags: (_data, error, { tripId }) => error ? [] : [...tripTags, { type: 'CompanyTrip', id: tripId }],
+      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, { type: 'CompanyTrip', id: tripId }],
     }),
     updateCompanyTripLocation: builder.mutation({
       async queryFn({ tripId, location }, api, _options, baseQuery) {
@@ -169,11 +169,11 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         const result = await baseQuery({ url: `/company/trips/${encodeURIComponent(tripId)}/location`, method: 'PATCH', body: { location: place } });
         if (result.error) return result;
         const saved = unwrapApiResponseData(result.data);
-        return saved?.location === place && text(saved.updatedAt)
-          ? { data: saved }
+        return saved?.location === place && timestampLabel(saved.updatedAt) !== '—'
+          ? { data: { location: place } }
           : unavailable('The API did not confirm the trip location update. Reload the trip before trying again.');
       },
-      invalidatesTags: (_data, error, { tripId }) => error ? [] : [...tripTags, { type: 'CompanyTrip', id: tripId }],
+      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, { type: 'CompanyTrip', id: tripId }],
     }),
     requestCompanyTripCancellation: builder.mutation({
       async queryFn({ tripId, reason }, api, _options, baseQuery) {
@@ -191,6 +191,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         api.dispatch(tripsApi.util.updateQueryData('getCompanyTrip', tripId, (draft) => { draft.cancellationRequested = true; }));
         return { data: { message: text(saved.message) ?? 'Cancellation request sent to support. The trip stays active until support confirms.' } };
       },
+      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, { type: 'CompanyTrip', id: tripId }],
     }),
     sendCompanyTripMessage: builder.mutation({
       async queryFn({ tripId, content }, api, _options, baseQuery) {
@@ -199,15 +200,15 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         const trip = tripsApi.endpoints.getCompanyTrip.select(tripId)(api.getState()).data;
         const message = text(content);
         if (!trip || !message || message.length > 500) return unavailable('Enter a message of 500 characters or fewer.');
-        if (trip.driverAssigned === false) return unavailable('Assign a driver before messaging about this trip.');
+        if (trip.driverAssigned !== true || !trip.driverId) return unavailable('Assign a driver before messaging about this trip.');
         const result = await baseQuery({ url: `/company/trips/${encodeURIComponent(tripId)}/messages`, method: 'POST', body: { content: message } });
         if (result.error) return result;
         const saved = unwrapApiResponseData(result.data);
-        return text(saved?.id) && text(saved?.content) === message
-          ? { data: saved }
+        return text(saved?.id) && text(saved?.content) === message && saved.jobId === trip.jobId && saved.receiverId === trip.driverId
+          ? { data: { id: saved.id } }
           : unavailable('The API did not confirm the trip message. Check the conversation before trying again.');
       },
-      invalidatesTags: (_data, error, { tripId }) => error ? [] : [{ type: 'CompanyTripMessages', id: tripId }],
+      invalidatesTags: (_data, _error, { tripId }) => [{ type: 'CompanyTripMessages', id: tripId }],
     }),
     updateCompanyTripStatus: builder.mutation({
       async queryFn({ tripId, status }, api, _options, baseQuery) {
@@ -235,7 +236,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         return job?.id === trip.jobId && job.status === expected ? { data: { status: tripStatusLabel(expected) } } : unavailable('The API did not confirm the trip status change. Reload the trip before trying again.');
       },
       // A status write can move funds. Never retry it automatically or infer success.
-      invalidatesTags: (_data, error, { tripId }) => error ? [] : [...tripTags, { type: 'CompanyTrip', id: tripId }],
+      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, 'CompanyJobs', 'CompanyFleet', 'CompanyDashboard', { type: 'CompanyTrip', id: tripId }],
     }),
     contactCompanyTripSupport: builder.mutation({
       async queryFn({ tripId, message }, api, _options, baseQuery) {

@@ -21,10 +21,27 @@ function permissionBindings(supportedKeys) {
   // The jobs/trips checkbox represents both reads, including partially granted roles.
   for (const [key, permissions] of Object.entries({
     'jobs.view': ['jobs.view', 'trips.view'],
+    'jobs.bid': ['bids.view', 'bids.create'],
+    'jobs.dispatch': ['trips.assign', 'trips.edit'],
+    // The existing label covers adding/editing/assignment, not deletion.
+    'fleet.manage': ['fleet.view', 'fleet.create', 'fleet.edit'],
+    'finance.bank': ['finance.withdraw'],
     'documents.manage': ['documents.upload'],
     'settings.manage': ['settings.edit'],
   })) bindings[key] = permissions.every((permission) => supportedKeys.includes(permission)) ? permissions : null;
+  // Team and role administration is explicitly owner-only, with no delegable key.
+  bindings['team.manage'] = null;
+  bindings['roles.manage'] = null;
+  // The API documents withdrawals, but no separate request-payout permission.
+  bindings['finance.payout'] = null;
   return bindings;
+}
+
+export function settingsRoleNeedsApproval(draft, current, pinSet) {
+  const changed = !current || JSON.stringify([...(current.permissions ?? [])].sort()) !== JSON.stringify([...(draft.permissions ?? [])].sort());
+  if (!changed) return false;
+  if (typeof pinSet !== 'boolean') return null;
+  return pinSet || [...(draft.permissions ?? []), ...(current?.permissions ?? [])].some((key) => ['finance.payout', 'finance.withdraw', 'finance.bank'].includes(key));
 }
 
 export function settingsPermissionState(permissions, binding) {
@@ -148,7 +165,7 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
       invalidatesTags: tags,
     }),
     saveSettingsRole: builder.mutation({
-      async queryFn(draft, api, _options, baseQuery) {
+      async queryFn({ pin, ...draft }, api, _options, baseQuery) {
         const blocked = settingsAccess(api, true); if (blocked) return blocked;
         const cached = settingsTeamApi.endpoints.getSettingsRoles.select()(api.getState()).data;
         if (Object.hasOwn(draft, 'id') && !text(draft.id)) return settingsUnavailable('The role has no confirmed API ID.');
@@ -157,9 +174,6 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
         if (!text(draft.name) || !Array.isArray(draft.permissions) || (draft.description !== undefined && typeof draft.description !== 'string')) return settingsUnavailable('Enter a role name and valid permissions.');
         const changedPermissions = !current || JSON.stringify([...(current.permissions ?? [])].sort()) !== JSON.stringify([...draft.permissions].sort());
         if (changedPermissions && (!cached?.supportedKeys || draft.permissions.some((key) => !cached.supportedKeys.includes(key)))) return settingsUnavailable('The permission catalog does not confirm these permission keys.');
-        // These existing controls promise PIN approval. Role DTOs do not yet
-        // accept a PIN, unlike invitations and individual member changes.
-        if (changedPermissions && ['finance.payout', 'finance.withdraw', 'finance.bank'].some((key) => draft.permissions.includes(key) !== (current?.permissions ?? []).includes(key))) return settingsUnavailable('The role API does not support PIN approval for changing finance permissions yet.');
         const body = {
           ...(!current || draft.name !== current.name ? { name: draft.name.trim() } : {}),
           ...(!current || draft.description !== current.description ? { description: draft.description === '—' ? '' : draft.description ?? '' } : {}),
@@ -167,6 +181,13 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
         };
         if (!Object.keys(body).length) return settingsUnavailable('There are no role changes to save.');
         const account = api.getState().auth.account;
+        // Existing role permission edits require approval whenever a PIN exists;
+        // new roles need it only when they include finance permissions.
+        if (changedPermissions && (current || draft.permissions.some((key) => key.startsWith('finance.')))) {
+          const approval = await teamApproval(pin, api, baseQuery);
+          if (approval.error) return approval;
+          Object.assign(body, approval.data);
+        }
         const result = await baseQuery({ url: draft.id ? `/team/roles/${encodeURIComponent(draft.id)}` : '/team/roles', method: draft.id ? 'PATCH' : 'POST', body });
         if (result.error) return result;
         if (api.getState().auth.account !== account) return settingsUnavailable('Your company session changed. Reload the role list.');

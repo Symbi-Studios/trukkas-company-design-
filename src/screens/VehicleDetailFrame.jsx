@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from '../router.js';
 import { Badge, Button, Card, DropdownMenu, EmptyState, Icon, LabelValue, PageHeader, SkeletonRow, Tabs } from '../ds.js';
 import { vehicleStatusTone } from '../domain/vehicles.js';
 import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
+import { useLazyExportFleetVehicleQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
 import { fleetDetailHref } from '../domain/fleetLinks.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { Toast, useToast } from '../components/Toast.jsx';
@@ -25,6 +26,28 @@ export function VehicleDetailFrame({ tab, title, description, primaryAction, chi
   const { truck, error, isLoading } = useFleetVehicle();
   const [moreOpen, setMoreOpen] = useState(false);
   const [toast, showToast] = useToast();
+  const [updateVehicle, { isLoading: updating }] = useUpdateFleetVehicleMutation();
+  const [exportVehicle, { isFetching: exporting }] = useLazyExportFleetVehicleQuery();
+  const mutating = useRef(false);
+  async function changeStatus() {
+    if (mutating.current) return;
+    mutating.current = true; setMoreOpen(false);
+    try { await updateVehicle({ id: truck.id, status: truck.status === 'Inactive' ? 'Active' : 'Inactive' }).unwrap(); }
+    catch (err) { showToast(getApiErrorMessage(err)); }
+    finally { mutating.current = false; }
+  }
+  async function download() {
+    if (mutating.current) return;
+    mutating.current = true; setMoreOpen(false);
+    try {
+      const file = await exportVehicle(truck.id).unwrap();
+      const url = URL.createObjectURL(new Blob([file.content], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url; link.download = 'vehicle.csv'; document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) { showToast(getApiErrorMessage(err)); }
+    finally { mutating.current = false; }
+  }
   const unavailableAction = () => { setMoreOpen(false); showToast('This fleet action is currently unavailable from the API.'); };
 
   if (isLoading) return <SkeletonRow columns={4} />;
@@ -60,16 +83,16 @@ export function VehicleDetailFrame({ tab, title, description, primaryAction, chi
             </Button>
             {primaryAction}
             <div style={{ position: 'relative' }}>
-              <Button variant="outline" iconRight="chevron-down" onClick={() => setMoreOpen((v) => !v)}>More Actions</Button>
+              <Button variant="outline" iconRight="chevron-down" disabled={updating || exporting} onClick={() => setMoreOpen((v) => !v)}>More Actions</Button>
               {moreOpen && (
                 <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30 }}>
                   <DropdownMenu width={220} items={[
                     { label: 'Edit Truck', icon: 'pencil', onClick: unavailableAction },
-                    { label: 'Export Data', icon: 'download', onClick: unavailableAction },
+                    { label: 'Export Data', icon: 'download', onClick: download },
                     { divider: true },
                     {
                       label: truck.status === 'Inactive' ? 'Reactivate Truck' : 'Deactivate Truck', icon: 'power', tone: 'danger',
-                      onClick: unavailableAction,
+                      onClick: changeStatus,
                     },
                   ]} />
                 </div>

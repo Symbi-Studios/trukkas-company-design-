@@ -2,6 +2,7 @@ import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
 import { clearSession, setCredentials } from '../auth/authSlice.js';
 import { profileApi } from '../profile/profileApi.js';
 import { companyFormView } from '../auth/onboardingContracts.js';
+import { bankRequestResult, syncOnboardingBank } from '../auth/onboardingApi.js';
 
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
 const bool = (value) => typeof value === 'boolean' ? value : null;
@@ -30,6 +31,7 @@ function companyResult(response, api) {
       ...EMPTY_COMPANY_SETTINGS, name: text(user.businessName) ?? '—', rcNumber: text(user.cacNumber) ?? '—',
       address: text(user.businessAddress) ?? '—', email: text(details?.companyEmail) ?? '—', phone: text(details?.companyPhone) ?? '—',
       founded: Number.isInteger(details?.yearFounded) && details.yearFounded >= 1900 ? String(details.yearFounded) : '—',
+      industry: text(details?.industry) ?? text(user.industry) ?? '—',
       verification: ({ VERIFIED: 'Verified', IN_REVIEW: 'Pending Review', PENDING: 'Pending', REJECTED: 'Rejected' })[user.kycStatus] ?? '—',
     },
     accountChanges: { companyName: text(user.businessName) ?? '—', cacNumber: text(user.cacNumber), businessAddress: text(user.businessAddress), businessType: text(user.businessType), onboardingCompany: companyFormView(user) },
@@ -46,16 +48,24 @@ async function syncCompany(_arg, { dispatch, getState, queryFulfilled }) {
 
 function notificationView(response) {
   const data = unwrapApiResponseData(response);
-  const email = bool(data?.channels?.email);
-  const category = (key) => {
-    const enabled = bool(data?.categories?.[key]);
-    return email === false || enabled === false ? false : email === true && enabled === true ? true : null;
-  };
-  return { newJobs: category('jobs'), tripUpdates: category('jobs'), payouts: category('payments'), documents: null, reviews: null, security: null };
+  return Object.fromEntries(['newJobs', 'tripUpdates', 'payouts', 'documents', 'reviews', 'security']
+    .map((key) => [key, bool(data?.emailCategories?.[key])]));
 }
 
 export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySettings', 'SettingsNotifications', 'SettingsSessions'] }).injectEndpoints({
   endpoints: (builder) => ({
+    updateSettingsBank: builder.mutation({
+      async queryFn({ bankName, accountNumber, transactionPin }, api, _options, baseQuery) {
+        const blocked = settingsAccess(api); if (blocked) return blocked;
+        if (!text(bankName) || !/^\d{10}$/.test(accountNumber || '') || !/^\d{4}$/.test(transactionPin || '')) {
+          return settingsUnavailable('Choose a supported bank, enter a 10-digit account number and approve with your four-digit PIN.');
+        }
+        const result = await baseQuery({ url: '/wallets/bank-account', method: 'PATCH', body: { bankName, bankAccountNo: accountNumber, transactionPin } });
+        return bankRequestResult(result);
+      },
+      onQueryStarted: syncOnboardingBank,
+      invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingBank'],
+    }),
     getCompanySettings: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const result = await baseQuery('/profile');
@@ -67,8 +77,8 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
     updateCompanySettings: builder.mutation({
       async queryFn(changes, api, _options, baseQuery) {
         const blocked = settingsAccess(api); if (blocked) return blocked;
-        const fields = { name: 'businessName', rcNumber: 'cacNumber', address: 'businessAddress', email: 'companyEmail', phone: 'companyPhone', founded: 'yearFounded' };
-        if (Object.keys(changes).some((key) => !Object.hasOwn(fields, key))) return settingsUnavailable('The API does not support saving the Industry field.');
+        const fields = { name: 'businessName', rcNumber: 'cacNumber', address: 'businessAddress', email: 'companyEmail', phone: 'companyPhone', founded: 'yearFounded', industry: 'industry' };
+        if (Object.keys(changes).some((key) => !Object.hasOwn(fields, key))) return settingsUnavailable('The company form contains an unsupported field.');
         const body = {};
         for (const [key, value] of Object.entries(changes)) {
           if (typeof value !== 'string') return settingsUnavailable('Enter valid company details.');
@@ -77,7 +87,8 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
           if (key === 'email' && next && !/^\S+@\S+\.\S+$/.test(next)) return settingsUnavailable('Enter a valid company email.');
           if (key === 'phone' && next && !/^\+?\d{10,15}$/.test(next.replace(/\s/g, ''))) return settingsUnavailable('Enter a valid company phone.');
           if (key === 'founded' && next && (!/^\d{4}$/.test(next) || Number(next) < 1900 || Number(next) > new Date().getUTCFullYear())) return settingsUnavailable('Enter a year founded between 1900 and this year.');
-          body[fields[key]] = key === 'founded' ? (next ? Number(next) : null) : key === 'phone' ? next.replace(/\s/g, '') || null : ['email'].includes(key) ? next || null : next;
+          if (key === 'industry' && next.length > 80) return settingsUnavailable('Industry must be 80 characters or fewer.');
+          body[fields[key]] = key === 'founded' ? (next ? Number(next) : null) : key === 'phone' ? next.replace(/\s/g, '') || null : ['email', 'industry'].includes(key) ? next || null : next;
         }
         if (!Object.keys(body).length) return settingsUnavailable('There are no company changes to save.');
         const result = await baseQuery({ url: '/profile', method: 'PATCH', body });
@@ -131,11 +142,26 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
     }),
     getSettingsNotifications: builder.query({ query: () => '/profile/notification-settings', transformResponse: notificationView, providesTags: ['SettingsNotifications'] }),
     updateSettingsNotifications: builder.mutation({
-      // The documented write changes both push and email, and groups several
-      // existing email switches together. Do not silently broaden an action.
-      queryFn: () => settingsUnavailable('The API does not support these individual email preferences yet.'),
+      async queryFn(changes, api, _options, baseQuery) {
+        const blocked = settingsAccess(api); if (blocked) return blocked;
+        const fields = { newJobs: 'emailNewJobs', tripUpdates: 'emailTripUpdates', payouts: 'emailPayouts', documents: 'emailDocuments', reviews: 'emailReviews' };
+        const entries = Object.entries(changes);
+        if (!entries.length || entries.some(([key, value]) => !Object.hasOwn(fields, key) || typeof value !== 'boolean')) return settingsUnavailable('Choose supported email preferences. Security alerts must stay on.');
+        const account = api.getState().auth.account;
+        const result = await baseQuery({ url: '/profile/notification-settings', method: 'PATCH', body: Object.fromEntries(entries.map(([key, value]) => [fields[key], value])) });
+        if (result.error) return result;
+        if (api.getState().auth.account !== account) return settingsUnavailable('Your company session changed. Please reload your preferences.');
+        // Read back because older PATCH examples omit the emailCategories wrapper.
+        const saved = await baseQuery('/profile/notification-settings');
+        if (saved.error) return settingsUnavailable('Preferences were sent, but could not be confirmed. Reload before trying again.');
+        if (api.getState().auth.account !== account) return settingsUnavailable('Your company session changed. Please reload your preferences.');
+        const view = notificationView(saved.data);
+        return entries.every(([key, value]) => view[key] === value) ? { data: view }
+          : settingsUnavailable('The API did not confirm the saved email preferences. Reload before trying again.');
+      },
+      invalidatesTags: ['SettingsNotifications'],
     }),
   }),
 });
 
-export const { useGetCompanySettingsQuery, useUpdateCompanySettingsMutation, useChangeSettingsPasswordMutation, useRequestSettingsPinResetMutation, useResetSettingsPinMutation, useGetSettingsSessionsQuery, useGetSettingsNotificationsQuery, useUpdateSettingsNotificationsMutation } = settingsApi;
+export const { useUpdateSettingsBankMutation, useGetCompanySettingsQuery, useUpdateCompanySettingsMutation, useChangeSettingsPasswordMutation, useRequestSettingsPinResetMutation, useResetSettingsPinMutation, useGetSettingsSessionsQuery, useGetSettingsNotificationsQuery, useUpdateSettingsNotificationsMutation } = settingsApi;

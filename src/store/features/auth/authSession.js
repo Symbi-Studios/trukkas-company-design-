@@ -11,6 +11,10 @@ export function companySession(session, profile, access) {
   if (!access || access.companyId !== profile.id || typeof access.isOwner !== 'boolean' || !text(access.userId)) {
     throw new Error('The API could not confirm your access to this company. Please sign in again.');
   }
+  if (typeof profile.onboarding?.complete !== 'boolean'
+    || (profile.onboarding.complete === false && !text(profile.onboarding.nextStep))) {
+    throw new Error('The API did not return your company registration status. Please try signing in again.');
+  }
   const fullName = [profile.firstName, profile.middleName, profile.lastName].map(text).filter(Boolean).join(' ');
   const account = {
     id: profile.id,

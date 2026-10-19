@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Modal, Select, Textarea, TextField } from '../ds.js';
-import { useReportCompanyTripIssueMutation } from '../store/features/trips/tripsApi.js';
+import { useReportCompanyTripIssueMutation, useUpdateCompanyTripLocationMutation } from '../store/features/trips/tripsApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { TRIP_ISSUE_TYPES } from '../domain/trips.js';
 
@@ -43,22 +43,22 @@ export function ReportIssueModal({ trip, open, onClose, onDone }) {
 
 export function UpdateLocationModal({ trip, open, onClose, onDone }) {
   const [location, setLocation] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [updateLocation, { isLoading: busy }] = useUpdateCompanyTripLocationMutation();
   const [error, setError] = useState('');
+  const submitting = useRef(false);
   useEffect(() => { if (open && trip) { setLocation(trip.currentLocation === '—' ? '' : trip.currentLocation || ''); setError(''); } }, [open, trip]);
   if (!trip) return null;
 
   async function submit(event) {
     event.preventDefault();
-    setBusy(true);
+    if (submitting.current || !location.trim()) return;
+    submitting.current = true;
+    setError('');
     try {
-      // The GPS-only endpoint cannot safely receive a typed place name or the
-      // office browser's position in place of the truck's actual coordinates.
-      throw new Error('Updating a location by place name is currently unavailable.');
-    } catch (err) { setError(err.message); }
-    finally {
-      setBusy(false);
-    }
+      await updateLocation({ tripId: trip.id, location: location.trim() }).unwrap();
+      onDone?.('Trip location updated.');
+    } catch (err) { setError(getApiErrorMessage(err)); }
+    finally { submitting.current = false; }
   }
 
   return (
@@ -67,7 +67,7 @@ export function UpdateLocationModal({ trip, open, onClose, onDone }) {
       footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button form="location-form" type="submit" icon="map-pin" disabled={busy || !location.trim()}>{busy ? 'Saving…' : 'Update Location'}</Button></>}
     >
       <form id="location-form" onSubmit={submit}>
-        <TextField label="Current Location" required icon="map-pin" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Along Abuja – Kaduna Expressway" />
+        <TextField label="Current Location" required maxLength={200} icon="map-pin" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Along Abuja – Kaduna Expressway" />
         {error && <p role="alert" style={{ color: 'var(--tk-danger)', font: '500 13px/18px var(--tk-font-sans)' }}>{error}</p>}
       </form>
     </Modal>

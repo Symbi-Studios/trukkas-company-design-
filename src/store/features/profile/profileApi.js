@@ -304,11 +304,23 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
         if (!/^\d{6}$/.test(code)) return unavailable('Enter the 6-digit verification code.');
         const contact = contactValue(channel, value);
         if (!contact) return unavailable(channel === 'email' ? 'Enter a valid email.' : 'Enter a valid phone number.');
-        return baseQuery({
+        const account = api.getState().auth.account;
+        const result = await baseQuery({
           url: `/profile/verify-${channel}-change`, method: 'POST',
           body: { ...(channel === 'email' ? { newEmail: contact } : { newPhone: contact }), code },
         });
+        if (result.error) return result;
+        if (api.getState().auth.account !== account) return unavailable('Your company session changed. Reload your profile.');
+        const readback = await baseQuery('/profile');
+        if (readback.error) return unavailable('The contact change was submitted, but confirmation failed. Reload your profile before retrying.');
+        if (api.getState().auth.account !== account) return unavailable('Your company session changed. Reload your profile.');
+        const profile = profileResult(readback.data, api);
+        if (profile.error) return profile;
+        const normalize = (value) => channel === 'email' ? value.trim().toLowerCase() : value.replace(/\D/g, '');
+        return normalize(profile.data[channel]) === normalize(contact)
+          ? profile : unavailable('The API did not confirm your updated contact. Reload your profile before retrying.');
       },
+      onQueryStarted: syncProfile,
       invalidatesTags: (_data, error) => error ? [] : ['Profile', 'AuthOnboardingSecurity'],
     }),
   }),

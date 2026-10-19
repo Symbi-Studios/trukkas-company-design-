@@ -43,7 +43,7 @@ export function driverOptions(drivers, trips, { excludeId, query = '' } = {}) {
         title: d.name,
         subtitle: `${d.licenseClass} · ★ ${d.rating?.toFixed(1) ?? '—'} · ${d.tripsCompleted} trips · ${d.phone}`,
         media: <Avatar name={d.name} src={d.photo || undefined} size={36} />,
-        badge: <Badge tone={d.kyc === 'Verified' ? 'success' : 'warning'}>{d.kyc === 'Verified' ? 'Verified' : 'KYC Pending'}</Badge>,
+        badge: <Badge tone={d.kyc === 'Verified' ? 'success' : d.kyc === '—' ? 'neutral' : 'warning'}>{d.kyc === '—' ? '—' : d.kyc === 'Verified' ? 'Verified' : 'KYC Pending'}</Badge>,
         blocked: onTrip ? 'On an active trip — can’t be reassigned right now.' : null,
         warning: !onTrip && d.truckPlate ? `Currently assigned to ${d.truckPlate}; that truck will be left without a driver.` : null,
       };

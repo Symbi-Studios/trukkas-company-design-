@@ -1,63 +1,79 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useParams } from '../router.js';
-import { Badge, Button, Card, DataTable, DonutChart, DropdownMenu, EmptyState, Icon, Modal, SearchField, Select, StatCard, Switch, TextField } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
-import { createMaintenance, updateMaintenance, updateTruck } from '../mock/api.js';
-import { findTruckBySlug } from '../domain/vehicles.js';
+import { useRef, useState } from 'react';
+import { Badge, Button, Card, DataTable, DonutChart, DropdownMenu, EmptyState, Icon, Modal, SearchField, Select, SkeletonRow, StatCard, Switch, TextField } from '../ds.js';
+import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
+import { useCompleteFleetMaintenanceMutation, useGetFleetMaintenanceQuery, useRequestFleetMaintenanceMutation } from '../store/features/fleet/fleetApi.js';
+import { total } from '../store/features/fleet/fleetContracts.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { Toast, useToast } from '../components/Toast.jsx';
 import { formatNaira } from '../mock/format.js';
 import { VehicleDetailFrame } from './VehicleDetailFrame.jsx';
 
 const STATUS_TONE = { Completed: 'success', Upcoming: 'info', 'In Progress': 'warning', Overdue: 'danger' };
 const STATUS_OPTIONS = ['All Status', 'Completed', 'Upcoming', 'In Progress', 'Overdue'];
 
-function ScheduleModal({ open, onClose, plate, odometer }) {
+function ScheduleModal({ open, onClose, truckId }) {
   const [draft, setDraft] = useState({ serviceType: '', description: '', date: '', estimatedCost: '' });
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [requestMaintenance] = useRequestFleetMaintenanceMutation();
+  const submitting = useRef(false);
   async function submit(event) {
     event.preventDefault();
-    if (!draft.serviceType) return;
-    setBusy(true);
-    await createMaintenance({ truckPlate: plate, ...draft, cost: Number(draft.estimatedCost) || 0, odometer });
-    setBusy(false);
-    onClose();
+    if (submitting.current) return;
+    submitting.current = true; setBusy(true); setError('');
+    try { await requestMaintenance({ truckId, ...draft }).unwrap(); onClose(); }
+    catch (err) { setError(getApiErrorMessage(err)); }
+    finally { submitting.current = false; setBusy(false); }
   }
   return (
-    <Modal open={open} onClose={onClose} title="Schedule Maintenance" width={440}
-      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button form="schedule-form" type="submit" disabled={busy}>{busy ? 'Scheduling…' : 'Schedule'}</Button></>}>
+    <Modal open={open} onClose={() => { if (!submitting.current) onClose(); }} title="Schedule Maintenance" width={440}
+      footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button form="schedule-form" type="submit" disabled={busy}>{busy ? 'Scheduling…' : 'Schedule'}</Button></>}>
       <form id="schedule-form" onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
         <TextField label="Service Type" required value={draft.serviceType} onChange={(e) => setDraft({ ...draft, serviceType: e.target.value })} placeholder="e.g. Oil Change" />
         <TextField label="Description" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
         <TextField label="Scheduled Date" type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} />
         <TextField label="Estimated Cost (₦)" type="number" min="0" value={draft.estimatedCost} onChange={(e) => setDraft({ ...draft, estimatedCost: e.target.value })} />
+        {error && <span role="alert" className="tk-meta" style={{ color: 'var(--tk-danger)' }}>{error}</span>}
       </form>
     </Modal>
   );
 }
 
 export function VehicleMaintenance() {
-  const { vehicleId } = useParams();
-  const trucks = useCollection('trucks') || [];
-  const maintenance = useCollection('maintenance') || [];
-  const truck = findTruckBySlug(trucks, vehicleId);
+  const { truck } = useFleetVehicle();
+  const { data: records, error, isLoading } = useGetFleetMaintenanceQuery(truck?.id, { skip: !truck, refetchOnMountOrArgChange: true });
+  const [completeMaintenance] = useCompleteFleetMaintenanceMutation();
+  const [busyRecord, setBusyRecord] = useState(null);
+  const completing = useRef(false);
+  const [toast, showToast] = useToast();
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [rowMenu, setRowMenu] = useState(null);
 
-  const records = useMemo(() => maintenance.filter((m) => m.truckPlate === truck?.plate), [maintenance, truck?.plate]);
-  const filtered = records.filter((r) =>
+  const filtered = (records ?? []).filter((r) =>
     (statusFilter === 'All Status' || r.status === statusFilter)
     && (!query || [r.serviceType, r.description].some((v) => String(v || '').toLowerCase().includes(query.toLowerCase()))));
 
   if (!truck) return <VehicleDetailFrame tab="maintenance" title="Vehicle not found"><EmptyState icon="wrench" title="Not found" /></VehicleDetailFrame>;
 
-  const completed = records.filter((r) => r.status === 'Completed').length;
-  const upcoming = records.filter((r) => r.status === 'Upcoming').length;
-  const overdue = records.filter((r) => r.status === 'Overdue').length;
-  const totalCost = records.reduce((sum, r) => sum + (r.cost || 0), 0);
-  const next = records.find((r) => r.status === 'Upcoming');
+  const knownStatuses = records && records.every((record) => record.status !== '—');
+  const completed = knownStatuses ? records.filter((r) => r.status === 'Completed').length : null;
+  const upcoming = knownStatuses ? records.filter((r) => r.status === 'Upcoming').length : null;
+  const overdue = knownStatuses ? records.filter((r) => r.status === 'Overdue').length : null;
+  const totalCost = knownStatuses ? total(records.filter((record) => record.status === 'Completed'), 'cost') : null;
+  const next = records?.filter((r) => r.status === 'Upcoming').sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt))[0];
+  const money = (value) => typeof value === 'number' && Number.isFinite(value) ? formatNaira(value) : '—';
+  const percent = (value) => value === null ? '—' : `${records.length ? Math.round(value / records.length * 100) : 0}%`;
+  async function complete(record) {
+    if (completing.current) return;
+    completing.current = true; setBusyRecord(record.id); setRowMenu(null);
+    try { await completeMaintenance(record.id).unwrap(); }
+    catch (err) { showToast(getApiErrorMessage(err)); }
+    finally { completing.current = false; setBusyRecord(null); }
+  }
   const donutData = [
     { label: 'Completed', value: completed, color: 'var(--tk-success)' },
     { label: 'Upcoming', value: upcoming, color: 'var(--tk-warning)' },
@@ -75,11 +91,11 @@ export function VehicleMaintenance() {
           <Card style={{ display: 'grid', gap: 12 }}>
             <h3 className="tk-title" style={{ margin: 0, fontSize: 14 }}>Maintenance Status</h3>
             <div style={{ display: 'grid', justifyItems: 'center', gap: 10 }}>
-              <DonutChart size={130} thickness={16} data={donutData} centerValue={records.length} centerLabel="Services" />
+              <DonutChart size={130} thickness={16} data={records && donutData.every((item) => item.value !== null) && donutData.reduce((sum, item) => sum + item.value, 0) === records.length ? donutData : []} centerValue={records?.length ?? '—'} centerLabel="Services" />
               <div style={{ display: 'grid', gap: 6, width: '100%' }}>
                 {donutData.map((d) => (
                   <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 8, font: '400 13px/18px var(--tk-font-sans)' }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 999, background: d.color }} /><span style={{ flex: 1, color: 'var(--tk-ink-500)' }}>{d.label}</span><strong>{d.value}</strong>
+                    <span style={{ width: 8, height: 8, borderRadius: 999, background: d.color }} /><span style={{ flex: 1, color: 'var(--tk-ink-500)' }}>{d.label}</span><strong>{d.value ?? '—'}</strong>
                   </div>
                 ))}
               </div>
@@ -108,18 +124,18 @@ export function VehicleMaintenance() {
               <strong style={{ display: 'block', font: '600 13px/18px var(--tk-font-sans)' }}>Maintenance Reminders</strong>
               <span className="tk-meta">Get notified when maintenance is due or overdue for this truck.</span>
               <Switch style={{ marginTop: 10 }} label="Enable Reminders" checked={truck.remindersEnabled}
-                onChange={(v) => updateTruck(truck.plate, { remindersEnabled: v })} />
+                disabled={truck.remindersEnabled === null} onChange={() => showToast('Maintenance reminder settings are currently unavailable from the API.')} />
             </span>
           </Card>
         </>
       }
     >
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 16 }}>
-        <StatCard icon="wrench" label="Total Services" value={records.length} labelPosition="bottom" />
-        <StatCard icon="circle-check" tint="green" label="Completed" value={completed} caption={`${records.length ? Math.round((completed / records.length) * 100) : 0}%`} />
-        <StatCard icon="clock-3" tint="amber" label="Upcoming" value={upcoming} caption={`${records.length ? Math.round((upcoming / records.length) * 100) : 0}%`} />
-        <StatCard icon="triangle-alert" tint="red" label="Overdue" value={overdue} caption={`${records.length ? Math.round((overdue / records.length) * 100) : 0}%`} />
-        <StatCard icon="banknote" tint="blue" label="Total Maintenance Cost" value={formatNaira(totalCost)} caption="All time" />
+        <StatCard icon="wrench" label="Total Services" value={records?.length ?? '—'} labelPosition="bottom" />
+        <StatCard icon="circle-check" tint="green" label="Completed" value={completed ?? '—'} caption={percent(completed)} />
+        <StatCard icon="clock-3" tint="amber" label="Upcoming" value={upcoming ?? '—'} caption={percent(upcoming)} />
+        <StatCard icon="triangle-alert" tint="red" label="Overdue" value={overdue ?? '—'} caption={percent(overdue)} />
+        <StatCard icon="banknote" tint="blue" label="Total Maintenance Cost" value={money(totalCost)} caption="All time" />
       </section>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h3 className="tk-title" style={{ margin: 0 }}>Maintenance Records</h3>
@@ -128,25 +144,25 @@ export function VehicleMaintenance() {
           <Select value={statusFilter} options={STATUS_OPTIONS} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: 160 }} />
         </div>
       </div>
-      {filtered.length === 0 ? (
+      {isLoading ? <SkeletonRow columns={6} /> : error ? <EmptyState icon="wrench" title={getApiErrorMessage(error)} /> : filtered.length === 0 ? (
         <EmptyState icon="wrench" title="No maintenance records" />
       ) : (
         <DataTable rows={filtered} rowKey={(m) => m.id} columns={[
           { key: 'date', header: 'Date', render: (m) => m.date },
           { key: 'serviceType', header: 'Service Type', render: (m) => m.serviceType },
           { key: 'description', header: 'Description', render: (m) => m.description },
-          { key: 'odometer', header: 'Odometer', render: (m) => `${m.odometer.toLocaleString()} km` },
-          { key: 'cost', header: 'Cost (₦)', render: (m) => formatNaira(m.cost) },
+          { key: 'odometer', header: 'Odometer', render: (m) => m.odometer === null ? '—' : `${m.odometer.toLocaleString()} km` },
+          { key: 'cost', header: 'Cost (₦)', render: (m) => money(m.cost) },
           { key: 'status', header: 'Status', render: (m) => <Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge> },
           { key: 'nextDue', header: 'Next Due', render: (m) => m.nextDue || '—' },
           { key: 'actions', header: 'Actions', render: (m) => (
             <span style={{ position: 'relative' }}>
-              <Button size="sm" variant="outline" icon="ellipsis" onClick={() => setRowMenu(rowMenu === m.id ? null : m.id)} />
+              <Button size="sm" variant="outline" icon="ellipsis" disabled={!!busyRecord} onClick={() => setRowMenu(rowMenu === m.id ? null : m.id)} />
               {rowMenu === m.id && (
                 <span style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20 }}>
                   <DropdownMenu width={190} items={[
-                    ...(m.status !== 'Completed' ? [{ label: 'Mark Completed', icon: 'circle-check', onClick: () => { setRowMenu(null); updateMaintenance(m.id, { status: 'Completed' }); } }] : []),
-                    { label: 'Edit Record', icon: 'pencil', onClick: () => setRowMenu(null) },
+                    ...(m.status !== 'Completed' ? [{ label: 'Mark Completed', icon: 'circle-check', onClick: () => complete(m) }] : []),
+                    { label: 'Edit Record', icon: 'pencil', onClick: () => { setRowMenu(null); showToast('Editing company maintenance records is currently unavailable from the API.'); } },
                   ]} />
                 </span>
               )}
@@ -154,7 +170,8 @@ export function VehicleMaintenance() {
           ) },
         ]} />
       )}
-      <ScheduleModal open={scheduleOpen} onClose={() => setScheduleOpen(false)} plate={truck.plate} odometer={truck.odometer} />
+      <ScheduleModal key={String(scheduleOpen)} open={scheduleOpen} onClose={() => setScheduleOpen(false)} truckId={truck.id} />
+      <Toast message={toast} />
     </VehicleDetailFrame>
   );
 }

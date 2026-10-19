@@ -1,15 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSelector } from 'react-redux';
 import { useNavigate } from '../router.js';
 import {
-  Badge, Button, Card, DataTable, EmptyState, IconButton, PageHeader, Pagination, ProgressBar, SearchField, Select, StatCard, Tabs,
+  Badge, Button, Card, DataTable, EmptyState, IconButton, Modal, PageHeader, Pagination, ProgressBar, SearchField, Select, SkeletonRow, StatCard, Tabs,
 } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
+import { useGetMyJobsQuery, useGetJobEarningsQuery, useGetMyJobLifetimeEarningsQuery, useGetJobReviewQuery } from '../store/features/jobs/jobsApi.js';
+import { receiptView } from '../store/features/jobs/jobContracts.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { jobDetailHref } from '../domain/jobLinks.js';
 import { syncTopBarSearch } from '../pageSearch.js';
-import { jobRate, jobStatusTone, jobTitle } from '../domain/jobs.js';
-import { dispatchSummary, shortPlace, tripsForJob } from '../domain/trips.js';
-import { jobEarnings, jobReceipt } from '../domain/payouts.js';
+import { jobStatusTone, jobTitle } from '../domain/jobs.js';
+import { shortPlace } from '../domain/trips.js';
 import { formatNaira } from '../mock/format.js';
 import { CargoThumb } from '../components/CargoThumb.jsx';
 import { ReceiptModal } from '../components/Receipt.jsx';
@@ -25,7 +28,25 @@ const TABS = [
 ];
 
 const time = (date) => new Date(date).getTime() || 0;
-const compactNaira = (n) => (n >= 1_000_000 ? `₦${(n / 1_000_000).toFixed(2)}M` : formatNaira(n));
+const money = (n) => typeof n === 'number' && Number.isFinite(n) ? formatNaira(n) : '—';
+
+function JobValue({ job }) {
+  const { currentData: data } = useGetJobEarningsQuery(job, { skip: job.status === 'Quoted' });
+  return <span className={styles.twoLine}><strong>{money(job.contractValue)}</strong><small>{job.status === 'Quoted' ? 'Your bid' : `${money(data?.released)} earned`}</small></span>;
+}
+
+function JobReviewStars({ id }) {
+  const { currentData: data, error } = useGetJobReviewQuery(id);
+  return !error && data?.review ? <Stars rating={data.review.rating} /> : <span className="tk-meta">—</span>;
+}
+
+function JobReceipt({ job, onClose }) {
+  const company = useSelector((state) => state.auth.account);
+  const { currentData: data, error, isLoading } = useGetJobEarningsQuery(job);
+  const receipt = receiptView(job, data, company);
+  if (receipt) return <ReceiptModal receipt={receipt} open onClose={onClose} />;
+  return <Modal open onClose={onClose} width={720} title="Job Earnings Statement" description={job.number} footer={<Button variant="outline" onClick={onClose}>Close</Button>}>{isLoading ? <SkeletonRow columns={3} /> : error ? <EmptyState icon="receipt" title={getApiErrorMessage(error)} /> : <span className="tk-meta">—</span>}</Modal>;
+}
 
 /**
  * Every job the company has engaged with — open bids, won jobs in progress, and
@@ -34,11 +55,8 @@ const compactNaira = (n) => (n >= 1_000_000 ? `₦${(n / 1_000_000).toFixed(2)}M
  */
 export function MyJobs() {
   const navigate = useNavigate();
-  const jobs = useCollection('jobs') || [];
-  const trips = useCollection('trips') || [];
-  const payouts = useCollection('payoutRequests') || [];
-  const company = useCollection('companyProfile')?.[0];
-  const reviews = useCollection('reviews') || [];
+  const { data: jobs, error, isLoading } = useGetMyJobsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { data: lifetime } = useGetMyJobLifetimeEarningsQuery(undefined, { refetchOnMountOrArgChange: true });
   const [tab, setTab] = useState('all');
   const [query, setQuery] = useState('');
   const [forwarder, setForwarder] = useState('');
@@ -52,31 +70,28 @@ export function MyJobs() {
     return () => window.removeEventListener('trukkas:global-search', onSearch);
   }, []);
 
-  const rows = useMemo(() => jobs
+  const rows = useMemo(() => (jobs ?? [])
     .filter((job) => job.status !== 'Pending')
     .map((job) => {
-      const jobTrips = tripsForJob(trips, job.id);
-      return { job, trips: jobTrips, dispatch: dispatchSummary(job, jobTrips), earnings: jobEarnings(job, jobTrips, payouts) };
+      return { job, trips: [], dispatch: job.dispatch };
     })
-    .sort((a, b) => time(b.job.pickupDate) - time(a.job.pickupDate)), [jobs, trips, payouts]);
+    .sort((a, b) => time(b.job.pickupDate) - time(a.job.pickupDate)), [jobs]);
 
-  const count = (status) => rows.filter((r) => r.job.status === status).length;
-  const counts = { all: rows.length, Quoted: count('Quoted'), 'In Progress': count('In Progress'), Completed: count('Completed'), Cancelled: count('Cancelled') };
-  const totalNet = rows.reduce((sum, r) => sum + r.earnings.totals.net, 0);
-  const unpaid = rows.reduce((sum, r) => sum + r.earnings.unpaid, 0);
-  const forwarders = [...new Set(rows.map((r) => posterFor(r.job.postedBy).name))].sort();
+  const count = (status) => rows.some((row) => row.job.status === '—') ? '—' : rows.filter((r) => r.job.status === status).length;
+  const counts = Object.fromEntries(['all', 'Quoted', 'In Progress', 'Completed', 'Cancelled'].map((status) => [status, jobs ? status === 'all' ? rows.length : count(status) : '—']));
+  const forwarders = [...new Set(rows.map((r) => posterFor(r.job).name).filter((name) => name !== '—'))].sort();
 
   const filtered = rows
     .filter((r) => tab === 'all' || r.job.status === tab)
-    .filter((r) => !forwarder || posterFor(r.job.postedBy).name === forwarder)
-    .filter((r) => !query || [r.job.id, jobTitle(r.job), r.job.origin, r.job.destination, r.job.cargoType, posterFor(r.job.postedBy).name, ...r.trips.map((t) => t.id)]
+    .filter((r) => !forwarder || posterFor(r.job).name === forwarder)
+    .filter((r) => !query || [r.job.id, r.job.number, jobTitle(r.job), r.job.origin, r.job.destination, r.job.cargoType, posterFor(r.job).name]
       .some((v) => String(v).toLowerCase().includes(query.toLowerCase())));
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   function openReceipt(r) {
-    setReceipt(jobReceipt(r.job, r.earnings, { company, poster: posterFor(r.job.postedBy) }));
+    setReceipt(r.job);
   }
 
   return (
@@ -92,7 +107,7 @@ export function MyJobs() {
         <StatCard icon="send" tint="purple" label="Open Bids" value={counts.Quoted} caption="Awaiting forwarder" />
         <StatCard icon="route" tint="blue" label="Active Jobs" value={counts['In Progress']} caption="Trips running" />
         <StatCard icon="circle-check" tint="green" label="Completed Jobs" value={counts.Completed} caption="All trucks delivered" />
-        <StatCard icon="banknote" tint="teal" label="Net Earnings" value={compactNaira(totalNet)} caption={`${formatNaira(unpaid)} not yet paid out`} />
+        <StatCard icon="banknote" tint="teal" label="Net Earnings" value={money(lifetime?.netEarned)} caption={`${money(lifetime?.unpaidEarnings)} not yet paid out`} />
       </section>
 
       <Card pad="none" className={styles.listCard}>
@@ -104,46 +119,40 @@ export function MyJobs() {
           <Select value={forwarder} placeholder="All Forwarders" options={forwarders} onChange={(e) => { setForwarder(e.target.value); setPage(1); }} />
           {(forwarder || query) && <Button variant="ghost" onClick={() => { setForwarder(''); setQuery(''); setPage(1); syncTopBarSearch(''); }}>Clear</Button>}
         </div>
-        {pageRows.length === 0 ? (
+        {isLoading ? <SkeletonRow columns={5} /> : error ? <EmptyState icon="briefcase" title={getApiErrorMessage(error)} /> : pageRows.length === 0 ? (
           <EmptyState icon="briefcase" title="No jobs in this view" description="Jobs appear here once you place a bid in Find Jobs." action={<Button variant="outline" onClick={() => navigate('/jobs')}>Find Jobs</Button>} />
         ) : (
           <div className={styles.tableShell}>
             <DataTable
               rows={pageRows}
               rowKey={(r) => r.job.id}
-              onRowClick={(r) => navigate(`/jobs/${r.job.id}`)}
+              onRowClick={(r) => navigate(jobDetailHref(r.job.id))}
               tableLayout="fixed"
               columns={[
                 {
                   key: 'job', header: 'Job', width: 230, render: ({ job }) => (
                     <span className={styles.jobCell}>
                       <CargoThumb category={job.category} width={40} height={40} radius="var(--tk-r-sm)" />
-                      <span><strong>{jobTitle(job)}</strong><small>{job.id}</small></span>
+                      <span><strong>{jobTitle(job)}</strong><small>{job.number}</small></span>
                     </span>
                   ),
                 },
                 { key: 'route', header: 'Route', width: 150, render: ({ job }) => <span className={styles.twoLine}><strong>{shortPlace(job.origin)} → {shortPlace(job.destination)}</strong><small>{job.pickupDate}</small></span> },
-                { key: 'forwarder', header: 'Forwarder', width: 150, render: ({ job }) => posterFor(job.postedBy).name },
+                { key: 'forwarder', header: 'Forwarder', width: 150, render: ({ job }) => posterFor(job).name },
                 {
-                  key: 'trucks', header: 'Trucks', width: 130, render: ({ job, dispatch }) => (job.status === 'Quoted' ? <span className="tk-meta">{job.trucksRequired} requested</span> : (
-                    <ProgressBar value={dispatch.completed} max={dispatch.required} caption={`${dispatch.completed}/${dispatch.required} delivered`} color={dispatch.completed === dispatch.required ? 'var(--tk-success)' : 'var(--tk-blue)'} />
+                  key: 'trucks', header: 'Trucks', width: 130, render: ({ job, dispatch }) => (job.status === 'Quoted' ? <span className="tk-meta">{job.trucksRequired ?? '—'} requested</span> : (
+                    <ProgressBar value={dispatch.completed ?? 0} max={dispatch.required} caption={`${dispatch.completed ?? '—'}/${dispatch.required} delivered`} color={dispatch.completed === dispatch.required ? 'var(--tk-success)' : 'var(--tk-blue)'} />
                   )),
                 },
                 {
-                  key: 'value', header: 'Value', width: 130, render: ({ job, earnings }) => (
-                    <span className={styles.twoLine}>
-                      <strong>{formatNaira(jobRate(job) * (job.trucksRequired || 1))}</strong>
-                      <small>{job.status === 'Quoted' ? 'Your bid' : `${formatNaira(earnings.totals.net)} earned`}</small>
-                    </span>
-                  ),
+                  key: 'value', header: 'Value', width: 130, render: ({ job }) => <JobValue job={job} />,
                 },
                 {
                   key: 'status', header: 'Status', width: 120, render: ({ job }) => {
-                    const review = job.status === 'Completed' && reviews.find((r) => r.jobId === job.id);
                     return (
                       <span className={styles.twoLine} style={{ justifyItems: 'start', gap: 4 }}>
                         <Badge tone={jobStatusTone(job.status)} dot>{job.status === 'Quoted' ? 'Bid Placed' : job.status}</Badge>
-                        {review && <Stars rating={review.rating} />}
+                        {job.status === 'Completed' && <JobReviewStars id={job.id} />}
                       </span>
                     );
                   },
@@ -151,8 +160,8 @@ export function MyJobs() {
                 {
                   key: 'actions', header: '', width: 84, align: 'right', render: (r) => (
                     <span className={styles.actions} onKeyDown={(e) => e.stopPropagation()}>
-                      {r.earnings.rows.length > 0 && <IconButton icon="receipt" tone="outline" size={30} label={`Earnings receipt for ${r.job.id}`} onClick={(e) => { e.stopPropagation(); openReceipt(r); }} />}
-                      <IconButton icon="chevron-right" size={30} label={`Open ${r.job.id}`} onClick={(e) => { e.stopPropagation(); navigate(`/jobs/${r.job.id}`); }} />
+                      {r.job.status === 'Completed' && <IconButton icon="receipt" tone="outline" size={30} label={`Earnings receipt for ${r.job.id}`} onClick={(e) => { e.stopPropagation(); openReceipt(r); }} />}
+                      <IconButton icon="chevron-right" size={30} label={`Open ${r.job.id}`} onClick={(e) => { e.stopPropagation(); navigate(jobDetailHref(r.job.id)); }} />
                     </span>
                   ),
                 },
@@ -161,12 +170,12 @@ export function MyJobs() {
           </div>
         )}
         <Pagination
-          page={currentPage} pageCount={pageCount} pageSize={pageSize} total={filtered.length}
+          page={currentPage} pageCount={pageCount} pageSize={pageSize} total={jobs ? filtered.length : undefined}
           onPage={(p) => setPage(Math.max(1, Math.min(pageCount, p)))}
           onPageSize={(size) => { setPageSize(size); setPage(1); }}
         />
       </Card>
-      <ReceiptModal receipt={receipt} open={!!receipt} onClose={() => setReceipt(null)} />
+      {receipt && <JobReceipt job={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );
 }

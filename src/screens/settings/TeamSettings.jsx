@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import {
   Avatar, Badge, Banner, Button, Checkbox, DataTable, DropdownMenu, Icon, IconButton, Modal, SectionCard, Select, SkeletonRow, Tag, TextField, Textarea,
 } from '../../ds.js';
-import { useGetSettingsRolesQuery, useGetSettingsTeamQuery, useInviteSettingsMemberMutation, useUpdateSettingsMemberMutation, useRemoveSettingsMemberMutation, useResendSettingsInviteMutation, useSaveSettingsRoleMutation, useDeleteSettingsRoleMutation } from '../../store/features/settings/settingsTeamApi.js';
+import { useGetSettingsRolesQuery, useGetSettingsTeamQuery, useInviteSettingsMemberMutation, useUpdateSettingsMemberMutation, useRemoveSettingsMemberMutation, useResendSettingsInviteMutation, useSaveSettingsRoleMutation, useDeleteSettingsRoleMutation, settingsPermissionState, toggleSettingsPermission } from '../../store/features/settings/settingsTeamApi.js';
 import { useGetMyProfileAccessQuery } from '../../store/features/profile/profileApi.js';
+import { useGetOnboardingSecurityQuery, useSaveOnboardingPinMutation } from '../../store/features/auth/onboardingApi.js';
 import { getApiErrorMessage } from '../../store/api/getApiErrorMessage.js';
 import { PERMISSION_GROUPS, grantsFinance, roleById } from '../../domain/access.js';
 import { PinPrompt } from '../../components/SecurityInputs.jsx';
@@ -11,7 +12,7 @@ import styles from './Settings.module.css';
 
 const STATUS_TONE = { Active: 'success', Invited: 'info', Suspended: 'warning' };
 
-function InviteModal({ open, onClose, roles, onDone }) {
+function InviteModal({ open, onClose, roles, onDone, security, createPin }) {
   const [draft, setDraft] = useState({ name: '', email: '', phone: '', roleId: '' });
   const [inviteMember] = useInviteSettingsMemberMutation();
   const [error, setError] = useState('');
@@ -19,12 +20,17 @@ function InviteModal({ open, onClose, roles, onDone }) {
   const [pinOpen, setPinOpen] = useState(false);
   useEffect(() => { if (open) { setDraft({ name: '', email: '', phone: '', roleId: '' }); setError(''); } }, [open]);
   const role = roleById(roles, draft.roleId);
-  const needsPin = grantsFinance(role?.permissions ?? []);
+  const financeRole = grantsFinance(role?.permissions ?? []);
+  const needsPin = security?.pin?.set === true || financeRole;
 
   async function invite(pin) {
-    const member = await inviteMember({ ...draft, pin }).unwrap();
-    setPinOpen(false);
-    onDone(member);
+    setBusy(true);
+    try {
+      const member = await inviteMember({ ...draft, pin }).unwrap();
+      setPinOpen(false);
+      onDone(member);
+    } catch (err) { throw new Error(getApiErrorMessage(err)); }
+    finally { setBusy(false); }
   }
   async function submit(event) {
     event.preventDefault();
@@ -32,9 +38,9 @@ function InviteModal({ open, onClose, roles, onDone }) {
     setError('');
     if (!draft.name.trim() || !/^\S+@\S+\.\S+$/.test(draft.email)) { setError('Enter a name and a valid email.'); return; }
     if (!role) { setError('Choose a role from the company role list.'); return; }
-    if (needsPin) { setError('The team API does not support PIN approval for finance roles yet.'); return; }
-    setBusy(true);
-    try { await invite(); } catch (err) { setError(getApiErrorMessage(err)); } finally { setBusy(false); }
+    if (typeof security?.pin?.set !== 'boolean') { setError('Load your transaction PIN status before inviting a member.'); return; }
+    if (needsPin) { setPinOpen(true); return; }
+    try { await invite(); } catch (err) { setError(err.message); }
   }
 
   return (
@@ -46,10 +52,10 @@ function InviteModal({ open, onClose, roles, onDone }) {
         <TextField label="Phone (optional)" value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} placeholder="+234 800 000 0000" />
         <Select label="Role" value={draft.roleId} options={roles.filter((r) => r.id && r.id !== 'owner').map((r) => ({ value: r.id, label: r.name }))} onChange={(e) => setDraft({ ...draft, roleId: e.target.value })} />
         {role && <span className="tk-meta">{role.description} · {role.permissions?.length ?? '—'} permissions</span>}
-        {needsPin && <Banner tone="info" title="PIN required">This role can move money, so granting it needs your transaction PIN.</Banner>}
+        {financeRole && <Banner tone="info" title="PIN required">This role can move money, so granting it needs your transaction PIN.</Banner>}
         {error && <p className={styles.error}>{error}</p>}
       </form>
-      <PinPrompt open={pinOpen} onClose={() => setPinOpen(false)} confirmLabel="Send Invite" description={`Grant ${role?.name} access (includes finance permissions).`} onConfirm={invite} />
+      <PinPrompt open={pinOpen} onClose={() => setPinOpen(false)} confirmLabel="Send Invite" description={financeRole ? `Grant ${role?.name} access (includes finance permissions).` : role?.name} securityState={security ?? null} createPin={createPin} onConfirm={invite} />
     </Modal>
   );
 }
@@ -58,19 +64,29 @@ export function TeamSettings({ onToast }) {
   const { data, error: loadError, isLoading } = useGetSettingsTeamQuery(undefined, { refetchOnMountOrArgChange: true });
   const { data: roleData } = useGetSettingsRolesQuery(undefined, { refetchOnMountOrArgChange: true });
   const { data: access } = useGetMyProfileAccessQuery();
+  const { data: security } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
+  const [savePin, { isLoading: savingPin }] = useSaveOnboardingPinMutation();
   const [updateMember, { isLoading: updating }] = useUpdateSettingsMemberMutation();
   const [removeMember, { isLoading: removing }] = useRemoveSettingsMemberMutation();
   const [resendInvite, { isLoading: resending }] = useResendSettingsInviteMutation();
   const members = data?.members ?? [];
   const roles = roleData?.roles ?? [];
   const canManage = access?.isOwner === true;
-  const busy = updating || removing || resending;
+  const busy = updating || removing || resending || savingPin;
   const [inviteOpen, setInviteOpen] = useState(false);
   const [menu, setMenu] = useState(null);
   const [pending, setPending] = useState(null);
   const [error, setError] = useState('');
 
-  async function updateTeamMember(id, changes, pin) { return updateMember({ id, changes, pin }).unwrap(); }
+  async function createPin(values) {
+    if (!canManage || security?.pin?.set !== false) throw new Error('Load your transaction PIN status before creating a PIN.');
+    try { await savePin(values).unwrap(); }
+    catch (err) { throw new Error(getApiErrorMessage(err)); }
+  }
+  async function updateTeamMember(id, changes, pin) {
+    try { return await updateMember({ id, changes, pin }).unwrap(); }
+    catch (err) { throw new Error(getApiErrorMessage(err)); }
+  }
   async function run(action, message) {
     if (busy || !canManage) return;
     setMenu(null); setError('');
@@ -78,10 +94,18 @@ export function TeamSettings({ onToast }) {
   }
 
   async function changeRole(member, roleId) {
-    setError('');
     const role = roleById(roles, roleId);
-    if (grantsFinance(role?.permissions ?? [])) { setError('The team API does not support PIN approval for finance roles yet.'); return; }
-    await run(() => updateTeamMember(member.id, { roleId }), `${member.name} is now ${role?.name ?? '—'}.`);
+    await changeMember(member, { roleId }, `${member.name} is now ${role?.name ?? '—'}.`, 'Change Role');
+  }
+  async function changeMember(member, changes, message, confirmLabel) {
+    if (busy || !canManage) return;
+    setMenu(null); setError('');
+    if (member.kind === 'invite') { setError('Pending invitations cannot be suspended. Remove the invitation to cancel it.'); return; }
+    if (typeof security?.pin?.set !== 'boolean') { setError('Load your transaction PIN status before changing a member.'); return; }
+    if (security.pin.set || grantsFinance(roleById(roles, changes.roleId)?.permissions ?? [])) {
+      setPending({ member, changes, message, confirmLabel }); return;
+    }
+    await run(() => updateTeamMember(member.id, changes), message);
   }
 
   return (
@@ -119,8 +143,8 @@ export function TeamSettings({ onToast }) {
                       <DropdownMenu width={200} items={[
                         ...(m.status === 'Invited' ? [{ label: 'Resend Invite', icon: 'send', onClick: () => run(() => resendInvite(m.id).unwrap(), `Invite re-sent to ${m.email}.`) }] : []),
                         m.status === 'Suspended'
-                          ? { label: 'Reactivate', icon: 'user-check', onClick: () => run(() => updateTeamMember(m.id, { status: 'Active' }), `${m.name} reactivated.`) }
-                          : { label: 'Suspend Access', icon: 'user-x', onClick: () => run(() => m.kind === 'invite' ? Promise.reject({ status: 'CUSTOM_ERROR', error: 'Pending invitations cannot be suspended. Remove the invitation to cancel it.' }) : updateTeamMember(m.id, { status: 'Suspended' }), `${m.name} suspended.`) },
+                          ? { label: 'Reactivate', icon: 'user-check', onClick: () => changeMember(m, { status: 'Active' }, `${m.name} reactivated.`, 'Reactivate') }
+                          : { label: 'Suspend Access', icon: 'user-x', onClick: () => changeMember(m, { status: 'Suspended' }, `${m.name} suspended.`, 'Suspend Access') },
                         { divider: true },
                         { label: 'Remove from Team', icon: 'trash-2', tone: 'danger', onClick: () => run(() => removeMember({ id: m.id, kind: m.kind }).unwrap(), `${m.name === '—' ? m.email : m.name} removed.`) },
                       ]} />
@@ -132,11 +156,12 @@ export function TeamSettings({ onToast }) {
           ]}
         />
       </SectionCard>
-      <InviteModal open={inviteOpen} onClose={() => setInviteOpen(false)} roles={roles} onDone={(m) => { setInviteOpen(false); onToast(`Invite sent to ${m.email}.`); }} />
+      <InviteModal open={inviteOpen} onClose={() => setInviteOpen(false)} roles={roles} security={security} createPin={createPin} onDone={(m) => { setInviteOpen(false); onToast(`Invite sent to ${m.email}.`); }} />
       <PinPrompt
-        open={!!pending} onClose={() => setPending(null)} confirmLabel="Change Role"
-        description={pending ? `Give ${pending.member.name} the ${roleById(roles, pending.roleId)?.name} role, which includes finance permissions.` : ''}
-        onConfirm={async (pin) => { await updateTeamMember(pending.member.id, { roleId: pending.roleId }, pin); onToast(`${pending.member.name} is now ${roleById(roles, pending.roleId)?.name}.`); setPending(null); }}
+        open={!!pending} onClose={() => setPending(null)} confirmLabel={pending?.confirmLabel ?? 'Change Role'}
+        description={pending ? pending.changes.roleId && grantsFinance(roleById(roles, pending.changes.roleId)?.permissions ?? []) ? `Give ${pending.member.name} the ${roleById(roles, pending.changes.roleId)?.name} role, which includes finance permissions.` : pending.member.name : ''}
+        securityState={security ?? null} createPin={createPin}
+        onConfirm={async (pin) => { await updateTeamMember(pending.member.id, pending.changes, pin); onToast(pending.message); setPending(null); }}
       />
     </>
   );
@@ -159,7 +184,7 @@ export function RolesSettings({ onToast }) {
   if (!draft) return <SectionCard title="Roles & Permissions" description="Control what each role can see and do. Permissions marked with a lock also need the transaction PIN." action={<Button variant="secondary" icon="plus" disabled={!canManage || busy || !data?.supportedKeys} onClick={create}>New Role</Button>}>{isLoading ? <SkeletonRow columns={2} /> : <span className="tk-meta">{loadError ? getApiErrorMessage(loadError) : error || '—'}</span>}</SectionCard>;
 
   const dirty = JSON.stringify([...draft.permissions].sort()) !== JSON.stringify([...(selected?.permissions || [])].sort()) || draft.name !== selected?.name || draft.description !== selected?.description;
-  const toggle = (key) => setDraft((d) => ({ ...d, permissions: d.permissions.includes(key) ? d.permissions.filter((p) => p !== key) : [...d.permissions, key] }));
+  const toggle = (key) => setDraft((d) => ({ ...d, permissions: toggleSettingsPermission(d.permissions, data?.permissionBindings?.[key]) }));
 
   async function save() {
     setError('');
@@ -194,7 +219,7 @@ export function RolesSettings({ onToast }) {
               <h4><Icon name={group.icon} size={15} color="var(--tk-blue)" />{group.group}</h4>
               <div className={styles.permList}>
                 {group.permissions.map((p) => (
-                  <Checkbox key={p.key} disabled={draft.locked || !canManage || busy || !data?.supportedKeys?.includes(p.key)} indeterminate={!data?.supportedKeys?.includes(p.key) || selected?.permissions === null} checked={draft.permissions.includes(p.key)} onChange={() => toggle(p.key)}
+                  <Checkbox key={p.key} disabled={draft.locked || !canManage || busy || !data?.permissionBindings?.[p.key]?.length} indeterminate={settingsPermissionState(draft.permissions, data?.permissionBindings?.[p.key]) === null} checked={settingsPermissionState(draft.permissions, data?.permissionBindings?.[p.key]) === true} onChange={() => toggle(p.key)}
                     label={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{p.label}{p.pin && <Icon name="lock-keyhole" size={12} color="var(--tk-warning)" />}</span>} />
                 ))}
               </div>

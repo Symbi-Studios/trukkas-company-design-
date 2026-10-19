@@ -9,15 +9,22 @@ function readableBodyMessage(data) {
 
   if (!data || typeof data !== 'object') return null;
 
+  const validationMessages = Array.isArray(data.errors) ? data.errors.flatMap((entry) => {
+    if (typeof entry === 'string') return [entry];
+    if (typeof entry?.message === 'string') return [entry.message];
+    return Array.isArray(entry?.message) ? entry.message.filter((value) => typeof value === 'string') : [];
+  }).map((value) => value.trim()).filter(Boolean) : [];
+  const withValidation = (message) => [...new Set([message, ...validationMessages].filter(Boolean))].join(' ');
+
   for (const value of [data.message, data.detail, data.error_description, data.error]) {
     if (Array.isArray(value)) {
       const message = value.filter((item) => typeof item === 'string').join(' ').trim();
-      if (message) return message;
+      if (message) return withValidation(message);
     }
-    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'string' && value.trim()) return withValidation(value.trim());
   }
 
-  return null;
+  return withValidation(null) || null;
 }
 
 export function getApiErrorMessage(error) {

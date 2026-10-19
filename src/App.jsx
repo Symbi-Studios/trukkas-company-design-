@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { usePathname, useRouter } from "next/navigation.js";
+import { usePathname, useRouter, useSearchParams } from "next/navigation.js";
 import { useDispatch, useSelector } from "react-redux";
 import {
   AppShell,
@@ -18,9 +18,12 @@ import { setActiveCompany, clearSession } from "./store/features/auth/authSlice.
 import { baseApi } from "./store/api/baseApi.js";
 import { AppLoadingScreen } from "./components/AppLoadingScreen.jsx";
 import { useCollection } from "./mock/useCollection.js";
+import { useGetAvailableJobsQuery, useGetJobDetailQuery, useGetMyJobsQuery } from "./store/features/jobs/jobsApi.js";
 import { onScreenSearch } from "./pageSearch.js";
 import { searchWorkspace } from "./domain/search.js";
 import { useGetCompanyTripsQuery } from "./store/features/trips/tripsApi.js";
+import { useGetFleetQuery } from "./store/features/fleet/fleetApi.js";
+import { useGetCompanyDriversQuery } from "./store/features/drivers/driversApi.js";
 
 const PUBLIC_ROUTES = new Set([
   "/login",
@@ -29,6 +32,15 @@ const PUBLIC_ROUTES = new Set([
   "/signed-out",
   "/signup",
 ]);
+
+function JobNavigationObserver({ pathname, onChange }) {
+  const params = useSearchParams();
+  const ids = params.getAll('jobId');
+  const id = pathname === '/jobs/detail' ? ids.length === 1 ? ids[0] : null
+    : /^\/jobs\/[^/]+$/.test(pathname) ? pathname.split('/')[2] : null;
+  React.useEffect(() => { onChange(id); }, [id, onChange]);
+  return null;
+}
 
 export function CompanyShell({ children }) {
   const [collapsed, setCollapsed] = React.useState(false);
@@ -47,17 +59,25 @@ export function CompanyShell({ children }) {
   const company = account ? { id: account.companyIds[0], name: account.companyName } : null;
   const unreadCount = notificationCount ?? null;
   const router = useRouter();
-  const jobs = useCollection("jobs") || [];
+  const [routeJobId, setRouteJobId] = React.useState(null);
+  const { currentData: routeJob } = useGetJobDetailQuery(routeJobId, { skip: !account || loggingOut || !routeJobId || PUBLIC_ROUTES.has(pathname) });
+  const jobSearchDisabled = !account || loggingOut || PUBLIC_ROUTES.has(pathname) || !globalSearch.trim();
+  const { data: availableJobs } = useGetAvailableJobsQuery(undefined, { skip: jobSearchDisabled });
+  const { data: myJobs } = useGetMyJobsQuery(undefined, { skip: jobSearchDisabled });
+  const jobs = React.useMemo(() => [...new Map([...(availableJobs ?? []), ...(myJobs ?? [])].map((job) => [job.id, job])).values()], [availableJobs, myJobs]);
   const { data: companyTrips } = useGetCompanyTripsQuery(undefined, {
     skip: !account || loggingOut || PUBLIC_ROUTES.has(pathname) || !globalSearch.trim(),
   });
   const trips = companyTrips || [];
-  const trucks = useCollection("trucks") || [];
-  const drivers = useCollection("drivers") || [];
+  const { data: companyFleet } = useGetFleetQuery(undefined, { skip: jobSearchDisabled });
+  const trucks = companyFleet ?? [];
+  const { data: companyDrivers } = useGetCompanyDriversQuery(undefined, { skip: jobSearchDisabled });
+  const drivers = companyDrivers ?? [];
   const payouts = useCollection("payoutRequests") || [];
   const [section, detailId] = pathname.split("/").slice(1);
   // A won/past job's detail page belongs to My Jobs; open requests to Find Jobs.
-  const wonJob = section === "jobs" && detailId && jobs.find((j) => j.id === detailId && j.status !== "Pending" && j.status !== "Quoted");
+  const wonJob = section === "jobs" && detailId && (routeJob && !['Pending', 'Quoted', '—'].includes(routeJob.status)
+    || jobs.find((j) => j.id === detailId && !['Pending', 'Quoted', '—'].includes(j.status)));
   const activeId = wonJob ? "my-jobs" : section || "dashboard";
   // List screens filter as you type and name what they search; everywhere the
   // dropdown offers matches from across the workspace.
@@ -181,6 +201,7 @@ export function CompanyShell({ children }) {
         />
       }
     >
+      <React.Suspense fallback={null}><JobNavigationObserver pathname={pathname} onChange={setRouteJobId} /></React.Suspense>
       {children}
     </AppShell>
   );

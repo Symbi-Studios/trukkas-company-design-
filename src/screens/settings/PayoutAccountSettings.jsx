@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Banner, Button, EmptyState, Icon, SectionCard, Select, SkeletonRow, TextField } from '../../ds.js';
 import { BANKS, resolveAccountName, updateBankAccount } from '../../mock/api.js';
-import { useGetOnboardingBankQuery, useGetOnboardingBanksQuery, useResolveOnboardingBankMutation, useSaveOnboardingBankMutation } from '../../store/features/auth/onboardingApi.js';
+import { useGetOnboardingBankQuery, useGetOnboardingBanksQuery, useResolveOnboardingBankMutation, useSaveOnboardingBankMutation, useGetOnboardingSecurityQuery, useSaveOnboardingPinMutation } from '../../store/features/auth/onboardingApi.js';
+import { useUpdateSettingsBankMutation } from '../../store/features/settings/settingsApi.js';
 import { useGetMyProfileAccessQuery } from '../../store/features/profile/profileApi.js';
 import { getApiErrorMessage } from '../../store/api/getApiErrorMessage.js';
 import { PinPrompt } from '../../components/SecurityInputs.jsx';
 import styles from './Settings.module.css';
 
-/** Bank account form with mock name enquiry. Used in settings and onboarding. */
-export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Account', requirePin = true, onCancel, banks = BANKS, resolveAccount = resolveAccountName, saveAccount = updateBankAccount, approvalUnavailable = false, disabled = false }) {
+/** Bank account form shared by settings, onboarding and the remaining prototype screens. */
+export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Account', requirePin = true, onCancel, banks = BANKS, resolveAccount = resolveAccountName, saveAccount = updateBankAccount, approvalUnavailable = false, disabled = false, loadError = '', securityState, createPin }) {
   const [bankCode, setBankCode] = useState(initial?.bankCode || '');
   const [accountNumber, setAccountNumber] = useState('');
   const [accountName, setAccountName] = useState('');
@@ -60,7 +61,7 @@ export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Acc
       <div className={styles.full}>
         {resolving && <span className="tk-meta">Verifying account name…</span>}
         {accountName && <span className={styles.resolved}><Icon name="circle-check" size={16} />{accountName}</span>}
-        {error && <p className={styles.error}>{error}</p>}
+        {(error || loadError) && <p className={styles.error}>{error || loadError}</p>}
         <p className={styles.hint} style={{ marginTop: 8 }}>The account name must match your registered company name. Payouts can’t be sent to personal accounts.</p>
       </div>
       <div className={styles.formActions}>
@@ -68,7 +69,7 @@ export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Acc
         <Button type="submit" icon="landmark" disabled={!accountName || saving || disabled}>{submitLabel}</Button>
       </div>
       <PinPrompt open={pinOpen} onClose={() => setPinOpen(false)} confirmLabel="Approve Change"
-        description="Changing where payouts are sent requires your transaction PIN." onConfirm={save} />
+        description="Changing where payouts are sent requires your transaction PIN." onConfirm={save} securityState={securityState} createPin={createPin} />
     </form>
   );
 }
@@ -77,8 +78,11 @@ export function PayoutAccountSettings({ onToast }) {
   const { data: bank, error, isLoading } = useGetOnboardingBankQuery(undefined, { refetchOnMountOrArgChange: true });
   const { data: banks, error: banksError } = useGetOnboardingBanksQuery();
   const { data: access } = useGetMyProfileAccessQuery();
+  const { data: security, error: securityError } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
   const [resolveBank] = useResolveOnboardingBankMutation();
   const [saveBank] = useSaveOnboardingBankMutation();
+  const [updateBank] = useUpdateSettingsBankMutation();
+  const [saveTransactionPin] = useSaveOnboardingPinMutation();
   const [editing, setEditing] = useState(false);
   const resolveAccount = useCallback(async (bankCode, accountNumber) => {
     const selected = banks?.find((row) => row.code === bankCode);
@@ -89,13 +93,19 @@ export function PayoutAccountSettings({ onToast }) {
       return result;
     } catch (err) { throw new Error(err instanceof Error ? err.message : getApiErrorMessage(err)); }
   }, [banks, resolveBank]);
-  async function saveAccount({ bankCode, accountNumber }) {
+  async function createPin(values) {
+    if (access?.canEdit !== true || security?.pin?.set !== false) throw new Error('Your current PIN status must be confirmed before creating a PIN.');
+    try { return await saveTransactionPin(values).unwrap(); }
+    catch (err) { throw new Error(getApiErrorMessage(err)); }
+  }
+  async function saveAccount({ bankCode, accountNumber }, transactionPin) {
     if (access?.canEdit !== true) throw new Error('You need settings.edit permission to save a payout account.');
-    if (bank) throw new Error('The bank API does not support PIN-approved account changes yet.');
+    if (bank === undefined) throw new Error('Load your current payout account before saving changes.');
     const selected = banks?.find((row) => row.code === bankCode);
     if (!selected) throw new Error('Choose a supported bank.');
     try {
-      const result = await saveBank({ bankName: selected.name, accountNumber }).unwrap();
+      const result = await (bank ? updateBank({ bankName: selected.name, accountNumber, transactionPin })
+        : saveBank({ bankName: selected.name, accountNumber })).unwrap();
       if (!result) throw new Error('The API did not confirm the saved bank account.');
       return result;
     } catch (err) { throw new Error(err instanceof Error ? err.message : getApiErrorMessage(err)); }
@@ -125,7 +135,9 @@ export function PayoutAccountSettings({ onToast }) {
         )}
         {editing && (
           <BankAccountForm
-            initial={bank} requirePin={!!bank} onCancel={() => setEditing(false)} banks={banks ?? []} resolveAccount={resolveAccount} saveAccount={saveAccount} approvalUnavailable disabled={access?.canEdit !== true}
+            initial={bank} requirePin={!!bank} onCancel={() => setEditing(false)} banks={banks ?? []} resolveAccount={resolveAccount} saveAccount={saveAccount}
+            securityState={security ?? null} createPin={createPin} loadError={securityError ? getApiErrorMessage(securityError) : ''}
+            disabled={access?.canEdit !== true || bank === undefined || !!error || !!banksError || (!!bank && typeof security?.pin?.set !== 'boolean')}
             onSaved={(b) => { setEditing(false); onToast(`Payouts will now go to ${b.bankName} •••• ${b.last4}.`); }}
           />
         )}

@@ -93,7 +93,7 @@ export function UploadDocumentModal({ open, onClose, ownerType, ownerId, ownerLa
         name: needsFile ? files[0].name : `${req.label}${ownerLabel ? ` — ${ownerLabel}` : ''}`,
         fileSize: needsFile ? files[0].size : '—',
         url: needsFile ? files[0].url : undefined,
-        number: number.trim() ? (req.sensitive ? maskNumber(number) : number.trim()) : null,
+        number: number.trim() ? (req.sensitive && !submitDocument ? maskNumber(number) : number.trim()) : null,
         expiryDate: expiry || null,
         ...(submitDocument ? { file: files[0]?.file } : {}),
       });

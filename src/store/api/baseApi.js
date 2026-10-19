@@ -33,7 +33,7 @@ let activeRefresh = null;
 
 let requestSequence = 0;
 
-const privateLogField = /authorization|cookie|token|password|secret|credential|otp|^code$|pin|email|phone|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment/i;
+const privateLogField = /authorization|cookie|token|password|secret|credential|otp|^code$|pin|email|phone|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment|^body$|reason|comment|instruction/i;
 function bodyForLog(body) {
   // Never expose credentials, personal detail fields, or conversation content.
   if (body instanceof FormData || body instanceof URLSearchParams) {
@@ -221,6 +221,8 @@ async function baseQueryWithReauth(args, api, extraOptions) {
   const method = (typeof args === 'string' ? 'GET' : args.method || 'GET').toUpperCase();
   const safeToRetry = ['GET', 'HEAD', 'OPTIONS'].includes(method) || retryableAfterRefresh.has(api.endpoint);
 
+  // This 401 is a rejected financial approval, not an expired login session.
+  if (unwrapApiResponseData(result.error?.data)?.code === 'TRANSACTION_PIN_INVALID') return result;
   if (result.error?.status !== 401 || publicEndpoints.has(api.endpoint) || reauthExcludedPaths.has(path)) return result;
 
   const currentToken = api.getState().auth.accessToken;
@@ -243,6 +245,6 @@ async function baseQueryWithReauth(args, api, extraOptions) {
 export const baseApi = createApi({
   reducerPath: 'baseApi',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Notifications', 'AuthOnboardingDocuments', 'AuthOnboardingBank', 'AuthOnboardingSecurity'],
+  tagTypes: ['Notifications', 'AuthOnboardingDocuments', 'AuthOnboardingTrucks', 'AuthOnboardingBank', 'AuthOnboardingSecurity'],
   endpoints: () => ({}),
 });

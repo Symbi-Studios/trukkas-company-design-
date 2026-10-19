@@ -9,7 +9,7 @@ const decimal = (value) => number(value) ?? (typeof value === 'string' && /^\d+(
 
 const stages = {
   DRIVER_ASSIGNED: 'Assigned', DRIVER_EN_ROUTE: 'Assigned', DRIVER_ARRIVED: 'Assigned',
-  PICKUP_COMPLETED: 'Picked Up', IN_TRANSIT: 'In Transit', CARGO_ARRIVED: 'At Destination',
+  PICKUP_COMPLETED: 'Picked Up', IN_TRANSIT: 'In Transit', CARGO_ARRIVED: 'At Destination', DEMURRAGE_IN_PROGRESS: 'At Destination',
   OFFLOADING: 'At Destination', OFFLOAD_COMPLETED: 'At Destination', CONTAINER_RETURNED: 'At Destination',
   COMPLETED: 'Completed', CANCELLED: 'Cancelled', DISPUTED: 'Disputed',
 };
@@ -36,83 +36,158 @@ export function safeUrl(value) {
 export const coordinates = (place) => typeof place?.latitude === 'number' && Number.isFinite(place.latitude) && Math.abs(place.latitude) <= 90
   && typeof place?.longitude === 'number' && Number.isFinite(place.longitude) && Math.abs(place.longitude) <= 180 ? [place.latitude, place.longitude] : null;
 const personName = (person) => [text(person?.firstName), text(person?.lastName)].filter(Boolean).join(' ') || '—';
-
 function documentView(doc) {
   const bytes = number(doc.sizeBytes);
   return {
-    id: text(doc.id), name: text(doc.fileName) ?? text(doc.type) ?? '—',
+    id: text(doc.id), name: text(doc.name) ?? text(doc.fileName) ?? text(doc.type) ?? '—',
     url: safeUrl(doc.url), uploadedOn: dateLabel(doc.uploadedAt),
     size: bytes === null ? '—' : `${(bytes / 1024).toLocaleString('en-NG', { maximumFractionDigits: 1 })} KB`,
     status: ({ UPLOADED: 'Uploaded', APPROVED: 'Uploaded', PENDING: 'Pending', REJECTED: 'Rejected' })[doc.status] ?? '—',
+    uploadable: false,
     kind: doc.mimeType === 'application/pdf' ? 'pdf' : typeof doc.mimeType === 'string' && doc.mimeType.startsWith('image/') ? 'image' : null,
   };
 }
 
-function jobView(job, id) {
-  const containers = rows(job?.containers);
-  const tonnages = containers?.map((container) => decimal(container.goodsTonnage));
+function proofOfDeliveryDocument(value) {
+  const pod = object(value);
+  if (!pod || (!text(pod.photoUrl) && !text(pod.submittedAt) && !text(pod.rejectedAt))) return null;
   return {
-    apiBacked: true, id, number: text(job?.jobNumber) ?? '—',
-    title: text(containers?.map((container) => [text(container.containerSize?.name), text(container.containerType?.name)].filter(Boolean).join(' ')).filter(Boolean).join(', ')) ?? '—',
-    cargoType: text(job?.cargoDescription) ?? '—', category: '—',
-    origin: text(job?.route?.origin?.address) ?? '—', destination: text(job?.route?.destination?.address) ?? '—',
-    routeCoordinates: { origin: coordinates(job?.route?.origin), destination: coordinates(job?.route?.destination) },
-    distanceKm: number(job?.feeBreakdown?.recommendedFare?.distanceKm),
-    weightKg: tonnages?.length && tonnages.every((value) => value !== null) ? tonnages.reduce((sum, value) => sum + value * 1000, 0) : null,
-    quantity: containers === null || containers === undefined ? '—' : containers.length,
-    cargoValue: null, tripType: label(job?.movementType, movementTypes),
-    specialInstructions: text(job?.specialInstructions) ?? '—',
-    trucksRequired: null, documents: rows(job?.documents)?.map(documentView) ?? null,
+    id: 'trip-proof-of-delivery', name: 'Proof of Delivery', url: safeUrl(pod.photoUrl),
+    uploadedOn: dateLabel(pod.submittedAt), size: '—', status: text(pod.rejectedAt) ? 'Rejected' : 'Uploaded',
+    uploadable: false, kind: null,
   };
 }
 
-export function tripView(source, job = null) {
+function forwarderDocuments(documents) {
+  const source = object(documents);
+  if (!source) return null;
+  return [
+    ['tdo', 'TDO'], ['exitNote', 'Exit Note'], ['gatePass', 'Gate Pass'],
+  ].flatMap(([field, name]) => {
+    const url = text(source[field]);
+    return url ? [{ id: `forwarder-${field}`, name, url: safeUrl(url), uploadedOn: '—', size: '—', status: '—', kind: null }] : [];
+  });
+}
+
+const costLabels = { FUEL: 'Fuel', TOLL: 'Tolls & Levies', DRIVER_ALLOWANCE: 'Driver Allowance', MAINTENANCE: 'Repairs', PORT_CHARGES: 'Port Charges', PARKING: 'Parking', OTHER: 'Other' };
+const costLabel = (value) => label(value, costLabels);
+const costWireValues = Object.fromEntries(Object.entries(costLabels).map(([value, labelText]) => [labelText, value]));
+export const tripCostCategoryToWire = (value) => Object.hasOwn(costWireValues, value) ? costWireValues[value] : null;
+
+function timelineStage(labelText) {
+  const normalized = text(labelText)?.toLowerCase();
+  return ({
+    'job accepted': 'Assigned', 'pickup completed': 'Picked Up', 'in transit': 'In Transit',
+    'cargo arrived': 'At Destination', 'offload completed': 'At Destination',
+    'proof of delivery submitted': 'At Destination', 'container returned': 'At Destination', 'job completed': 'Completed',
+  })[normalized] ?? null;
+}
+
+export function tripView(source, isDetail = false, jobDetails = null) {
   if (!object(source) || !text(source.id)) return null;
-  const status = label(source.status ?? job?.status, stages);
+  const route = object(source.route);
+  const cargo = object(isDetail ? source.cargo : null);
+  const driver = source.driver === null && isDetail ? null : object(source.driver) ?? object(jobDetails?.driver);
+  const truck = source.truck === null && isDetail ? null : object(source.truck) ?? object(jobDetails?.truck);
+  const status = label(source.status, stages);
   const phase = status === 'Assigned' ? 'Upcoming' : ['Picked Up', 'In Transit', 'At Destination'].includes(status) ? 'Active'
     : ['Completed', 'Cancelled', 'Disputed'].includes(status) ? status : null;
-  const jobId = text(source.jobId) ?? text(job?.id) ?? source.id; // The company API defines one trip per job.
+  const jobId = text(source.jobId) ?? source.id; // The company API defines one trip per job.
   const progress = number(source.progress);
-  const pickup = job?.tdoDate;
-  const delivery = job?.estimatedDeliveryAt;
-  const view = jobView(job, jobId);
-  // The list documents these flat route, truck and driver labels. Detail-only
-  // cargo fields come from the documented GET /jobs/{id} response, never fixtures.
-  if (!job) {
-    view.number = text(source.jobNumber) ?? text(source.tripNumber) ?? '—';
-    view.origin = text(source.origin) ?? '—';
-    view.destination = text(source.destination) ?? '—';
-    view.tripType = label(source.movementType, movementTypes);
-  }
-  const earnings = object(source.money?.earnings);
-  const timeline = rows(source.timeline);
+  const pickup = source.pickupDate ?? jobDetails?.tdoDate;
+  const delivery = source.deliveryDueAt ?? jobDetails?.estimatedDeliveryAt;
+  const containers = rows(cargo?.containers) ?? rows(jobDetails?.containers);
+  const containerWeight = containers?.map((container) => decimal(container.tonnage) ?? decimal(container.goodsTonnage));
+  const weightTonnes = decimal(cargo?.weightTonnes)
+    ?? (containerWeight?.length && containerWeight.every((value) => value !== null) ? containerWeight.reduce((sum, value) => sum + value, 0) : null);
+  const extraDocuments = isDetail ? rows(source.extraDocuments)?.map(documentView) ?? null : null;
+  const podDocument = isDetail ? proofOfDeliveryDocument(source.pod) : null;
+  const tripDocuments = isDetail ? extraDocuments === null ? (podDocument ? [podDocument] : null) : [...(podDocument ? [podDocument] : []), ...extraDocuments] : null;
+  const listedForwarderDocuments = isDetail ? forwarderDocuments(source.documents) : null;
+  const jobForwarderDocuments = isDetail ? rows(jobDetails?.documents)?.map(documentView) ?? null : null;
+  const notes = isDetail ? rows(source.notes) : null;
+  const costsPayload = isDetail ? object(source.costs) : null;
+  const costs = rows(costsPayload?.items)?.map((item) => ({
+    id: text(item.id), category: costLabel(item.category), description: text(item.description) ?? '—',
+    date: dateLabel(item.createdAt), amount: number(item.amount),
+  })) ?? null;
+  const timeline = isDetail ? rows(source.timeline) : null;
+  const stageDates = Object.fromEntries(['Assigned', 'Picked Up', 'In Transit', 'At Destination', 'Completed'].map((stage) => [stage, '—']));
+  timeline?.forEach((event) => {
+    const stage = timelineStage(event.label);
+    const date = dateLabel(event.at);
+    if (stage && stageDates[stage] === '—' && date !== '—') stageDates[stage] = date;
+  });
+  const mappedTimeline = timeline?.map((event) => ({
+    title: text(event.label) ?? '—', detail: '—',
+    date: dateLabel(event.at), time: timeLabel(event.at), state: event.done === true ? 'done' : event.done === false ? 'pending' : null,
+    reference: null, location: null, icon: 'circle',
+  })) ?? null;
+  const location = isDetail ? object(source.location) : null;
+  const locationNote = isDetail ? object(source.locationNote) : null;
+  const revenue = number(isDetail ? source.money?.agreedPrice ?? source.agreedPrice : source.agreedPrice);
+  const driverUnassigned = boolean(source.attention?.unassigned) ?? boolean(source.needsAssignment);
+  const driverAssigned = isDetail && source.driver === null ? false : driver ? true : driverUnassigned === null ? null : !driverUnassigned;
+  const numberValue = text(source.tripNumber) ?? '—';
+  const title = containers?.map((container) => [text(container.size) ?? text(container.containerSize?.name), text(container.type) ?? text(container.containerType?.name)].filter(Boolean).join(' ')).filter(Boolean).join(', ');
+  const coordinatesPayload = object(isDetail ? source.coordinates : null);
+  const jobRoute = object(jobDetails?.route);
+  const jobOrigin = object(jobRoute?.origin);
+  const jobDestination = object(jobRoute?.destination);
+  const forwarderDocs = jobForwarderDocuments?.length ? jobForwarderDocuments : listedForwarderDocuments ?? jobForwarderDocuments;
+  const view = {
+    apiBacked: true, id: jobId, number: text(source.tripNumber) ?? '—',
+    title: text(title) ?? text(cargo?.type) ?? text(source.cargoType) ?? text(jobDetails?.cargoDescription) ?? '—',
+    cargoType: text(cargo?.description) ?? text(cargo?.type) ?? text(source.cargoType) ?? text(jobDetails?.cargoDescription) ?? '—', category: '—',
+    origin: text(source.origin) ?? text(route?.pickupAddress) ?? text(jobOrigin?.address) ?? '—',
+    destination: text(source.destination) ?? text(route?.deliveryAddress) ?? text(jobDestination?.address) ?? '—',
+    routeCoordinates: { origin: coordinates(coordinatesPayload?.pickup) ?? coordinates(jobOrigin), destination: coordinates(coordinatesPayload?.delivery) ?? coordinates(jobDestination) },
+    distanceKm: number(source.distanceKm) ?? number(jobDetails?.feeBreakdown?.recommendedFare?.distanceKm),
+    weightKg: weightTonnes === null ? null : weightTonnes * 1000,
+    quantity: count(cargo?.containerCount) ?? (containers ? containers.length : '—'),
+    cargoValue: null, tripType: label(source.movementType ?? jobDetails?.movementType, movementTypes),
+    specialInstructions: text(source.specialInstructions) ?? text(jobDetails?.specialInstructions) ?? '—',
+    trucksRequired: count(cargo?.trucksRequired), documents: forwarderDocs,
+  };
   return {
-    apiBacked: true, id: source.id, number: text(source.tripNumber) ?? text(source.jobNumber) ?? text(job?.jobNumber) ?? '—',
-    jobId, job: view, wireStatus: text(source.status ?? job?.status), status, phase,
+    apiBacked: true, id: source.id, number: numberValue,
+    jobId, job: view, wireStatus: text(source.status), status, phase,
     open: phase === 'Active' || phase === 'Upcoming',
     pickupComplete: ['Picked Up', 'In Transit', 'At Destination', 'Completed'].includes(status) ? true : status === 'Assigned' ? false : null,
     delivered: status === 'Completed' ? true : phase === 'Active' || phase === 'Upcoming' ? false : null,
     delayed: boolean(source.attention?.delayed) ?? boolean(source.isDelayed),
     progress: progress !== null && progress <= 100 ? progress : null,
-    truckId: text(job?.truck?.id), truckPlate: text(source.truckPlate) ?? text(job?.truck?.plateNumber) ?? '—',
-    driverId: text(job?.driver?.id), driverName: text(source.driverName) ?? personName(job?.driver),
-    driverAssigned: job?.driver === null || source.attention?.unassigned === true ? false : object(job?.driver) ? true : null,
-    driverPhone: text(job?.driver?.phone) ?? '—', trailer: null, truck: job?.truck ? { makeModel: '—', status: '—' } : null,
+    truckId: text(truck?.id), truckPlate: text(source.truckPlate) ?? text(truck?.plateNumber) ?? '—',
+    driverId: text(driver?.id), driverName: text(source.driverName) ?? text(driver?.name) ?? personName(driver),
+    driverAssigned, driverPhone: text(driver?.phone) ?? '—', trailer: null,
+    truck: truck ? { makeModel: text(truck.label) ?? '—', status: '—' } : null,
     pickupDate: dateLabel(pickup), pickupTime: timeLabel(pickup), deliveryDate: dateLabel(delivery),
     pickupMonth: instant(pickup) || dateOnly(pickup) ? dateLabel(pickup).replace(/ \d+,/, '') : null,
-    // No documented company detail schema establishes GPS, notes or cost fields.
-    currentLocation: '—', lastUpdated: '—', speedKmh: null, liveCoordinates: null,
-    stageDates: Object.fromEntries(Object.values(stages).map((stage) => [stage, '—'])),
-    timeline: timeline?.map((event) => ({
-      title: text(event.title) ?? '—', detail: text(event.detail) ?? '—',
-      date: dateLabel(event.timestamp), time: timeLabel(event.timestamp),
-      state: ['done', 'active', 'pending', 'cancelled'].includes(event.state) ? event.state : null,
-      reference: text(event.reference), location: text(event.location), icon: 'circle',
-    })) ?? null,
-    documents: rows(source.documents)?.map(documentView) ?? null,
-    notes: null, costs: null, messages: null,
-    revenue: earnings?.currency === 'NGN' ? number(earnings.gross) : null,
+    currentLocation: text(locationNote?.location) ?? '—', lastUpdated: timestampLabel(location?.updatedAt), speedKmh: null,
+    liveCoordinates: location ? coordinates(location) : null,
+    stageDates, timeline: mappedTimeline,
+    documents: tripDocuments,
+    notes: notes?.map((note) => ({ id: text(note.id), author: text(note.authorName) ?? '—', body: text(note.body) ?? '—', time: timestampLabel(note.createdAt) })) ?? null,
+    costs, costTotal: costsPayload?.currency === 'NGN' ? number(costsPayload.total) : null,
+    messages: null, revenue,
+    cancellationRequested: boolean(source.cancellationRequested),
   };
+}
+
+export function tripMessageViews(messages, driverId, driverName) {
+  const collection = rows(messages);
+  if (!collection) return null;
+  return collection.map((message) => {
+    const senderId = text(message.senderId);
+    const isDriver = !!senderId && !!driverId && senderId === driverId;
+    const isCompany = !!senderId && !!driverId && senderId !== driverId;
+    return {
+      id: text(message.id),
+      author: isDriver ? text(driverName) ?? 'Driver' : isCompany ? 'You' : '—',
+      role: isDriver ? 'Driver' : isCompany ? 'Company' : '—',
+      time: timestampLabel(message.createdAt), body: text(message.content) ?? '—',
+    };
+  });
 }
 
 export function tripCollectionView(data) {

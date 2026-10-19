@@ -5,6 +5,9 @@ import { jobTitle } from './jobs.js';
 import { shortPlace } from './trips.js';
 import { plateSlug } from './vehicles.js';
 import { tripDetailHref } from './tripLinks.js';
+import { jobDetailHref } from './jobLinks.js';
+import { fleetDetailHref } from './fleetLinks.js';
+import { driverDetailHref } from './driverLinks.js';
 
 const route = (job) => (job ? `${shortPlace(job.origin)} → ${shortPlace(job.destination)}` : '');
 
@@ -18,8 +21,8 @@ export function searchWorkspace(query, { jobs = [], trips = [], trucks = [], dri
     {
       section: 'Jobs',
       items: jobs
-        .filter((job) => hit(job.id, jobTitle(job), job.cargoType, job.origin, job.destination))
-        .map((job) => ({ key: job.id, icon: 'briefcase', label: jobTitle(job), meta: `${job.id} · ${route(job)}`, tag: job.status === 'Quoted' ? 'Bid Placed' : job.status, to: `/jobs/${job.id}` })),
+        .filter((job) => hit(job.number, job.id, jobTitle(job), job.cargoType, job.origin, job.destination))
+        .map((job) => ({ key: job.id, icon: 'briefcase', label: jobTitle(job), meta: `${job.number ?? job.id} · ${route(job)}`, tag: job.status === 'Quoted' ? 'Bid Placed' : job.status, to: jobDetailHref(job.id) })),
     },
     {
       section: 'Trips',
@@ -31,13 +34,13 @@ export function searchWorkspace(query, { jobs = [], trips = [], trucks = [], dri
       section: 'Vehicles',
       items: trucks
         .filter((truck) => hit(truck.plate, truck.makeModel, truck.type, truck.vin))
-        .map((truck) => ({ key: truck.plate, icon: 'truck', label: truck.plate, meta: [truck.makeModel, truck.type].filter(Boolean).join(' · '), tag: truck.status, to: `/fleet/${plateSlug(truck.plate)}` })),
+        .map((truck) => ({ key: truck.id ?? truck.plate, icon: 'truck', label: truck.plate, meta: [truck.makeModel, truck.type].filter(Boolean).join(' · '), tag: truck.status, to: truck.apiBacked ? fleetDetailHref(truck.id) : `/fleet/${plateSlug(truck.plate)}` })),
     },
     {
       section: 'Drivers',
       items: drivers
         .filter((driver) => hit(driver.name, driver.phone, driver.licenseNumber, driver.truckPlate))
-        .map((driver) => ({ key: driver.id, icon: 'user-round', label: driver.name, meta: [driver.licenseNumber, driver.truckPlate].filter(Boolean).join(' · '), tag: driver.status, to: `/drivers/${driver.id}` })),
+        .map((driver) => ({ key: driver.id, icon: 'user-round', label: driver.name, meta: [driver.licenseNumber, driver.truckPlate].filter(Boolean).join(' · '), tag: driver.status, to: driverDetailHref(driver.id) })),
     },
     {
       section: 'Payouts',

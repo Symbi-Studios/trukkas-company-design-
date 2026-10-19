@@ -1,11 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { useNavigate, useParams } from '../router.js';
-import { Badge, Breadcrumbs, Button, Card, DropdownMenu, Icon, LabelValue, PageHeader, Tabs } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
-import { setTruckStatus } from '../mock/api.js';
-import { findTruckBySlug, vehicleStatusTone } from '../domain/vehicles.js';
+import { useNavigate } from '../router.js';
+import { Badge, Button, Card, DropdownMenu, EmptyState, Icon, LabelValue, PageHeader, SkeletonRow, Tabs } from '../ds.js';
+import { vehicleStatusTone } from '../domain/vehicles.js';
+import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
+import { fleetDetailHref } from '../domain/fleetLinks.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { Toast, useToast } from '../components/Toast.jsx';
 
 const TABS = [
   { value: 'overview', label: 'Overview', href: '' },
@@ -19,23 +21,25 @@ const TABS = [
 /** Shared chrome for every /fleet/[vehicleId]... page: truck summary card,
  *  section tabs (real navigation, not local state), and a main/rail grid. */
 export function VehicleDetailFrame({ tab, title, description, primaryAction, children, rail }) {
-  const { vehicleId } = useParams();
   const navigate = useNavigate();
-  const trucks = useCollection('trucks') || [];
-  const truck = findTruckBySlug(trucks, vehicleId);
+  const { truck, error, isLoading } = useFleetVehicle();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [toast, showToast] = useToast();
+  const unavailableAction = () => { setMoreOpen(false); showToast('This fleet action is currently unavailable from the API.'); };
 
+  if (isLoading) return <SkeletonRow columns={4} />;
   if (!truck) {
     return (
       <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
         <PageHeader title="Vehicle not found" />
+        {error && <EmptyState icon="truck" title={getApiErrorMessage(error)} />}
         <Button variant="outline" onClick={() => navigate('/fleet')}>Back to Fleet</Button>
       </div>
     );
   }
 
   const activeTab = TABS.find((t) => t.value === tab);
-  const base = `/fleet/${vehicleId}`;
+  const base = fleetDetailHref(truck.id);
   const isOverview = tab === 'overview';
 
   return (
@@ -60,12 +64,12 @@ export function VehicleDetailFrame({ tab, title, description, primaryAction, chi
               {moreOpen && (
                 <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30 }}>
                   <DropdownMenu width={220} items={[
-                    { label: 'Edit Truck', icon: 'pencil', onClick: () => setMoreOpen(false) },
-                    { label: 'Export Data', icon: 'download', onClick: () => setMoreOpen(false) },
+                    { label: 'Edit Truck', icon: 'pencil', onClick: unavailableAction },
+                    { label: 'Export Data', icon: 'download', onClick: unavailableAction },
                     { divider: true },
                     {
                       label: truck.status === 'Inactive' ? 'Reactivate Truck' : 'Deactivate Truck', icon: 'power', tone: 'danger',
-                      onClick: () => { setMoreOpen(false); setTruckStatus(truck.plate, truck.status === 'Inactive' ? 'Active' : 'Inactive'); },
+                      onClick: unavailableAction,
                     },
                   ]} />
                 </div>
@@ -103,7 +107,7 @@ export function VehicleDetailFrame({ tab, title, description, primaryAction, chi
           <div style={{ padding: '4px 16px 0' }}>
             <Tabs value={tab} onChange={(value) => {
               const target = TABS.find((t) => t.value === value);
-              navigate(base + target.href);
+              navigate(fleetDetailHref(truck.id, target.value));
             }} items={TABS} />
           </div>
           <div style={{ padding: 16 }}>{children}</div>
@@ -120,6 +124,7 @@ export function VehicleDetailFrame({ tab, title, description, primaryAction, chi
           </Card>
         </div>
       </div>
+      <Toast message={toast} />
     </div>
   );
 }

@@ -10,7 +10,7 @@ import { CodeInput } from '../../components/SecurityInputs.jsx';
 import styles from './Settings.module.css';
 
 /** Create a PIN, change it with the current PIN, or reset it with an SMS code. */
-export function PinForm({ mode, phone, onDone, savePin, sendResetCode, disabled = false }) {
+export function PinForm({ mode, phone, onDone, savePin, sendResetCode, disabled = false, loadError = '' }) {
   const [current, setCurrent] = useState('');
   const [otp, setOtp] = useState('');
   const demoCode = '';
@@ -80,7 +80,7 @@ export function PinForm({ mode, phone, onDone, savePin, sendResetCode, disabled 
           <CodeInput masked label="New PIN" length={PIN_LENGTH} value={pin} onChange={setPin} disabled={busy || disabled} />
           <CodeInput masked label="Confirm New PIN" length={PIN_LENGTH} value={confirm} onChange={setConfirm} disabled={busy || disabled} />
           <p className={styles.hint}>Use 4 digits. Avoid birthdays, repeated digits (1111) or sequences (1234).</p>
-          {error && <p className={styles.error}>{error}</p>}
+          {(error || loadError) && <p className={styles.error}>{error || loadError}</p>}
           <Button type="submit" icon="lock" disabled={disabled || busy || !!pinProblem(pin) || pin !== confirm || (mode === 'change' && current.length !== PIN_LENGTH) || (mode === 'reset' && otp.length !== 6)}>{busy ? 'Saving…' : mode === 'create' ? 'Create PIN' : 'Save New PIN'}</Button>
         </>
       )}

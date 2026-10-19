@@ -4,25 +4,32 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from '../router.js';
 import {
   Avatar, Badge, Button, Card, DataTable, EmptyState, Icon, Modal, PageHeader,
-  SearchField, StatCard, TextField,
+  SearchField, SkeletonRow, StatCard, TextField,
 } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
+import { useAddCompanyDriverMutation, useGetCompanyDriversQuery } from '../store/features/drivers/driversApi.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { driverDetailHref } from '../domain/driverLinks.js';
 import { syncTopBarSearch } from '../pageSearch.js';
-import { addDriver } from '../mock/api.js';
 
 const STATUS_TONE = { Available: 'success', 'On Trip': 'info', 'Off Duty': 'neutral' };
 
 function AddDriverModal({ open, onClose }) {
   const [draft, setDraft] = useState({ name: '', phone: '', email: '', licenseNumber: '' });
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [addDriver] = useAddCompanyDriverMutation();
+  useEffect(() => { if (open) setError(''); }, [open]);
   async function submit(event) {
     event.preventDefault();
     if (!draft.name.trim()) return;
     setBusy(true);
-    await addDriver({ id: `DRV-${Date.now().toString().slice(-6)}`, ...draft });
-    setBusy(false);
-    setDraft({ name: '', phone: '', email: '', licenseNumber: '' });
-    onClose();
+    setError('');
+    try {
+      await addDriver(draft).unwrap();
+      setDraft({ name: '', phone: '', email: '', licenseNumber: '' });
+      onClose();
+    } catch (err) { setError(getApiErrorMessage(err)); }
+    finally { setBusy(false); }
   }
   return (
     <Modal open={open} onClose={onClose} title="Add Driver" width={460}
@@ -32,6 +39,7 @@ function AddDriverModal({ open, onClose }) {
         <TextField label="Phone" required value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} placeholder="+234 800 000 0000" />
         <TextField label="Email" type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
         <TextField label="License Number" value={draft.licenseNumber} onChange={(e) => setDraft({ ...draft, licenseNumber: e.target.value })} />
+        {error && <span style={{ color: 'var(--tk-danger)', font: '500 13px/18px var(--tk-font-sans)' }}>{error}</span>}
       </form>
     </Modal>
   );
@@ -39,7 +47,8 @@ function AddDriverModal({ open, onClose }) {
 
 export function Drivers() {
   const navigate = useNavigate();
-  const drivers = useCollection('drivers') || [];
+  const { currentData: collection, error, isLoading } = useGetCompanyDriversQuery(undefined, { refetchOnMountOrArgChange: true });
+  const drivers = collection ?? [];
   const [query, setQuery] = useState('');
   const [addOpen, setAddOpen] = useState(false);
 
@@ -56,24 +65,24 @@ export function Drivers() {
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
       <PageHeader title="Drivers" description="Manage your drivers, licenses, and assignments." actions={<Button icon="plus" onClick={() => setAddOpen(true)}>Add Driver</Button>} />
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 16 }}>
-        <StatCard icon="users-round" label="Total Drivers" value={drivers.length} />
-        <StatCard icon="circle-check" tint="green" label="Available" value={drivers.filter((d) => d.status === 'Available').length} />
-        <StatCard icon="route" tint="blue" label="On Trip" value={drivers.filter((d) => d.status === 'On Trip').length} />
-        <StatCard icon="moon" tint="purple" label="Off Duty" value={drivers.filter((d) => d.status === 'Off Duty').length} />
+        <StatCard icon="users-round" label="Total Drivers" value={!error && collection ? drivers.length : '—'} />
+        <StatCard icon="circle-check" tint="green" label="Available" value="—" />
+        <StatCard icon="route" tint="blue" label="On Trip" value="—" />
+        <StatCard icon="moon" tint="purple" label="Off Duty" value="—" />
       </section>
       <Card pad="none">
         <div style={{ padding: 14, borderBottom: '1px solid var(--tk-line)' }}>
           <SearchField placeholder="Search drivers by name, license, phone..." value={query} onChange={(e) => { setQuery(e.target.value); syncTopBarSearch(e.target.value); }} />
         </div>
-        {filtered.length === 0 ? (
+        {isLoading ? <SkeletonRow columns={6} /> : error ? <EmptyState icon="user" title={getApiErrorMessage(error)} /> : filtered.length === 0 ? (
           <EmptyState icon="user" title="No drivers found" />
         ) : (
           <DataTable
             rows={filtered}
             rowKey={(d) => d.id}
-            onRowClick={(d) => navigate(`/drivers/${d.id}`)}
+            onRowClick={(d) => navigate(driverDetailHref(d.id))}
             columns={[
-              { key: 'name', header: 'Driver', render: (d) => <Link to={`/drivers/${d.id}`} onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Avatar name={d.name} size={30} /><span><strong style={{ display: 'block', color: 'var(--tk-ink-900)' }}>{d.name}</strong><span className="tk-meta">{d.phone}</span></span></Link> },
+              { key: 'name', header: 'Driver', render: (d) => <Link to={driverDetailHref(d.id)} onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Avatar name={d.name} size={30} /><span><strong style={{ display: 'block', color: 'var(--tk-ink-900)' }}>{d.name}</strong><span className="tk-meta">{d.phone}</span></span></Link> },
               { key: 'license', header: 'License', render: (d) => <span><span style={{ display: 'block' }}>{d.licenseNumber}</span><span className="tk-meta">{d.licenseClass}</span></span> },
               { key: 'truck', header: 'Assigned Truck', render: (d) => d.truckPlate || '—' },
               { key: 'status', header: 'Status', render: (d) => <Badge tone={STATUS_TONE[d.status]} dot>{d.status}</Badge> },

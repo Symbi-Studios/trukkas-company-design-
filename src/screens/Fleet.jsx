@@ -4,24 +4,36 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from '../router.js';
 import {
   ActivityFeed, Badge, Button, Card, DataTable, DonutChart, DropdownMenu, EmptyState, Icon, LegendList,
-  PageHeader, SearchField, StatCard,
+  PageHeader, SearchField, SkeletonRow, StatCard,
 } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
+import { useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
+import { EMPTY_DASHBOARD, useGetCompanyDashboardQuery } from '../store/features/dashboard/dashboardApi.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { fleetDetailHref } from '../domain/fleetLinks.js';
+import { Toast, useToast } from '../components/Toast.jsx';
 import { syncTopBarSearch } from '../pageSearch.js';
-import { setTruckStatus } from '../mock/api.js';
-import { plateSlug, VEHICLE_CLASSES, vehicleStatusTone } from '../domain/vehicles.js';
+import { VEHICLE_CLASSES, vehicleStatusTone } from '../domain/vehicles.js';
 
 const VEHICLE_TABS = ['All Vehicles', 'Trucks', 'Trailers', 'Others'];
 
 function typeGroup(vehicleClass) {
   if (vehicleClass === 'Trailer') return 'Trailers';
   if (vehicleClass === 'Head') return 'Trucks';
-  return 'Others';
+  return vehicleClass === '—' ? null : 'Others';
 }
 
 export function Fleet() {
   const navigate = useNavigate();
-  const trucks = useCollection('trucks') || [];
+  const { data: fleet, error, isLoading } = useGetFleetQuery(undefined, { refetchOnMountOrArgChange: true });
+  const trucks = fleet ?? [];
+  const { data: dashboard = EMPTY_DASHBOARD } = useGetCompanyDashboardQuery(undefined, { refetchOnMountOrArgChange: true });
+  const [toast, showToast] = useToast();
+  const statusCount = (statuses) => {
+    const values = statuses.map((status) => dashboard.fleetStatus.find((item) => item.label === status)?.value);
+    return values.some((value) => typeof value !== 'number') ? null : values.reduce((sum, value) => sum + value, 0);
+  };
+  const typeCount = (group) => !fleet || trucks.some((truck) => !typeGroup(truck.vehicleClass)) ? '—' : trucks.filter((truck) => typeGroup(truck.vehicleClass) === group).length;
+  const unavailableAction = () => showToast('This fleet action is currently unavailable from the API.');
   const [tab, setTab] = useState('All Vehicles');
   const [query, setQuery] = useState('');
   const [rowMenu, setRowMenu] = useState(null);
@@ -37,12 +49,7 @@ export function Fleet() {
     .filter((t) => !query || [t.plate, t.makeModel, t.driver].some((v) => String(v || '').toLowerCase().includes(query.toLowerCase()))),
   [trucks, tab, query]);
 
-  const statusBreakdown = [
-    { label: 'Active', value: trucks.filter((t) => t.status === 'Active').length, color: 'var(--tk-success)' },
-    { label: 'On Trip', value: trucks.filter((t) => t.status === 'On Trip').length, color: 'var(--tk-blue)' },
-    { label: 'In Maintenance', value: trucks.filter((t) => t.status === 'In Maintenance').length, color: 'var(--tk-warning)' },
-    { label: 'Inactive', value: trucks.filter((t) => t.status === 'Inactive').length, color: 'var(--tk-danger)' },
-  ];
+  const statusBreakdown = dashboard.fleetStatus;
   const recentActivity = useMemo(() => trucks
     .flatMap((t) => (t.activityLog || []).map((a) => ({ ...a, plate: t.plate })))
     .slice(0, 5)
@@ -57,37 +64,40 @@ export function Fleet() {
         actions={<Button icon="plus" onClick={() => navigate('/fleet/new')}>Add Vehicle</Button>}
       />
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 16 }}>
-        <StatCard icon="truck" label="Total Vehicles" value={trucks.length} />
-        <StatCard icon="circle-check" tint="green" label="Active" value={trucks.filter((t) => ['Active', 'On Trip'].includes(t.status)).length} />
-        <StatCard icon="wrench" tint="amber" label="In Maintenance" value={trucks.filter((t) => t.status === 'In Maintenance').length} />
-        <StatCard icon="circle-off" tint="red" label="Inactive" value={trucks.filter((t) => t.status === 'Inactive').length} />
+        <StatCard icon="truck" label="Total Vehicles" value={dashboard.totalTrucks ?? (fleet ? trucks.length : '—')} />
+        <StatCard icon="circle-check" tint="green" label="Active" value={statusCount(['Active', 'On Trip']) ?? '—'} />
+        <StatCard icon="wrench" tint="amber" label="In Maintenance" value={statusCount(['In Maintenance']) ?? '—'} />
+        <StatCard icon="circle-off" tint="red" label="Inactive" value={statusCount(['Inactive']) ?? '—'} />
       </section>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 'var(--tk-grid-gap)', alignItems: 'start' }}>
         <Card pad="none">
           <div style={{ display: 'flex', gap: 24, padding: '0 16px', borderBottom: '1px solid var(--tk-line)', overflowX: 'auto' }}>
             {VEHICLE_TABS.map((t) => (
-              <button key={t} type="button" onClick={() => setTab(t)} style={{
+              <button key={t} type="button" onClick={() => {
+                if (t !== 'All Vehicles' && (!fleet || trucks.some((truck) => truck.vehicleClass === '—'))) { showToast('Vehicle class filtering is currently unavailable from the API.'); return; }
+                setTab(t);
+              }} style={{
                 height: 46, border: 0, borderBottom: '2px solid ' + (tab === t ? 'var(--tk-blue)' : 'transparent'),
                 background: 'transparent', color: tab === t ? 'var(--tk-blue)' : 'var(--tk-ink-400)',
                 font: (tab === t ? 600 : 500) + ' 14px/1 var(--tk-font-sans)', cursor: 'pointer', whiteSpace: 'nowrap',
-              }}>{t} ({t === 'All Vehicles' ? trucks.length : trucks.filter((v) => typeGroup(v.vehicleClass) === t).length})</button>
+              }}>{t} ({t === 'All Vehicles' ? fleet ? trucks.length : '—' : typeCount(t)})</button>
             ))}
           </div>
           <div style={{ padding: 14, borderBottom: '1px solid var(--tk-line)' }}>
             <SearchField placeholder="Search vehicles..." value={query} onChange={(e) => { setQuery(e.target.value); syncTopBarSearch(e.target.value); }} />
           </div>
-          {filtered.length === 0 ? (
+          {isLoading ? <SkeletonRow columns={6} /> : error ? <EmptyState icon="truck" title={getApiErrorMessage(error)} /> : filtered.length === 0 ? (
             <EmptyState icon="truck" title="No vehicles found" description="Try a different tab or search term." />
           ) : (
             <DataTable
               rows={filtered}
-              rowKey={(t) => t.plate}
-              onRowClick={(t) => navigate(`/fleet/${plateSlug(t.plate)}`)}
+              rowKey={(t) => t.id}
+              onRowClick={(t) => navigate(fleetDetailHref(t.id))}
               columns={[
                 {
                   key: 'vehicle', header: 'Vehicle', render: (t) => (
-                    <Link to={`/fleet/${plateSlug(t.plate)}`} onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <Link to={fleetDetailHref(t.id)} onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ width: 40, height: 40, borderRadius: 'var(--tk-r-sm)', background: 'var(--tk-surface-sunk)', color: 'var(--tk-ink-400)', display: 'grid', placeItems: 'center', flex: '0 0 auto' }}>
                         <Icon name={VEHICLE_CLASSES.find((c) => c.value === t.vehicleClass)?.icon || 'truck'} size={18} />
                       </span>
@@ -106,15 +116,15 @@ export function Fleet() {
                 {
                   key: 'actions', header: 'Actions', width: 56, render: (t) => (
                     <span style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
-                      <Button size="sm" variant="outline" icon="ellipsis" onClick={() => setRowMenu(rowMenu === t.plate ? null : t.plate)} />
-                      {rowMenu === t.plate && (
+                      <Button size="sm" variant="outline" icon="ellipsis" onClick={() => setRowMenu(rowMenu === t.id ? null : t.id)} />
+                      {rowMenu === t.id && (
                         <span style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20 }}>
                           <DropdownMenu width={200} items={[
-                            { label: 'View Details', icon: 'eye', onClick: () => { setRowMenu(null); navigate(`/fleet/${plateSlug(t.plate)}`); } },
-                            { label: 'View Documents', icon: 'file-text', onClick: () => { setRowMenu(null); navigate(`/fleet/${plateSlug(t.plate)}/documents`); } },
-                            { label: 'Mark for Maintenance', icon: 'wrench', onClick: () => { setRowMenu(null); setTruckStatus(t.plate, 'In Maintenance'); } },
+                            { label: 'View Details', icon: 'eye', onClick: () => { setRowMenu(null); navigate(fleetDetailHref(t.id)); } },
+                            { label: 'View Documents', icon: 'file-text', onClick: () => { setRowMenu(null); navigate(fleetDetailHref(t.id, 'documents')); } },
+                            { label: 'Mark for Maintenance', icon: 'wrench', onClick: () => { setRowMenu(null); unavailableAction(); } },
                             { divider: true },
-                            { label: t.status === 'Inactive' ? 'Activate Truck' : 'Deactivate Truck', icon: 'power', tone: 'danger', onClick: () => { setRowMenu(null); setTruckStatus(t.plate, t.status === 'Inactive' ? 'Active' : 'Inactive'); } },
+                            { label: t.status === 'Inactive' ? 'Activate Truck' : 'Deactivate Truck', icon: 'power', tone: 'danger', onClick: () => { setRowMenu(null); unavailableAction(); } },
                           ]} />
                         </span>
                       )}
@@ -130,14 +140,14 @@ export function Fleet() {
           <Card style={{ display: 'grid', gap: 12 }}>
             <h3 className="tk-title" style={{ margin: 0 }}>Fleet Overview</h3>
             <div style={{ display: 'grid', justifyItems: 'center', gap: 12 }}>
-              <DonutChart size={150} thickness={20} data={statusBreakdown} centerValue={trucks.length} centerLabel="Vehicles" />
+              <DonutChart size={150} thickness={20} data={dashboard.fleetChartData} centerValue={dashboard.totalTrucks ?? (fleet ? trucks.length : '—')} centerLabel="Vehicles" />
               <LegendList style={{ width: '100%' }} items={statusBreakdown} />
             </div>
           </Card>
           <Card style={{ display: 'grid', gap: 10 }}>
             <h3 className="tk-title" style={{ margin: 0 }}>Vehicle Types</h3>
             {VEHICLE_CLASSES.map((c) => {
-              const count = trucks.filter((t) => t.vehicleClass === c.value).length;
+              const count = !fleet || trucks.some((t) => t.vehicleClass === '—') ? '—' : trucks.filter((t) => t.vehicleClass === c.value).length;
               return (
                 <div key={c.value} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Icon name={c.icon} size={15} color="var(--tk-blue)" />
@@ -151,7 +161,7 @@ export function Fleet() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 className="tk-title" style={{ margin: 0 }}>Recent Activity</h3>
             </div>
-            {recentActivity.length ? <ActivityFeed items={recentActivity} /> : <span className="tk-meta">No recent activity.</span>}
+            {recentActivity.length ? <ActivityFeed items={recentActivity} /> : <span className="tk-meta">—</span>}
           </Card>
           <Card style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <Icon name="headphones" size={18} color="var(--tk-blue)" />
@@ -163,6 +173,7 @@ export function Fleet() {
           </Card>
         </div>
       </div>
+      <Toast message={toast} />
     </div>
   );
 }

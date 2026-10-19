@@ -22,5 +22,7 @@ export function vehicleStatusTone(status) {
   if (status === 'Active') return 'success';
   if (status === 'On Trip') return 'info';
   if (status === 'In Maintenance') return 'warning';
-  return 'danger';
+  if (status === 'Inactive' || status === 'Rejected') return 'danger';
+  if (status === 'Pending Review') return 'warning';
+  return 'neutral';
 }

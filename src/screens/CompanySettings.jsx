@@ -81,7 +81,7 @@ function NotificationsSection({ onToast, canEdit }) {
   const [draft, setDraft] = useState(null);
   const prefs = { ...data, ...draft };
   async function save() {
-    if (!draft || saving) return;
+    if (!draft || saving || !canEdit) return;
     try { await update(draft).unwrap(); setDraft(null); onToast('Notification preferences saved.'); }
     catch (requestError) { onToast(getApiErrorMessage(requestError)); }
   }
@@ -91,9 +91,9 @@ function NotificationsSection({ onToast, canEdit }) {
       {error && <p className={styles.error}>{getApiErrorMessage(error)}</p>}
       <div style={{ display: 'grid', gap: 16 }}>
         {NOTIFICATION_PREFS.map((p) => (
-          <Switch key={p.key} label={p.label} hint={p.hint} checked={prefs[p.key] ?? null} disabled onChange={(v) => setDraft({ ...draft, [p.key]: v })} />
+          <Switch key={p.key} label={p.label} hint={p.hint} checked={prefs[p.key] ?? null} disabled={p.locked || !canEdit || saving || isLoading || typeof data?.[p.key] !== 'boolean'} onChange={(v) => setDraft({ ...draft, [p.key]: v })} />
         ))}
-        <Button style={{ justifySelf: 'start' }} disabled onClick={save}>Save Preferences</Button>
+        <Button style={{ justifySelf: 'start' }} disabled={!draft || saving || !canEdit || isLoading || !!error} onClick={save}>Save Preferences</Button>
       </div>
     </SectionCard>
   );

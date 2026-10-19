@@ -89,21 +89,25 @@ export function PasswordStrength({ password }) {
  * `onConfirm(pin)`. Errors thrown by `onConfirm` (wrong PIN, lockout) are shown
  * in place. If no PIN exists yet, the user creates one first.
  */
-export function PinPrompt({ open, onClose, title = 'Enter Transaction PIN', description, confirmLabel = 'Confirm', onConfirm }) {
+export function PinPrompt({ open, onClose, title = 'Enter Transaction PIN', description, confirmLabel = 'Confirm', onConfirm, securityState, createPin }) {
   const security = useCollection('security') || [];
   const account = security[0];
-  const pinSet = !!account?.pin?.set;
+  const live = securityState !== undefined;
+  const pinSet = live ? securityState?.pin?.set : !!account?.pin?.set;
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [stage, setStage] = useState('enter');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const running = useRef(false);
 
   useEffect(() => {
     if (open) { setPin(''); setConfirmPin(''); setError(''); setStage(pinSet ? 'enter' : 'create'); }
   }, [open, pinSet]);
 
   async function run(value) {
+    if (running.current || (live && typeof pinSet !== 'boolean')) return;
+    running.current = true;
     setBusy(true);
     setError('');
     try {
@@ -112,22 +116,30 @@ export function PinPrompt({ open, onClose, title = 'Enter Transaction PIN', desc
       setError(err.message);
       setPin('');
     } finally {
+      running.current = false;
       setBusy(false);
     }
   }
 
   async function createThenRun() {
+    if (running.current || (live && pinSet !== false)) return;
     const problem = pinProblem(pin);
     if (problem) { setError(problem); return; }
     if (pin !== confirmPin) { setError('The PINs don’t match.'); setConfirmPin(''); return; }
+    running.current = true;
     setBusy(true);
     try {
-      await setTransactionPin({ newPin: pin });
+      if (live) {
+        if (!createPin) throw new Error('PIN creation is unavailable here.');
+        await createPin({ newPin: pin, confirmPin });
+      } else await setTransactionPin({ newPin: pin });
     } catch (err) {
       setError(err.message);
+      running.current = false;
       setBusy(false);
       return;
     }
+    running.current = false;
     setBusy(false);
     await run(pin);
   }
@@ -135,12 +147,12 @@ export function PinPrompt({ open, onClose, title = 'Enter Transaction PIN', desc
   const creating = stage === 'create';
   return (
     <Modal
-      open={open} onClose={onClose} width={440}
+      open={open} onClose={() => { if (!running.current) onClose(); }} width={440}
       title={creating ? 'Create your Transaction PIN' : title}
       description={creating ? 'You need a 4-digit PIN to approve payouts, withdrawals and bank changes. Don’t share it with anyone.' : description}
       footer={
         <>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>
           {creating
             ? <Button icon="lock" disabled={busy || pin.length < PIN_LENGTH || confirmPin.length < PIN_LENGTH} onClick={createThenRun}>{busy ? 'Saving…' : 'Save PIN & Continue'}</Button>
             : <Button icon="shield-check" disabled={busy || pin.length < PIN_LENGTH} onClick={() => run(pin)}>{busy ? 'Verifying…' : confirmLabel}</Button>}
@@ -151,8 +163,8 @@ export function PinPrompt({ open, onClose, title = 'Enter Transaction PIN', desc
         <span className={styles.pinIcon}><Icon name="lock-keyhole" size={22} /></span>
         {creating ? (
           <>
-            <CodeInput masked autoFocus label="New PIN" length={PIN_LENGTH} value={pin} onChange={setPin} />
-            <CodeInput masked label="Confirm PIN" length={PIN_LENGTH} value={confirmPin} onChange={setConfirmPin} />
+            <CodeInput masked autoFocus label="New PIN" length={PIN_LENGTH} value={pin} onChange={setPin} disabled={busy} />
+            <CodeInput masked label="Confirm PIN" length={PIN_LENGTH} value={confirmPin} onChange={setConfirmPin} disabled={busy} />
           </>
         ) : (
           <CodeInput masked autoFocus length={PIN_LENGTH} value={pin} onChange={setPin} onComplete={(v) => !busy && run(v)} disabled={busy} />

@@ -1,13 +1,14 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from '../router.js';
 import {
   Badge, Banner, Button, Card, ChoiceCard, Icon, LabelValue, PageHeader, SearchField, Select, SectionCard, Tag, Textarea, TextField,
 } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
-import { addTruck } from '../mock/api.js';
-import { VEHICLE_CLASSES, plateSlug } from '../domain/vehicles.js';
+import { useAddFleetVehicleMutation, useGetFleetDriversQuery, useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
+import { useGetCompanyTripsQuery } from '../store/features/trips/tripsApi.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { VEHICLE_CLASSES } from '../domain/vehicles.js';
 import { VEHICLE_PHOTO_SLOTS, VEHICLE_REQUIREMENTS, formatDisplayDate } from '../domain/documents.js';
 import { FileDrop } from '../components/FileDrop.jsx';
 import { PickList, driverOptions } from '../components/AssignModals.jsx';
@@ -26,7 +27,6 @@ const MAKES = ['Mercedes-Benz', 'Volvo', 'MAN', 'DAF', 'Scania', 'Iveco', 'Sinot
 const YEARS = Array.from({ length: 32 }, (_, i) => String(new Date().getFullYear() - i));
 const COLORS = ['White', 'Blue', 'Red', 'Silver', 'Black', 'Yellow', 'Green', 'Orange', 'Other'];
 const CLASS_LABEL = { Head: 'Truck (Head)', Trailer: 'Trailer', Tanker: 'Tanker', Specialized: 'Specialized', Other: 'Other' };
-const TYPE_BY_CLASS = { Head: 'Truck (Head)', Trailer: 'Trailer', Tanker: 'Truck (Head)', Specialized: 'Truck (Head)', Other: 'Other' };
 
 const EMPTY = {
   vehicleClass: 'Head', plate: '', make: '', model: '', year: '', color: '', vin: '', engineNumber: '',
@@ -46,9 +46,13 @@ function Field({ children, span }) {
 
 export function AddVehicle() {
   const navigate = useNavigate();
-  const trucks = useCollection('trucks') || [];
-  const drivers = useCollection('drivers') || [];
-  const trips = useCollection('trips') || [];
+  const { data: trucks = [] } = useGetFleetQuery();
+  const { data: companyDrivers = [] } = useGetFleetDriversQuery();
+  const drivers = useMemo(() => companyDrivers.filter((driver) => driver.active), [companyDrivers]);
+  const { data: companyTrips = [] } = useGetCompanyTripsQuery();
+  const trips = useMemo(() => companyTrips.map((trip) => ({ ...trip, driverId: drivers.find((driver) => driver.truckPlate === trip.truckPlate)?.id })), [companyTrips, drivers]);
+  const [addVehicle] = useAddFleetVehicleMutation();
+  const submitting = useRef(false);
   const [step, setStep] = useState(0);
   const [visited, setVisited] = useState(0);
   const [draft, setDraft] = useState(EMPTY);
@@ -99,36 +103,16 @@ export function AddVehicle() {
   }
 
   async function submit() {
+    if (submitting.current) return;
     if (!validate('details')) { setStep(0); return; }
-    setBusy(true);
+    submitting.current = true; setBusy(true);
     setSubmitError('');
-    const plate = draft.plate.trim().toUpperCase().replace(/\s+/g, ' ');
-    const expiryOf = (type) => (draft.docs[type].expiry ? formatDisplayDate(draft.docs[type].expiry) : '—');
     try {
-      await addTruck({
-        plate, vehicleClass: draft.vehicleClass, type: TYPE_BY_CLASS[draft.vehicleClass],
-        make: draft.make.trim(), model: draft.model.trim(), year: Number(draft.year), color: draft.color || '—',
-        makeModel: `${draft.make.trim()} ${draft.model.trim()} ${draft.year}`,
-        vin: draft.vin.trim().toUpperCase(), engineNumber: draft.engineNumber.trim() || '—',
-        purchaseDate: draft.purchaseDate ? formatDisplayDate(draft.purchaseDate) : '—', ownership: draft.ownership,
-        location: draft.location.trim() || '—', odometer: Number(draft.odometer) || 0,
-        insuranceExpiry: expiryOf('Insurance'), roadWorthinessExpiry: expiryOf('Road Worthiness'),
-        specs: { ...draft.specs, axles: Number(draft.specs.axles) || draft.specs.axles },
-        notes: draft.notes.trim(),
-      }, {
-        documents: VEHICLE_REQUIREMENTS.filter((r) => draft.docs[r.type].files.length).map((r) => ({
-          type: r.type, name: draft.docs[r.type].files[0].name, fileSize: draft.docs[r.type].files[0].size,
-          url: draft.docs[r.type].files[0].url, expiryDate: draft.docs[r.type].expiry || null,
-        })),
-        photos: VEHICLE_PHOTO_SLOTS.filter((s) => draft.photos[s].length).map((s) => ({
-          label: s, name: draft.photos[s][0].name, fileSize: draft.photos[s][0].size, url: draft.photos[s][0].url,
-        })),
-        driverId: isTrailer ? null : draft.driverId,
-      });
-      navigate(`/fleet/${plateSlug(plate)}`);
+      await addVehicle(draft).unwrap();
     } catch (err) {
-      setSubmitError(err.message);
-      setBusy(false);
+      setSubmitError(getApiErrorMessage(err));
+    } finally {
+      submitting.current = false; setBusy(false);
     }
   }
 

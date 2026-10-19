@@ -23,7 +23,7 @@ export const TRIP_SECTIONS = [
 
 export const TRIP_ISSUE_TYPES = ['Delay', 'Breakdown', 'Accident', 'Cargo Damage', 'Checkpoint / Security', 'Documentation', 'Other'];
 
-export const TRIP_COST_CATEGORIES = ['Fuel', 'Tolls & Levies', 'Driver Allowance', 'Port Charges', 'Repairs', 'Other'];
+export const TRIP_COST_CATEGORIES = ['Fuel', 'Tolls & Levies', 'Driver Allowance', 'Port Charges', 'Repairs', 'Parking', 'Other'];
 
 /** Tab bucket: Upcoming (labelled "Assigned": not picked up yet), Active (on the road), Completed, Cancelled. */
 export function tripPhase(trip) {

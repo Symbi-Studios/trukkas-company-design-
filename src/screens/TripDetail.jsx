@@ -7,13 +7,17 @@ import {
   Avatar, Badge, Button, Card, DataTable, DropdownMenu, EmptyState, Icon, IconButton, LabelValue, MessageBubble,
   PageHeader, SectionCard, Select, SkeletonRow, SplitButton, StatCard, Tabs, Textarea, TextField,
 } from '../ds.js';
-import { useGetCompanyTripQuery, useUpdateCompanyTripStatusMutation, useContactCompanyTripSupportMutation } from '../store/features/trips/tripsApi.js';
+import {
+  useGetCompanyTripQuery, useGetCompanyTripMessagesQuery, useUpdateCompanyTripStatusMutation,
+  useContactCompanyTripSupportMutation, useAddCompanyTripNoteMutation, useAddCompanyTripCostMutation,
+  useUploadCompanyTripDocumentMutation, useRequestCompanyTripCancellationMutation, useSendCompanyTripMessageMutation,
+} from '../store/features/trips/tripsApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { jobTitle } from '../domain/jobs.js';
 import { tripDetailHref } from '../domain/tripLinks.js';
 import { jobDetailHref } from '../domain/jobLinks.js';
 import {
-  TRIP_COST_CATEGORIES, TRIP_SECTIONS, TRIP_STAGES, isOpenTrip, nextTripStage, tripCostTotal, tripHealth, tripHealthTone, tripPhase,
+  TRIP_COST_CATEGORIES, TRIP_SECTIONS, TRIP_STAGES, isOpenTrip, nextTripStage, tripHealth, tripHealthTone, tripPhase,
 } from '../domain/trips.js';
 import { vehicleStatusTone } from '../domain/vehicles.js';
 import { formatNaira } from '../mock/format.js';
@@ -105,17 +109,25 @@ function QuickActions({ actions }) {
 
 function NotesCard({ trip, compact, onToast }) {
   const [note, setNote] = useState('');
+  const [addNote, { isLoading: saving }] = useAddCompanyTripNoteMutation();
+  const submitting = useRef(false);
   async function submit(event) {
     event.preventDefault();
-    if (!note.trim()) return;
-    onToast('Adding trip notes is currently unavailable.');
+    if (submitting.current || !note.trim()) return;
+    submitting.current = true;
+    try {
+      await addNote({ tripId: trip.id, body: note.trim() }).unwrap();
+      setNote('');
+      onToast('Trip note added.');
+    } catch (err) { onToast(getApiErrorMessage(err)); }
+    finally { submitting.current = false; }
   }
   const notes = trip.notes?.slice().reverse() ?? null;
   return (
     <SectionCard title="Notes" count={compact ? undefined : trip.notes?.length ?? '—'}>
       <form onSubmit={submit} className={styles.noteForm}>
-        <TextField placeholder="Add a note about this trip..." value={note} onChange={(e) => setNote(e.target.value)} style={{ flex: 1 }} />
-        <Button type="submit" disabled={!note.trim()}>Add Note</Button>
+        <TextField maxLength={2000} placeholder="Add a note about this trip..." value={note} onChange={(e) => setNote(e.target.value)} style={{ flex: 1 }} />
+        <Button type="submit" disabled={saving || !note.trim()}>{saving ? 'Adding…' : 'Add Note'}</Button>
       </form>
       {notes === null ? <p className="tk-meta" style={{ marginTop: 12 }}>—</p> : notes.length === 0 ? <p className="tk-meta" style={{ marginTop: 12 }}>No notes yet.</p> : (compact ? notes.slice(0, 2) : notes).map((n, i) => (
         <div key={i} className={styles.noteRow}>
@@ -160,23 +172,42 @@ function TimelineCard({ trip, onViewMap }) {
 }
 
 function DocumentsSection({ trip, job, onToast }) {
-  const busy = null;
-  async function upload(name) {
-    onToast('Uploading trip documents is currently unavailable.');
+  const fileInput = useRef(null);
+  const pendingName = useRef(null);
+  const [uploadingName, setUploadingName] = useState(null);
+  const [uploadDocument] = useUploadCompanyTripDocumentMutation();
+  function upload(name = null) {
+    if (uploadingName) return;
+    pendingName.current = name;
+    fileInput.current?.click();
+  }
+  async function handleFileChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const displayName = pendingName.current;
+    pendingName.current = null;
+    setUploadingName(displayName || 'document');
+    try {
+      await uploadDocument({ tripId: trip.id, file, name: displayName }).unwrap();
+      onToast('Trip document uploaded.');
+    } catch (err) { onToast(getApiErrorMessage(err)); }
+    finally { setUploadingName(null); }
   }
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
-      <SectionCard title="Trip Documents" count={trip.documents?.length ?? '—'} action={<Button size="sm" icon="upload" onClick={() => upload('Proof of Delivery')}>Upload Document</Button>}>
+      <input ref={fileInput} hidden type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={handleFileChange} />
+      <SectionCard title="Trip Documents" count={trip.documents?.length ?? '—'} action={<Button size="sm" icon="upload" disabled={!!uploadingName} onClick={() => upload()}>{uploadingName ? 'Uploading…' : 'Upload Document'}</Button>}>
         {trip.documents === null ? <span className="tk-meta">—</span> : trip.documents.length === 0 ? <EmptyState icon="file-text" title="No documents yet" description="Upload waybills, delivery notes and receipts for this trip." /> : (
           <div className={styles.docRows}>
-            {trip.documents.map((doc) => (
-              <div key={doc.name}>
+            {trip.documents.map((doc, index) => (
+              <div key={doc.id ?? `${doc.name}-${index}`}>
                 <span className={styles.docIcon} data-kind={doc.status === 'Uploaded' ? doc.kind : 'pending'}><Icon name="file-text" size={18} /></span>
                 <span className={styles.docMain}><strong>{doc.name}</strong><small>{doc.uploadedOn !== '—' ? `Uploaded • ${doc.uploadedOn}${doc.size ? ` · ${doc.size}` : ''}` : '—'}</small></span>
                 <Badge tone={doc.status === 'Uploaded' ? 'success' : doc.status === '—' ? 'neutral' : 'warning'}>{doc.status}</Badge>
-                {doc.url || doc.status === 'Uploaded'
-                  ? <IconButton icon="download" tone="outline" size={32} label={`Download ${doc.name}`} onClick={() => downloadDocument(doc, onToast)} />
-                  : <Button size="sm" variant="secondary" icon="upload" disabled={busy === doc.name} onClick={() => upload(doc.name)}>{busy === doc.name ? 'Uploading…' : 'Upload'}</Button>}
+                {doc.url || doc.status === 'Uploaded' || doc.uploadable === false
+                  ? <IconButton icon="download" tone="outline" size={32} label={`Download ${doc.name}`} disabled={!doc.url} onClick={() => downloadDocument(doc, onToast)} />
+                  : <Button size="sm" variant="secondary" icon="upload" disabled={!!uploadingName} onClick={() => upload(doc.name)}>{uploadingName === doc.name ? 'Uploading…' : 'Upload'}</Button>}
               </div>
             ))}
           </div>
@@ -185,8 +216,8 @@ function DocumentsSection({ trip, job, onToast }) {
       {(job.documents === null || job.documents.length > 0) && (
         <SectionCard title="Shared by Forwarder" description="Job-level documents that apply to every trip on this job.">
           <div className={styles.docRows}>
-            {job.documents === null ? <span className="tk-meta">—</span> : job.documents.map((doc) => (
-              <div key={doc.name}>
+            {job.documents === null ? <span className="tk-meta">—</span> : job.documents.map((doc, index) => (
+              <div key={doc.id ?? `${doc.name}-${index}`}>
                 <span className={styles.docIcon}><Icon name="file-text" size={18} /></span>
                 <span className={styles.docMain}><strong>{doc.name}</strong><small>{doc.size}</small></span>
                 <IconButton icon="download" tone="outline" size={32} label={`Download ${doc.name}`} onClick={() => downloadDocument(doc, onToast)} />
@@ -201,13 +232,22 @@ function DocumentsSection({ trip, job, onToast }) {
 
 function CostsSection({ trip, job, onToast }) {
   const [draft, setDraft] = useState({ category: TRIP_COST_CATEGORIES[0], amount: '', description: '' });
+  const [addCost, { isLoading: saving }] = useAddCompanyTripCostMutation();
+  const submitting = useRef(false);
   const revenue = trip.revenue;
-  const total = trip.costs === null ? null : trip.costs.every((cost) => typeof cost.amount === 'number' && Number.isFinite(cost.amount)) ? tripCostTotal(trip) : null;
+  const total = trip.costTotal;
   const margin = revenue !== null && total !== null ? revenue - total : null;
   async function submit(event) {
     event.preventDefault();
-    if (!Number(draft.amount)) return;
-    onToast('Adding trip costs is currently unavailable.');
+    const amount = Number(draft.amount);
+    if (submitting.current || !Number.isFinite(amount) || amount <= 0) return;
+    submitting.current = true;
+    try {
+      await addCost({ tripId: trip.id, category: draft.category, amount, description: draft.description }).unwrap();
+      setDraft((current) => ({ ...current, amount: '', description: '' }));
+      onToast('Trip cost added.');
+    } catch (err) { onToast(getApiErrorMessage(err)); }
+    finally { submitting.current = false; }
   }
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
@@ -230,7 +270,7 @@ function CostsSection({ trip, job, onToast }) {
             <Select label="Category" value={draft.category} options={TRIP_COST_CATEGORIES} onChange={(e) => setDraft({ ...draft, category: e.target.value })} />
             <TextField label="Amount (₦)" type="number" min="0" required value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} />
             <TextField label="Description" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="e.g. Diesel top-up at Lokoja" />
-            <Button type="submit" icon="plus" disabled={!Number(draft.amount)}>Add Cost</Button>
+            <Button type="submit" icon="plus" disabled={saving || !Number.isFinite(Number(draft.amount)) || Number(draft.amount) <= 0}>{saving ? 'Adding…' : 'Add Cost'}</Button>
           </form>
         )}
       </SectionCard>
@@ -240,17 +280,29 @@ function CostsSection({ trip, job, onToast }) {
 
 function CommunicationSection({ trip, onToast }) {
   const [body, setBody] = useState('');
+  const [sendMessage, { isLoading: sending }] = useSendCompanyTripMessageMutation();
+  const { currentData: messages, error: messageError, isFetching } = useGetCompanyTripMessagesQuery(trip.id, { refetchOnMountOrArgChange: true });
+  const [sendError, setSendError] = useState('');
+  const submitting = useRef(false);
+  const driverName = trip.driverName === '—' ? 'the driver' : trip.driverName;
   async function submit(event) {
     event.preventDefault();
-    if (!body.trim()) return;
-    onToast('Private company–driver messaging is currently unavailable.');
+    if (submitting.current || !body.trim()) return;
+    submitting.current = true;
+    setSendError('');
+    try {
+      await sendMessage({ tripId: trip.id, content: body.trim() }).unwrap();
+      setBody('');
+      onToast('Message sent.');
+    } catch (err) { setSendError(getApiErrorMessage(err)); }
+    finally { submitting.current = false; }
   }
   return (
-    <SectionCard title="Communication" description={`Private messages between your company and ${trip.driverName || 'the driver'} about ${trip.number}. Forwarders can’t see or join this conversation.`}>
-      {trip.messages === null ? <span className="tk-meta">—</span> : trip.messages.length === 0 ? <EmptyState icon="messages-square" title="No messages yet" description="Start the conversation with your driver." /> : (
+    <SectionCard title="Communication" description={`Private messages between your company and ${driverName} about ${trip.number}. Forwarders can’t see or join this conversation.`}>
+      {isFetching && !messages ? <SkeletonRow columns={2} /> : messageError ? <EmptyState icon="messages-square" title={getApiErrorMessage(messageError)} /> : messages === undefined ? <span className="tk-meta">—</span> : messages.length === 0 ? <EmptyState icon="messages-square" title="No messages yet" description="Start the conversation with your driver." /> : (
         <div>
-          {trip.messages.map((m, i) => (
-            <MessageBubble key={i} author={m.author} role={m.role} roleTone={m.role === 'Driver' ? 'orange' : 'blue'} time={m.time}>
+          {messages.map((m, i) => (
+            <MessageBubble key={m.id ?? i} author={m.author} role={m.role} roleTone={m.role === 'Driver' ? 'orange' : 'blue'} time={m.time}>
               {m.body}
             </MessageBubble>
           ))}
@@ -258,8 +310,9 @@ function CommunicationSection({ trip, onToast }) {
       )}
       {isOpenTrip(trip) && (
         <form onSubmit={submit} className={styles.composer}>
-          <Textarea rows={3} maxLength={500} value={body} onChange={(e) => setBody(e.target.value)} placeholder={`Message ${trip.driverName || 'your driver'}...`} />
-          <Button type="submit" icon="send" disabled={!body.trim()}>Send</Button>
+          <Textarea rows={3} maxLength={500} value={body} onChange={(e) => setBody(e.target.value)} placeholder={`Message ${driverName}...`} />
+          <Button type="submit" icon="send" disabled={sending || !body.trim()}>{sending ? 'Sending…' : 'Send'}</Button>
+          {sendError && <p role="alert" style={{ gridColumn: '1 / -1', margin: 0, color: 'var(--tk-danger)', font: '500 13px/18px var(--tk-font-sans)' }}>{sendError}</p>}
         </form>
       )}
     </SectionCard>
@@ -281,6 +334,7 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }) {
   const { currentData: trip, error, isFetching } = useGetCompanyTripQuery(tripId, { skip: !tripId, refetchOnMountOrArgChange: true });
   const [updateStatus, { isLoading: updatingStatus }] = useUpdateCompanyTripStatusMutation();
   const [contactSupport] = useContactCompanyTripSupportMutation();
+  const [requestCancellation] = useRequestCompanyTripCancellationMutation();
   const statusSubmitting = useRef(false);
   const job = trip?.job;
   const truck = trip?.truck;
@@ -288,6 +342,7 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }) {
   const [reportOpen, setReportOpen] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [toast, showToast] = useToast();
 
   if (isFetching && !trip) return (
@@ -407,7 +462,11 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }) {
                         label: stage, icon: stage === 'Completed' ? 'circle-check' : 'arrow-right', onClick: () => setStatus(stage),
                       })),
                       { divider: true },
-                      { label: 'Cancel Trip', icon: 'ban', tone: 'danger', onClick: () => setStatus('Cancelled') },
+                      { label: 'Cancel Trip', icon: 'ban', tone: 'danger', onClick: () => {
+                        setStatusMenu(false);
+                        if (trip.cancellationRequested) showToast('A cancellation request has already been sent to support.');
+                        else setCancelOpen(true);
+                      } },
                     ]} />
                   </div>
                 )}
@@ -513,9 +572,23 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }) {
       <ReportIssueModal trip={trip} open={reportOpen} onClose={() => setReportOpen(false)} onDone={(msg) => { setReportOpen(false); showToast(msg); }} />
       <UpdateLocationModal trip={trip} open={locationOpen} onClose={() => setLocationOpen(false)} onDone={(msg) => { setLocationOpen(false); showToast(msg); }} />
       <MessageModal
-        open={supportOpen} onClose={() => setSupportOpen(false)} title="Contact Support" recipient="Trukkas Support"
-        placeholder={`Tell us what you need help with on ${trip.number}...`}
-        onSend={async (message) => { await contactSupport({ tripId: trip.id, message }).unwrap(); setSupportOpen(false); showToast('Support request sent. We will reply shortly.'); }}
+        open={supportOpen || cancelOpen} onClose={() => { setSupportOpen(false); setCancelOpen(false); }}
+        title={cancelOpen ? 'Request Trip Cancellation' : 'Contact Support'} recipient="Trukkas Support"
+        placeholder={cancelOpen ? 'Explain why this trip needs to be cancelled...' : `Tell us what you need help with on ${trip.number}...`}
+        textareaLabel={cancelOpen ? 'Reason for cancellation' : 'Message'}
+        submitLabel={cancelOpen ? 'Request Cancellation' : 'Send Message'} submitIcon={cancelOpen ? 'ban' : 'send'}
+        maxLength={cancelOpen ? null : 500}
+        onSend={async (message) => {
+          if (cancelOpen) {
+            const result = await requestCancellation({ tripId: trip.id, reason: message }).unwrap();
+            setCancelOpen(false);
+            showToast(result.message);
+          } else {
+            await contactSupport({ tripId: trip.id, message }).unwrap();
+            setSupportOpen(false);
+            showToast('Support request sent. We will reply shortly.');
+          }
+        }}
       />
       <Toast message={toast} />
     </div>

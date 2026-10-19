@@ -2,29 +2,32 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useSelector } from 'react-redux';
 import { useNavigate, useParams } from '../router.js';
 import {
   Avatar, Badge, Button, Card, DataTable, DropdownMenu, EmptyState, Icon, IconButton, LabelValue, Modal,
   PageHeader, ProgressBar, SectionCard, Select, SkeletonRow, Tabs, Textarea, TextField,
 } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
-import { assignTruckToJob, placeBid, toggleSaveJob, withdrawBid } from '../mock/api.js';
-import { useGetJobDetailQuery, useSendJobMessageMutation } from '../store/features/jobs/jobsApi.js';
+import { useDispatchJobDriverMutation, useGetAvailableJobsQuery, useGetJobDetailQuery, useGetJobDispatchOptionsQuery, useGetJobEarningsQuery, useGetJobPaperworkQuery, useGetJobReviewQuery, useSendJobMessageMutation, useSetSavedJobMutation, useSubmitJobBidMutation, useWithdrawJobBidMutation } from '../store/features/jobs/jobsApi.js';
+import { receiptView } from '../store/features/jobs/jobContracts.js';
+import { jobDetailHref } from '../domain/jobLinks.js';
+import { tripDetailHref } from '../domain/tripLinks.js';
+import { useGetCompanyTripsQuery } from '../store/features/trips/tripsApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import {
-  MIN_BID_AMOUNT, closesInTone, getBidValidationError, hasCargoPhotos, isMarketplaceJob, jobRate, jobStatusTone, jobTitle, suggestedBidRange,
+  MIN_BID_AMOUNT, closesInTone, getBidValidationError, hasCargoPhotos, isMarketplaceJob, jobStatusTone, jobTitle,
 } from '../domain/jobs.js';
 import {
-  dispatchSummary, estimateDuration, isDriverFree, isTruckFree, tripHealth, tripHealthTone, tripsForJob, shortPlace,
+  tripHealth, tripHealthTone, shortPlace,
 } from '../domain/trips.js';
-import { jobEarnings, jobReceipt, payoutStatusTone } from '../domain/payouts.js';
+import { payoutStatusTone } from '../domain/payouts.js';
 import { formatNaira } from '../mock/format.js';
 import { ReceiptModal } from '../components/Receipt.jsx';
 import { CargoThumb } from '../components/CargoThumb.jsx';
 import { MessageModal } from '../components/MessageModal.jsx';
 import { RouteMap } from '../components/RouteMap.jsx';
 import { Toast, copyLink, useToast } from '../components/Toast.jsx';
-import { JobFlag, RequirementList, Stars, posterFor } from './Jobs.jsx';
+import { JobFlag, RequirementList, Stars } from './Jobs.jsx';
 import styles from './JobDetail.module.css';
 
 const amountLabel = (value) => typeof value === 'number' && Number.isFinite(value) ? formatNaira(value) : '—';
@@ -46,11 +49,12 @@ function KeyFact({ icon, tone = 'blue', label, value, sub, link, onLink }) {
 }
 
 function BidCard({ job, onToast }) {
+  const [submitBid] = useSubmitJobBidMutation();
   const [amount, setAmount] = useState(job.budget == null ? '' : String(job.budget));
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [low, high] = job.apiBacked ? [null, null] : suggestedBidRange(job);
+  const [low, high] = job.bidBounds;
   const submitting = useRef(false);
 
   async function submit(event) {
@@ -62,11 +66,10 @@ function BidCard({ job, onToast }) {
     setBusy(true);
     setError('');
     try {
-      if (job.apiBacked) throw new Error('Company bidding is currently unavailable.');
-      await placeBid(job.id, Number(amount), message);
+      await submitBid({ jobId: job.id, amount: Number(amount), message }).unwrap();
       onToast(`Bid submitted for ${job.id}.`);
     } catch (err) {
-      setError(err.message);
+      setError(err instanceof Error ? err.message : getApiErrorMessage(err));
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -78,7 +81,7 @@ function BidCard({ job, onToast }) {
       <form onSubmit={submit} className={styles.bidForm}>
         <div className={styles.bidRow}>
           <TextField
-            label={job.trucksRequired > 1 ? 'Bid Amount per Truck (₦)' : 'Bid Amount (₦)'} type="number" min={MIN_BID_AMOUNT} required disabled={busy}
+            label="Bid Amount for the Job (₦)" type="number" min={MIN_BID_AMOUNT} required disabled={busy}
             value={amount} onChange={(e) => setAmount(e.target.value)} error={error || undefined}
           />
           <span className={styles.range}>
@@ -87,13 +90,13 @@ function BidCard({ job, onToast }) {
           </span>
         </div>
         {job.trucksRequired > 1 && (
-          <span className="tk-meta">{job.trucksRequired} trucks required · Total {formatNaira(Number(amount || 0) * job.trucksRequired)}</span>
+          <span className="tk-meta">{job.trucksRequired} trucks requested · Whole-job bid {formatNaira(Number(amount || 0))}</span>
         )}
         <Textarea
           label="Add a message (optional)" rows={3} maxLength={500} value={message} disabled={busy}
           onChange={(e) => setMessage(e.target.value)} placeholder="Introduce your company and why you're the best fit for this job..."
         />
-        <Button type="submit" size="lg" icon="send" fullWidth disabled={busy || !!getBidValidationError(amount, message)}>{busy ? 'Submitting…' : 'Place Bid'}</Button>
+        <Button type="submit" size="lg" icon="send" fullWidth disabled={busy || !job.canBid || !!getBidValidationError(amount, message)}>{busy ? 'Submitting…' : 'Place Bid'}</Button>
         {job.closesInDays != null && (
           <span className={styles.closesLine}>
             Bidding closes in <Icon name="clock-3" size={15} color="var(--tk-ink-700)" />
@@ -106,6 +109,7 @@ function BidCard({ job, onToast }) {
 }
 
 function MyBidCard({ job, onToast }) {
+  const [withdrawBid] = useWithdrawJobBidMutation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const submitting = useRef(false);
@@ -116,7 +120,7 @@ function MyBidCard({ job, onToast }) {
     setBusy(true);
     setError('');
     try {
-      await withdrawBid(job.id);
+      await withdrawBid({ jobId: job.id, bidId: job.myBid.id }).unwrap();
       onToast('Bid withdrawn.');
     } catch (err) {
       setError(err instanceof Error ? err.message : getApiErrorMessage(err));
@@ -128,14 +132,14 @@ function MyBidCard({ job, onToast }) {
   return (
     <SectionCard title="Your Bid" action={<Badge tone="purple">Awaiting response</Badge>}>
       <div style={{ display: 'grid', gap: 10 }}>
-        <span style={{ font: '700 26px/1 var(--tk-font-sans)', color: 'var(--tk-ink-900)' }}>{formatNaira(job.myBid.amount)}</span>
+        <span style={{ font: '700 26px/1 var(--tk-font-sans)', color: 'var(--tk-ink-900)' }}>{amountLabel(job.myBid.amount)}</span>
         <span className="tk-meta">
-          {job.trucksRequired > 1 ? `Per truck · ${job.trucksRequired} trucks · Total ${formatNaira(job.myBid.amount * job.trucksRequired)} · ` : ''}
+          {job.trucksRequired > 1 ? `Whole job · ${job.trucksRequired} trucks requested · Total ${amountLabel(job.myBid.amount)} · ` : ''}
           Submitted {job.myBid.submittedAt}
         </span>
         {job.myBid.message && <p className={styles.quote}>“{job.myBid.message}”</p>}
         <Button
-          variant="danger" disabled={busy}
+          variant="danger" disabled={busy || job.myBid.canWithdraw === false}
           onClick={withdraw}
         >
           {busy ? 'Withdrawing…' : 'Withdraw Bid'}
@@ -157,13 +161,13 @@ function DispatchCard({ job, summary, onDispatch }) {
           color={done ? 'var(--tk-success)' : 'var(--tk-blue)'}
         />
         <div className={styles.miniGrid}>
-          <LabelValue layout="stack" label="Rate per truck" value={job.apiBacked ? '—' : formatNaira(jobRate(job))} />
-          <LabelValue layout="stack" label="Contract value" value={job.apiBacked ? '—' : formatNaira(jobRate(job) * summary.required)} />
+          <LabelValue layout="stack" label="Agreed job rate" value={amountLabel(job.contractValue)} />
+          <LabelValue layout="stack" label="Contract value" value={amountLabel(job.contractValue)} />
           <LabelValue layout="stack" label="Delivered" value={`${summary.completed ?? '—'} of ${summary.required ?? '—'}`} />
           <LabelValue layout="stack" label="Still to dispatch" value={summary.remaining ?? '—'} valueTone={summary.remaining == null ? undefined : summary.remaining ? 'var(--tk-warning)' : 'var(--tk-success)'} />
         </div>
         {job.status === 'In Progress' && (
-          <Button size="lg" icon="truck" fullWidth disabled={done || job.apiBacked} onClick={onDispatch}>
+          <Button size="lg" icon="truck" fullWidth disabled={done || !job.canDispatch} onClick={onDispatch}>
             {done ? 'All trucks dispatched' : `Dispatch Truck (${summary.remaining ?? '—'} left)`}
           </Button>
         )}
@@ -173,23 +177,21 @@ function DispatchCard({ job, summary, onDispatch }) {
 }
 
 function DispatchModal({ job, open, onClose, onDone }) {
-  const trucks = useCollection('trucks') || [];
-  const drivers = useCollection('drivers') || [];
-  const trips = useCollection('trips') || [];
-  const freeTrucks = trucks.filter((t) => isTruckFree(t, trips));
-  const freeDrivers = drivers.filter((d) => isDriverFree(d, trips));
+  const { data: drivers = [], error: optionsError, isLoading: optionsLoading } = useGetJobDispatchOptionsQuery(undefined, { skip: !open, refetchOnMountOrArgChange: true });
+  const [dispatchDriver] = useDispatchJobDriverMutation();
   const [plate, setPlate] = useState('');
   const [driverId, setDriverId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const submitting = useRef(false);
+  const freeDrivers = drivers.filter((driver) => !plate || driver.truckId === plate);
+  const freeTrucks = [...new Map(drivers.map((driver) => [driver.truckId, { ...driver, plate: driver.truckId, label: driver.plate }])).values()];
 
   useEffect(() => { if (open) { setPlate(''); setDriverId(''); setError(''); } }, [open]);
 
   function pickTruck(value) {
     setPlate(value);
-    const truck = trucks.find((t) => t.plate === value);
-    if (truck?.driverId && freeDrivers.some((d) => d.id === truck.driverId)) setDriverId(truck.driverId);
+    setDriverId(drivers.find((driver) => driver.truckId === value)?.id ?? '');
   }
 
   async function submit(event) {
@@ -200,10 +202,10 @@ function DispatchModal({ job, open, onClose, onDone }) {
     setBusy(true);
     setError('');
     try {
-      const trip = await assignTruckToJob(job.id, plate, driverId);
+      const trip = await dispatchDriver({ jobId: job.id, truckId: plate, driverId }).unwrap();
       onDone(trip);
     } catch (err) {
-      setError(err.message);
+      setError(err instanceof Error ? err.message : getApiErrorMessage(err));
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -214,13 +216,13 @@ function DispatchModal({ job, open, onClose, onDone }) {
     <Modal
       open={open} onClose={() => { if (!submitting.current) onClose(); }} title="Dispatch Truck" width={500}
       description={`${jobTitle(job)} · ${job.origin} → ${job.destination}`}
-      footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button form="dispatch-form" type="submit" icon="truck" disabled={busy || !plate || !driverId}>{busy ? 'Dispatching…' : 'Create Trip'}</Button></>}
+      footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button form="dispatch-form" type="submit" icon="truck" disabled={busy || optionsLoading || !!optionsError || !plate || !driverId}>{busy ? 'Dispatching…' : 'Create Trip'}</Button></>}
     >
       <form id="dispatch-form" onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
-        <span className="tk-meta">Each truck you dispatch becomes its own trip with a separate timeline, documents and costs.</span>
+        <span className="tk-meta">This job runs as one trip on the selected driver’s assigned truck, with its own timeline, documents and costs.</span>
         <Select
           label="Truck" value={plate} placeholder={freeTrucks.length ? 'Select an available truck' : 'No trucks available'} disabled={busy}
-          options={freeTrucks.map((t) => ({ value: t.plate, label: `${t.plate} · ${t.makeModel} · ${t.location}` }))}
+          options={freeTrucks.map((t) => ({ value: t.plate, label: `${t.label} · ${t.makeModel} · ${t.location}` }))}
           onChange={(e) => pickTruck(e.target.value)}
         />
         <Select
@@ -228,40 +230,42 @@ function DispatchModal({ job, open, onClose, onDone }) {
           options={freeDrivers.map((d) => ({ value: d.id, label: `${d.name} · ${d.licenseClass}` }))}
           onChange={(e) => setDriverId(e.target.value)}
         />
-        {error && <span style={{ color: 'var(--tk-danger)', font: '500 13px/18px var(--tk-font-sans)' }}>{error}</span>}
+        {(error || optionsError) && <span style={{ color: 'var(--tk-danger)', font: '500 13px/18px var(--tk-font-sans)' }}>{error || getApiErrorMessage(optionsError)}</span>}
       </form>
     </Modal>
   );
 }
 
-function EarningsCard({ earnings, onReceipt }) {
+function EarningsCard({ earnings, error, loading, onReceipt }) {
   return (
     <SectionCard
-      title="Earnings" description="Per delivered trip, at the agreed rate per truck."
-      action={earnings?.rows.length > 0 && <Button size="sm" variant="secondary" icon="receipt" onClick={onReceipt}>View Receipt</Button>}
+      title="Earnings" description="Amounts confirmed for this job and its trip."
+      action={earnings?.complete && <Button size="sm" variant="secondary" icon="receipt" onClick={onReceipt}>View Receipt</Button>}
     >
-      {earnings === null ? <span className="tk-meta">—</span> : earnings.rows.length === 0 ? <span className="tk-meta">Earnings appear once a trip on this job is delivered.</span> : (
+      {loading ? <SkeletonRow columns={3} /> : error ? <EmptyState icon="wallet" title={getApiErrorMessage(error)} /> : !earnings ? <span className="tk-meta">—</span> : earnings.rows.length === 0 ? <span className="tk-meta">Earnings appear once a trip on this job is delivered.</span> : (
         <div style={{ display: 'grid' }}>
           {earnings.rows.map((row) => (
             <div key={row.trip.id} className={styles.earnRow}>
-              <span><strong>{row.trip.id}</strong><small>{row.trip.truckPlate} · Delivered {row.trip.deliveryDate}</small></span>
+              <span><strong>{row.trip.number}</strong><small>{row.trip.truckPlate}</small></span>
               <Badge tone={row.payout ? payoutStatusTone(row.payout.status) : 'warning'}>{row.payout ? row.payout.status : 'Not paid out'}</Badge>
-              <strong>{formatNaira(row.gross)}</strong>
+              <strong>{amountLabel(row.gross)}</strong>
             </div>
           ))}
-          <LabelValue label="Gross earnings" value={formatNaira(earnings.totals.gross)} />
-          <LabelValue label="Trukkas service fee" value={`-${formatNaira(earnings.totals.fee)}`} />
-          <LabelValue label="Net earnings" value={formatNaira(earnings.totals.net)} valueTone="var(--tk-blue)" style={{ borderTop: '1px solid var(--tk-line)' }} />
+          <LabelValue label="Gross earnings" value={amountLabel(earnings.totals.gross)} />
+          <LabelValue label="Trukkas service fee" value={earnings.totals.fee === null ? '—' : `${earnings.totals.fee > 0 ? '-' : ''}${amountLabel(earnings.totals.fee)}`} />
+          <LabelValue label="Net earnings" value={amountLabel(earnings.totals.net)} valueTone="var(--tk-blue)" style={{ borderTop: '1px solid var(--tk-line)' }} />
         </div>
       )}
     </SectionCard>
   );
 }
 
-function JobRatingCard({ review, unavailable = false }) {
+function JobRatingCard({ jobId }) {
+  const { currentData: data, error, isLoading } = useGetJobReviewQuery(jobId, { refetchOnMountOrArgChange: true });
+  const review = data?.review;
   return (
     <SectionCard title="Forwarder Rating" description="How the forwarder rated this job once it was completed.">
-      {review ? (
+      {isLoading ? <SkeletonRow columns={2} /> : error ? <EmptyState icon="star" title={getApiErrorMessage(error)} /> : review ? (
         <div style={{ display: 'grid', gap: 8 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <strong style={{ font: '700 22px/28px var(--tk-font-sans)', color: 'var(--tk-ink-900)' }}>{review.rating.toFixed(1)}</strong>
@@ -270,7 +274,7 @@ function JobRatingCard({ review, unavailable = false }) {
           {review.comment && <p className={styles.body} style={{ margin: 0 }}>“{review.comment}”</p>}
           <span className="tk-meta">{review.poster} · {review.date}</span>
         </div>
-      ) : <span className="tk-meta">{unavailable ? '—' : 'The forwarder hasn’t rated this job yet.'}</span>}
+      ) : <span className="tk-meta">{data ? 'The forwarder hasn’t rated this job yet.' : '—'}</span>}
     </SectionCard>
   );
 }
@@ -280,7 +284,7 @@ function CompanyModal({ poster, open, onClose }) {
     <Modal open={open} onClose={onClose} title={poster.name} width={440} footer={<Button onClick={onClose}>Close</Button>}>
       <div style={{ display: 'grid' }}>
         <LabelValue label="Verification" value={poster.verified == null ? '—' : poster.verified ? 'Verified' : 'Unverified'} valueTone={poster.verified == null ? undefined : poster.verified ? 'var(--tk-success)' : 'var(--tk-warning)'} />
-        <LabelValue label="Rating" value={poster.rating ? `${poster.rating} / 5` : '—'} />
+        <LabelValue label="Rating" value={poster.rating != null ? `${poster.rating} / 5` : '—'} />
         <LabelValue label="Jobs posted on Trukkas" value={poster.jobsPosted ?? '—'} />
       </div>
     </Modal>
@@ -298,18 +302,17 @@ export function JobDetail({ apiJobId } = {}) {
   const params = useParams();
   const jobId = apiJobId ?? params.jobId;
   const navigate = useNavigate();
-  const jobs = useCollection('jobs') || [];
-  const allTrips = useCollection('trips') || [];
-  const payouts = useCollection('payoutRequests') || [];
-  const company = useCollection('companyProfile')?.[0];
-  const reviews = useCollection('reviews') || [];
-  const fixtureJob = apiJobId === undefined ? jobs.find((j) => j.id === jobId) : null;
-  const live = !fixtureJob;
-  const { currentData: apiJob, error, isFetching } = useGetJobDetailQuery(jobId, { skip: !live || !jobId, refetchOnMountOrArgChange: true });
+  const company = useSelector((state) => state.auth.account);
+  const { currentData: job, error, isFetching } = useGetJobDetailQuery(jobId, { skip: !jobId, refetchOnMountOrArgChange: true });
+  const marketplaceJob = job && isMarketplaceJob(job);
+  const { data: availableJobs } = useGetAvailableJobsQuery(undefined, { skip: !marketplaceJob });
+  const { data: earnings = null, error: earningsError, isLoading: earningsLoading } = useGetJobEarningsQuery(job, { skip: !job || !!marketplaceJob });
+  const { data: allTrips, error: tripsError, isLoading: tripsLoading } = useGetCompanyTripsQuery(undefined, { skip: !job || !!marketplaceJob });
   const [sendMessage] = useSendJobMessageMutation();
-  const job = live ? apiJob : fixtureJob;
+  const [setSavedJob] = useSetSavedJobMutation();
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [infoTab, setInfoTab] = useState('requirements');
+  const { currentData: tripDocs = null, error: paperworkError, isFetching: paperworkLoading } = useGetJobPaperworkQuery(jobId, { skip: !job || !!marketplaceJob || infoTab !== 'documents', refetchOnMountOrArgChange: true });
   const [moreOpen, setMoreOpen] = useState(false);
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
@@ -318,15 +321,15 @@ export function JobDetail({ apiJobId } = {}) {
   const [saving, setSaving] = useState(false);
   const savingJob = useRef(false);
 
-  const jobTrips = useMemo(() => live ? null : tripsForJob(allTrips, jobId).sort((a, b) => a.id.localeCompare(b.id)), [allTrips, jobId, live]);
+  const jobTrips = useMemo(() => allTrips ? allTrips.filter((trip) => trip.jobId === jobId) : null, [allTrips, jobId]);
   const similar = useMemo(() => {
-    if (!job || live) return [];
-    return jobs.filter((j) => j.id !== job.id && isMarketplaceJob(j))
+    if (!job) return [];
+    return (availableJobs ?? []).filter((j) => j.id !== job.id && isMarketplaceJob(j))
       .sort((a, b) => Number(b.category === job.category) - Number(a.category === job.category))
       .slice(0, 3);
-  }, [jobs, job, live]);
+  }, [availableJobs, job]);
 
-  if (live && isFetching && !job) return <SkeletonRow columns={3} />;
+  if (isFetching && !job) return <SkeletonRow columns={3} />;
 
   if (!job) {
     return (
@@ -337,18 +340,16 @@ export function JobDetail({ apiJobId } = {}) {
     );
   }
 
-  const poster = live ? job.poster : posterFor(job.postedBy);
+  const poster = job.poster;
   const marketplace = isMarketplaceJob(job);
-  const summary = live ? { required: null, dispatched: null, completed: null, remaining: null } : dispatchSummary(job, jobTrips);
-  const earnings = live ? null : jobEarnings(job, jobTrips, payouts);
-  const tripDocs = jobTrips?.flatMap((t) => t.documents.map((d) => ({ ...d, tripId: t.id, truckPlate: t.truckPlate }))) ?? null;
+  const summary = job.dispatch;
   async function saveJob() {
     if (savingJob.current) return;
-    if (live) { showToast('Saving jobs is currently unavailable.'); return; }
     savingJob.current = true;
     setSaving(true);
     try {
-      const updated = await toggleSaveJob(job.id);
+      if (job.saved === null) throw new Error('The API has not returned this job’s saved state.');
+      const updated = await setSavedJob({ jobId: job.id, saved: !job.saved }).unwrap();
       showToast(updated.saved ? 'Job saved.' : 'Removed from saved jobs.');
     } catch (err) {
       showToast(err instanceof Error ? err.message : getApiErrorMessage(err));
@@ -408,7 +409,7 @@ export function JobDetail({ apiJobId } = {}) {
       />
 
       <div className={styles.metaLine}>
-        <span>{live ? job.number : job.id}</span>
+        <span>{job.number}</span>
         <span>Posted {job.postedAgo || job.postedOn}</span>
         {marketplace && job.closesInDays != null && (
           <span style={{ color: closesInTone(job.closesInDays) }}><Icon name="clock-3" size={14} /> Closes in {job.closesInDays} day{job.closesInDays === 1 ? '' : 's'}</span>
@@ -425,9 +426,9 @@ export function JobDetail({ apiJobId } = {}) {
 
           {hasCargoPhotos(job) && (
             <div className={styles.gallery} aria-label="Cargo photos from the forwarder">
-              <CargoThumb category={job.category} width="100%" height="100%" iconSize={56} />
-              {[0, 1, 2].map((i) => <CargoThumb key={i} category={job.category} width="100%" height="100%" iconSize={30} />)}
-              <CargoThumb category={job.category} width="100%" height="100%" iconSize={30}>
+              <CargoThumb category={job.category} width="100%" height="100%" iconSize={56}>{job.cargoPhotoUrl && <img src={job.cargoPhotoUrl} alt="Cargo shared by the forwarder" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}</CargoThumb>
+              {[0, 1, 2].map((i) => <CargoThumb key={i} category={job.category} width="100%" height="100%" iconSize={30}><span>—</span></CargoThumb>)}
+              <CargoThumb category={job.category} width="100%" height="100%" iconSize={30}><span>—</span>
                 {job.photos > 4 && <span className={styles.morePhotos}><strong>+{job.photos - 4}</strong>more photos</span>}
               </CargoThumb>
             </div>
@@ -459,7 +460,7 @@ export function JobDetail({ apiJobId } = {}) {
               </div>
               <div className={styles.routeLabels}>
                 <span><strong>{job.origin.split(',')[0]}</strong><small>{job.origin.split(',').slice(1).join(',').trim() || '—'}</small></span>
-                <span style={{ textAlign: 'center' }}><strong style={{ fontWeight: 500 }}>{distanceLabel(job.distanceKm)}</strong><small>Estimated {live ? '—' : estimateDuration(job.distanceKm)}</small></span>
+                <span style={{ textAlign: 'center' }}><strong style={{ fontWeight: 500 }}>{distanceLabel(job.distanceKm)}</strong><small>Estimated —</small></span>
                 <span style={{ textAlign: 'right' }}><strong>{shortPlace(job.destination)}</strong><small>{job.destination.split(',').slice(1).join(',').trim() || '—'}</small></span>
               </div>
             </SectionCard>
@@ -476,16 +477,16 @@ export function JobDetail({ apiJobId } = {}) {
               action={job.status === 'In Progress' && summary.remaining > 0 && <Button size="sm" icon="plus" onClick={() => setDispatchOpen(true)}>Dispatch Truck</Button>}
               pad="none"
             >
-              {jobTrips === null ? <span className="tk-meta">—</span> : jobTrips.length === 0 ? (
+              {tripsLoading ? <SkeletonRow columns={4} /> : tripsError ? <EmptyState icon="route" title={getApiErrorMessage(tripsError)} /> : jobTrips === null ? <span className="tk-meta">—</span> : jobTrips.length === 0 ? (
                 <div style={{ padding: 24 }}><EmptyState icon="truck" title="No trucks dispatched yet" description="Dispatch a truck to create the first trip for this job." /></div>
               ) : (
                 <DataTable
-                  rows={jobTrips} rowKey={(t) => t.id} onRowClick={(t) => navigate(`/trips/${t.id}`)}
+                  rows={jobTrips} rowKey={(t) => t.id} onRowClick={(t) => navigate(tripDetailHref(t.id))}
                   columns={[
-                    { key: 'id', header: 'Trip ID', render: (t) => <strong style={{ color: 'var(--tk-blue)' }}>{t.id}</strong> },
+                    { key: 'id', header: 'Trip ID', render: (t) => <strong style={{ color: 'var(--tk-blue)' }}>{t.number}</strong> },
                     { key: 'truck', header: 'Truck / Driver', render: (t) => <span style={{ display: 'grid' }}><span>{t.truckPlate}</span><span className="tk-meta">{t.driverName || '—'}</span></span> },
                     { key: 'dates', header: 'Dates', render: (t) => <span style={{ display: 'grid' }}><span>{t.pickupDate}</span><span className="tk-meta">→ {t.deliveryDate}</span></span> },
-                    { key: 'progress', header: 'Progress', render: (t) => <ProgressBar value={t.progress} caption={`${t.progress}%`} style={{ minWidth: 110 }} /> },
+                    { key: 'progress', header: 'Progress', render: (t) => <ProgressBar value={t.progress ?? 0} caption={t.progress === null ? '—' : `${t.progress}%`} style={{ minWidth: 110 }} /> },
                     { key: 'status', header: 'Status', render: (t) => <Badge tone={tripHealthTone(tripHealth(t))} dot>{tripHealth(t)}</Badge> },
                   ]}
                 />
@@ -527,14 +528,14 @@ export function JobDetail({ apiJobId } = {}) {
                   {!marketplace && (
                     <>
                       <h4 className={styles.docGroup}>Trip paperwork ({tripDocs?.length ?? '—'})</h4>
-                      {tripDocs === null ? <span className="tk-meta">—</span> : tripDocs.length === 0 && <span className="tk-meta">Waybills, pickup and delivery notes uploaded on this job’s trips appear here.</span>}
-                      {tripDocs?.map((doc) => (
-                        <div key={doc.tripId + doc.name}>
+                      {paperworkLoading ? <SkeletonRow columns={3} /> : paperworkError ? <EmptyState icon="file-text" title={getApiErrorMessage(paperworkError)} /> : tripDocs === null ? <span className="tk-meta">—</span> : tripDocs.length === 0 && <span className="tk-meta">Waybills, pickup and delivery notes uploaded on this job’s trips appear here.</span>}
+                      {!paperworkLoading && !paperworkError && tripDocs?.map((doc, index) => (
+                        <div key={doc.id ?? index}>
                           <Icon name="file-text" size={18} color={doc.status === 'Uploaded' ? 'var(--tk-success)' : 'var(--tk-ink-300)'} />
                           <span><strong>{doc.name}</strong><small>{doc.tripId} · {doc.truckPlate} · {doc.uploadedOn ? `Uploaded ${doc.uploadedOn}` : 'Pending'}</small></span>
                           {doc.status === 'Uploaded'
                             ? <IconButton icon="download" tone="outline" size={30} label={`Download ${doc.name}`} onClick={() => downloadDocument(doc)} />
-                            : <Button size="sm" variant="outline" onClick={() => navigate(`/trips/${doc.tripId}/documents`)}>Open Trip</Button>}
+                            : <Button size="sm" variant="outline" onClick={() => navigate(tripDetailHref(doc.tripId, 'documents'))}>Open Trip</Button>}
                         </div>
                       ))}
                     </>
@@ -559,8 +560,8 @@ export function JobDetail({ apiJobId } = {}) {
           {job.status === 'Pending' && <BidCard key={job.id} job={job} onToast={showToast} />}
           {job.status === 'Quoted' && <MyBidCard key={job.id} job={job} onToast={showToast} />}
           {!marketplace && <DispatchCard job={job} summary={summary} onDispatch={() => setDispatchOpen(true)} />}
-          {!marketplace && job.status !== 'Cancelled' && <EarningsCard earnings={earnings} onReceipt={() => setReceiptOpen(true)} />}
-          {job.status === 'Completed' && <JobRatingCard unavailable={live} review={live ? null : reviews.find((r) => r.jobId === job.id)} />}
+          {!marketplace && job.status !== 'Cancelled' && <EarningsCard earnings={earnings} error={earningsError} loading={earningsLoading} onReceipt={() => setReceiptOpen(true)} />}
+          {job.status === 'Completed' && <JobRatingCard jobId={job.id} />}
 
           <SectionCard title="Posted by">
             <div className={styles.poster}>
@@ -582,20 +583,20 @@ export function JobDetail({ apiJobId } = {}) {
           </SectionCard>
 
           <div id="job-map">
-            <RouteMap title="Pickup & Delivery Map" origin={job.origin} destination={job.destination} distanceKm={job.distanceKm} routeCoordinates={live ? job.routeCoordinates : undefined} duration={live ? null : undefined} height={200} />
+            <RouteMap title="Pickup & Delivery Map" origin={job.origin} destination={job.destination} distanceKm={job.distanceKm} routeCoordinates={job.routeCoordinates} duration={null} height={200} />
           </div>
 
           {marketplace && similar.length > 0 && (
             <SectionCard title="Similar Jobs" action={<button type="button" className={styles.link} onClick={() => navigate('/jobs')}>View All</button>}>
               <div className={styles.similar}>
                 {similar.map((j) => (
-                  <button key={j.id} type="button" onClick={() => navigate(`/jobs/${j.id}`)}>
+                  <button key={j.id} type="button" onClick={() => navigate(jobDetailHref(j.id))}>
                     <CargoThumb category={j.category} width={60} height={48} />
                     <span className={styles.similarMain}>
                       <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}><strong>{jobTitle(j)}</strong>{j.urgent && <Badge tone="danger" dot>Urgent</Badge>}</span>
-                      <small>{shortPlace(j.origin)} → {shortPlace(j.destination)} · {j.weightKg.toLocaleString()} kg</small>
+                      <small>{shortPlace(j.origin)} → {shortPlace(j.destination)} · {weightLabel(j.weightKg)}</small>
                     </span>
-                    <strong className={styles.similarPrice}>{formatNaira(j.budget)}</strong>
+                    <strong className={styles.similarPrice}>{amountLabel(j.budget)}</strong>
                   </button>
                 ))}
               </div>
@@ -612,12 +613,12 @@ export function JobDetail({ apiJobId } = {}) {
         open={contactOpen} onClose={() => setContactOpen(false)} title="Contact Forwarder" recipient={poster.name}
         placeholder="Ask about pickup windows, cargo handling or documents..."
         onSend={async (content) => {
-          await sendMessage({ jobId: job.id, receiverId: job.contactId, apiBacked: job.apiBacked, content }).unwrap();
+          await sendMessage({ jobId: job.id, receiverId: job.contactId, content }).unwrap();
           setContactOpen(false); showToast(`Message sent to ${poster.name}.`);
         }}
       />
       <CompanyModal poster={poster} open={companyOpen} onClose={() => setCompanyOpen(false)} />
-      <ReceiptModal receipt={receiptOpen ? jobReceipt(job, earnings, { company, poster }) : null} open={receiptOpen} onClose={() => setReceiptOpen(false)} />
+      <ReceiptModal receipt={receiptOpen ? receiptView(job, earnings, company) : null} open={receiptOpen} onClose={() => setReceiptOpen(false)} />
       <Toast message={toast} />
     </div>
   );

@@ -1,12 +1,20 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
+import { COMPANY_REQUIREMENTS, maskNumber } from '../../../domain/documents.js';
 
 const documentTypes = {
   'CAC Certificate': 'CAC_CERTIFICATE', 'CAC Status Report': 'CAC_STATUS_REPORT',
   TIN: 'TIN_CERTIFICATE', 'Proof of Address': 'PROOF_OF_ADDRESS',
   'Goods-in-Transit Insurance': 'GOODS_IN_TRANSIT_INSURANCE', 'Haulage Permit': 'OPERATING_LICENCE',
+  'Memorandum of Association': 'MEMORANDUM_OF_ASSOCIATION', 'Government ID': 'DIRECTOR_ID',
+  'Bank Verification': 'BANK_CONFIRMATION_LETTER',
 };
 const documentNames = Object.fromEntries(Object.entries(documentTypes).map(([name, type]) => [type, name]));
-export const UNSUPPORTED_ONBOARDING_DOCUMENTS = ['Memorandum of Association', 'NIN', 'BVN', 'Government ID', 'Bank Verification'];
+export const UNSUPPORTED_ONBOARDING_DOCUMENTS = ['NIN', 'BVN'];
+const requiredDocuments = ['CAC_CERTIFICATE', 'TIN_CERTIFICATE', 'GOODS_IN_TRANSIT_INSURANCE'];
+export const ONBOARDING_REQUIREMENTS = COMPANY_REQUIREMENTS.map((requirement) => ({
+  ...requirement, required: requiredDocuments.includes(documentTypes[requirement.type]),
+}));
+const failure = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : '—';
 const displayDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}(?:T|$)/.test(value) && Number.isFinite(Date.parse(value))
   ? new Date(value).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
@@ -15,6 +23,34 @@ const bankView = (bank) => bank ? {
   last4: typeof bank.accountNo === 'string' && /^\d{10}$/.test(bank.accountNo) ? bank.accountNo.slice(-4) : '—', updatedOn: displayDate(bank.updatedAt),
 } : null;
 
+export function bankRequestResult(result) {
+  if (result.error) {
+    const body = unwrapApiResponseData(result.error.data);
+    const message = ({
+      ACCOUNT_NAME_MISMATCH: 'The bank account name does not match your registered company name.',
+      TRANSACTION_PIN_REQUIRED: 'Enter your transaction PIN to approve this bank change.',
+      TRANSACTION_PIN_INVALID: 'The transaction PIN is incorrect. Please try again.',
+    })[body?.code];
+    return message ? { error: { ...result.error, data: { ...body, message } } } : result;
+  }
+  const data = unwrapApiResponseData(result.data);
+  const bank = data?.account;
+  if (!bank || typeof bank !== 'object' || Array.isArray(bank)) return failure('The API did not confirm the saved bank account. Reload the account before trying again.');
+  if (data.nameMatch?.checked === true && data.nameMatch.matched !== true) return failure('The API did not confirm that this bank account matches your company name.');
+  return { data: bankView(bank) };
+}
+
+export async function syncOnboardingBank(_arg, { dispatch, getState, queryFulfilled }) {
+  const account = getState().auth.account;
+  try {
+    const { data } = await queryFulfilled;
+    if (!account || getState().auth.account !== account) return;
+    dispatch(onboardingApi.util.updateQueryData('getOnboardingBank', undefined, () => data));
+  } catch {
+    // Keep the last confirmed account on a failed save.
+  }
+}
+
 export const onboardingApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     getOnboardingDocuments: builder.query({
@@ -22,21 +58,33 @@ export const onboardingApi = baseApi.injectEndpoints({
       transformResponse(response) {
         const data = unwrapApiResponseData(response);
         if (!Array.isArray(data?.documents)) return null;
-        return data.documents.filter((doc) => doc.id && documentNames[doc.type]).map((doc) => ({
+        const documents = data.documents.filter((doc) => doc?.id && Object.hasOwn(documentNames, doc.type)).map((doc) => ({
           id: doc.id, ownerType: 'company', type: documentNames[doc.type], name: text(doc.fileName),
-          number: text(doc.documentNumber), uploadedOn: displayDate(doc.uploadedAt), expiryDate: displayDate(doc.expiresAt),
-          status: doc.expiryStatus === 'EXPIRED' ? 'Expired' : doc.expiryStatus === 'EXPIRING_SOON' ? 'Expiring Soon'
+          number: doc.type === 'BANK_CONFIRMATION_LETTER' && typeof doc.documentNumber === 'string'
+            ? maskNumber(doc.documentNumber) : text(doc.documentNumber),
+          uploadedOn: displayDate(doc.uploadedAt), expiryDate: displayDate(doc.expiresAt),
+          status: doc.status === 'REJECTED' ? 'Rejected'
+            : doc.expiryStatus === 'EXPIRED' ? 'Expired' : doc.expiryStatus === 'EXPIRING_SOON' ? 'Expiring Soon'
             : ({ APPROVED: 'Verified', PENDING: 'Pending Review', REJECTED: 'Rejected' })[doc.status] || '—',
           url: doc.url || null,
         }));
+        const required = requiredDocuments.map((type) => data.documents.find((doc) => doc?.type === type));
+        const known = required.every((doc) => doc && ['MISSING', 'PENDING', 'APPROVED', 'REJECTED'].includes(doc.status)
+          && (doc.status === 'MISSING' ? doc.id === null : typeof doc.id === 'string' && !!doc.id));
+        return { documents, complianceAvailable: known };
       },
       providesTags: ['AuthOnboardingDocuments'],
     }),
     uploadOnboardingDocument: builder.mutation({
       async queryFn({ type, file, number, expiryDate }, _api, _options, baseQuery) {
-        if (!documentTypes[type]) return { error: { status: 'CUSTOM_ERROR', error: `The company API does not support ${type} submissions from this form.` } };
+        if (!Object.hasOwn(documentTypes, type)) return { error: { status: 'CUSTOM_ERROR', error: `The company API does not support ${type} submissions from this form.` } };
         if (!(file instanceof File) || file.size > 10 * 1024 * 1024 || !['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
           return { error: { status: 'CUSTOM_ERROR', error: 'Choose a PDF, JPEG, PNG or WebP file up to 10 MB.' } };
+        }
+        const requirement = ONBOARDING_REQUIREMENTS.find((item) => item.type === type);
+        if (requirement?.expires && (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate || '')
+          || !Number.isFinite(Date.parse(expiryDate)) || new Date(expiryDate).toISOString().slice(0, 10) !== expiryDate)) {
+          return failure('Enter a valid expiry date.');
         }
         const body = new FormData();
         body.append('file', file);
@@ -55,17 +103,40 @@ export const onboardingApi = baseApi.injectEndpoints({
       transformResponse(response) {
         const data = unwrapApiResponseData(response);
         const trucks = data?.trucks;
-        return Array.isArray(trucks) ? trucks.map((truck) => ({
+        if (!Array.isArray(trucks) || trucks.some((truck) => typeof truck?.id !== 'string' || !truck.id.trim())) return null;
+        return trucks.map((truck) => ({
           id: truck.id, plate: text(truck.plateNumber),
           makeModel: [text(truck.make), text(truck.model)].join(' '),
-        })) : null;
+        }));
       },
+      providesTags: ['AuthOnboardingTrucks'],
+    }),
+    addOnboardingTruck: builder.mutation({
+      async queryFn(form, _api, _options, baseQuery) {
+        const vehicleClass = ({ Head: 'HEAD', Trailer: 'TRAILER', Tanker: 'TANKER', Specialized: 'SPECIALIZED', Other: 'OTHER' })[form.vehicleClass];
+        if (!vehicleClass || !form.plate?.trim() || !/^\d{4}$/.test(form.year || '')
+          || Number(form.year) < 1900 || Number(form.year) > new Date().getUTCFullYear()) {
+          return failure('Enter a plate number, vehicle type and valid manufacture year.');
+        }
+        if ((form.make?.trim().length || 0) > 60 || (form.model?.trim().length || 0) > 60) return failure('Make and model must be at most 60 characters.');
+        const result = await baseQuery({ url: '/auth/register/truck', method: 'POST', body: { trucks: [{
+          plateNumber: form.plate.trim(), vehicleClass, year: form.year,
+          ...(form.make?.trim() ? { make: form.make.trim() } : {}),
+          ...(form.model?.trim() ? { model: form.model.trim() } : {}),
+        }] } });
+        if (result.error) return result;
+        const saved = unwrapApiResponseData(result.data)?.trucks;
+        return Array.isArray(saved) && saved.length === 1 && saved[0]?.id
+          ? { data: { saved: true } } : failure('The API did not confirm the saved truck. Refresh the truck list before trying again.');
+      },
+      // Refresh even if the response was incomplete; never repeat a successful write automatically.
+      invalidatesTags: ['AuthOnboardingTrucks'],
     }),
     getOnboardingBanks: builder.query({
       query: () => '/wallets/banks',
       transformResponse: (response) => {
         const banks = unwrapApiResponseData(response)?.banks;
-        return Array.isArray(banks) ? banks.filter((bank) => typeof bank.code === 'string' && typeof bank.name === 'string') : null;
+        return Array.isArray(banks) ? banks.filter((bank) => typeof bank?.code === 'string' && bank.code.trim() && typeof bank.name === 'string' && bank.name.trim()) : null;
       },
     }),
     resolveOnboardingBank: builder.mutation({
@@ -76,13 +147,22 @@ export const onboardingApi = baseApi.injectEndpoints({
       async queryFn(_arg, _api, _options, baseQuery) {
         const result = await baseQuery('/wallets/bank-account');
         if (result.error?.status === 404) return { data: null };
-        return result.error ? result : { data: bankView(unwrapApiResponseData(result.data)?.account) };
+        if (result.error) return result;
+        const bank = unwrapApiResponseData(result.data)?.account;
+        return bank && typeof bank === 'object' && !Array.isArray(bank) ? { data: bankView(bank) }
+          : failure('The API did not confirm your saved bank account. Please reload this page.');
       },
       providesTags: ['AuthOnboardingBank'],
     }),
     saveOnboardingBank: builder.mutation({
-      query: ({ bankName, accountNumber }) => ({ url: '/wallets/bank-account', method: 'POST', body: { bankName, bankAccountNo: accountNumber } }),
-      transformResponse: (response) => bankView(unwrapApiResponseData(response)?.account),
+      async queryFn({ bankName, accountNumber }, _api, _options, baseQuery) {
+        if (typeof bankName !== 'string' || !bankName.trim() || !/^\d{10}$/.test(accountNumber || '')) {
+          return failure('Choose a supported bank and enter a 10-digit account number.');
+        }
+        const result = await baseQuery({ url: '/wallets/bank-account', method: 'POST', body: { bankName, bankAccountNo: accountNumber } });
+        return bankRequestResult(result);
+      },
+      onQueryStarted: syncOnboardingBank,
       invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingBank'],
     }),
     getOnboardingSecurity: builder.query({
@@ -135,6 +215,7 @@ export const onboardingApi = baseApi.injectEndpoints({
 
 export const {
   useGetOnboardingDocumentsQuery, useUploadOnboardingDocumentMutation, useGetOnboardingTrucksQuery,
+  useAddOnboardingTruckMutation,
   useGetOnboardingBanksQuery, useResolveOnboardingBankMutation, useGetOnboardingBankQuery,
   useSaveOnboardingBankMutation, useGetOnboardingSecurityQuery, useSaveOnboardingPinMutation,
 } = onboardingApi;

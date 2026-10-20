@@ -8,6 +8,7 @@ import { tripDetailHref } from './tripLinks.js';
 import { jobDetailHref } from './jobLinks.js';
 import { fleetDetailHref } from './fleetLinks.js';
 import { driverDetailHref } from './driverLinks.js';
+import { payoutDetailHref } from './payoutLinks.js';
 
 const route = (job) => (job ? `${shortPlace(job.origin)} → ${shortPlace(job.destination)}` : '');
 
@@ -45,8 +46,8 @@ export function searchWorkspace(query, { jobs = [], trips = [], trucks = [], dri
     {
       section: 'Payouts',
       items: payouts
-        .filter((payout) => hit(payout.id, payout.reference, payout.tripId, payout.jobId))
-        .map((payout) => ({ key: payout.id, icon: 'banknote', label: payout.id, meta: [payout.tripId, payout.reference].filter(Boolean).join(' · '), tag: payout.status, to: `/payouts/${payout.id}` })),
+        .filter((payout) => hit(payout.id, payout.reference, payout.tripId, payout.jobId, ...(payout.items ?? []).flatMap((item) => [item.tripId, item.jobId])))
+        .map((payout) => ({ key: payout.id, icon: 'banknote', label: payout.id, meta: [payout.tripId, payout.reference].filter(Boolean).join(' · '), tag: payout.status, to: payoutDetailHref(payout.id) })),
     },
   ];
   return groups

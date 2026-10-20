@@ -1,11 +1,13 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
 import { getApiErrorMessage } from '../../api/getApiErrorMessage.js';
-import { count, driverView, fleetDocumentTypes, fleetDocumentView, fleetTripView, maintenanceView, rows, safeUrl, text, truckView, vehicleClassToWire } from './fleetContracts.js';
+import { count, driverView, fleetDocumentTypes, fleetDocumentView, fleetTripView, maintenanceDueView, maintenanceTypeToWire, maintenanceView, rows, safeUrl, text, truckView, vehicleClassToWire } from './fleetContracts.js';
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const signedIn = (api) => api.getState().auth.account ? null : unavailable('Sign in to manage your fleet.');
 const changedTags = ['CompanyFleet', 'CompanyJobs', 'CompanyTrips', 'CompanyTrip', 'CompanyDashboard', 'CompanyMaintenance'];
 const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+const maintenanceCost = (value) => value === '' || value === undefined ? null
+  : typeof value === 'number' || typeof value === 'string' && value.trim() ? Number(value) : NaN;
 const validFile = (file, photo = false) => typeof File !== 'undefined' && file instanceof File && file.size > 0 && file.size <= (photo ? 5 : 10) * 1024 * 1024 && (photo ? ['image/jpeg', 'image/png', 'image/webp'] : ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']).includes(file.type);
 
 async function uploadDocument(baseQuery, truckId, { type, file, expiryDate, name }) {
@@ -24,7 +26,7 @@ async function uploadDocument(baseQuery, truckId, { type, file, expiryDate, name
   return doc && doc.url ? { data: doc } : unavailable('The API did not confirm the document upload. Reload the vehicle before trying again.');
 }
 
-async function allPages(baseQuery, api, url, key, params) {
+async function allPages(baseQuery, api, url, key, params, readPage) {
   const collection = [];
   let total = null, pages = 1;
   for (let page = 1; page <= pages; page += 1) {
@@ -35,6 +37,7 @@ async function allPages(baseQuery, api, url, key, params) {
     if (!items || pagination?.page !== page || count(pagination.total) === null || count(pagination.totalPages) === null) return unavailable('The API did not return a valid fleet collection and pagination.');
     if (page === 1) { total = pagination.total; pages = pagination.totalPages; }
     if (pagination.total !== total || pagination.totalPages !== pages || (page < pages && !items.length)) return unavailable('The records changed while loading. Please reload.');
+    readPage?.(data, page);
     collection.push(...items);
     if (collection.length > total) return unavailable('The API returned invalid pagination.');
   }
@@ -43,6 +46,8 @@ async function allPages(baseQuery, api, url, key, params) {
 }
 
 export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet', 'CompanyMaintenance', 'CompanyJobs', 'CompanyTrips', 'CompanyTrip', 'CompanyDashboard'] }).injectEndpoints({
+  // Fast Refresh reruns this module while the shared API instance survives.
+  overrideExisting: process.env.NODE_ENV === 'development',
   endpoints: (builder) => ({
     addFleetVehicle: builder.mutation({
       async queryFn({ draft, createdTruckId }, api, _options, baseQuery) {
@@ -195,28 +200,33 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
     getFleetMaintenance: builder.query({
       async queryFn(truckId, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
-        const result = await allPages(baseQuery, api, '/maintenance', 'maintenance', text(truckId) ? { truckId } : {});
+        let nextDue = null;
+        const result = await allPages(baseQuery, api, '/maintenance', 'maintenance', text(truckId) ? { truckId } : {}, (data, page) => {
+          if (page === 1) nextDue = maintenanceDueView(data.nextDue);
+        });
         if (result.error) return result;
         if (truckId && result.data.some((item) => item.truck?.id !== truckId)) return unavailable('The API returned maintenance for another truck.');
-        return { data: result.data.map(maintenanceView) };
+        if (truckId && nextDue && nextDue.truckId !== truckId) return unavailable('The API returned a next service for another truck.');
+        return { data: { records: result.data.map(maintenanceView), nextDue } };
       },
       providesTags: ['CompanyMaintenance'],
     }),
     requestFleetMaintenance: builder.mutation({
       async queryFn({ truckId, serviceType, description, date, estimatedCost }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
-        const type = text(serviceType)?.toUpperCase();
+        const type = maintenanceTypeToWire(serviceType);
         if (!text(truckId)) return unavailable('Select a vehicle.');
         if (!['PREVENTIVE', 'REPAIR', 'INSPECTION', 'BREAKDOWN'].includes(type)) return unavailable('Use PREVENTIVE, REPAIR, INSPECTION or BREAKDOWN as the service type.');
         if (!text(description) || description.trim().length > 1000) return unavailable('Enter a description of up to 1000 characters.');
         const due = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00Z`) : null;
         if (!due || !Number.isFinite(due.getTime()) || due.toISOString().slice(0, 10) !== date) return unavailable('Enter a valid scheduled date.');
-        const cost = estimatedCost === '' ? null : Number(estimatedCost);
+        const cost = maintenanceCost(estimatedCost);
         if (cost !== null && (!Number.isFinite(cost) || cost < 0)) return unavailable('Enter a valid estimated cost.');
         const result = await baseQuery({ url: '/maintenance', method: 'POST', body: { truckId, type, description: description.trim(), dueDate: date, ...(cost === null ? {} : { estimatedCost: cost }) } });
         if (result.error) return result;
         const saved = unwrapApiResponseData(result.data)?.maintenance;
-        return text(saved?.id) && saved.truck?.id === truckId && saved.status === 'REQUESTED' ? { data: maintenanceView(saved) } : unavailable('The API did not confirm the maintenance request. Reload before trying again.');
+        return text(saved?.id) && saved.truck?.id === truckId && saved.status === 'REQUESTED' && saved.type === type && saved.description === description.trim() && maintenanceView(saved).dateInput === date && (cost === null || saved.currency === 'NGN' && saved.estimatedCost === cost)
+          ? { data: maintenanceView(saved) } : unavailable('The API did not confirm the maintenance request. Reload before trying again.');
       },
       invalidatesTags: changedTags,
     }),
@@ -224,12 +234,37 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
       async queryFn(id, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
         if (!text(id)) return unavailable('This maintenance record has no API ID.');
+        const current = await baseQuery(`/maintenance/${encodeURIComponent(id)}`);
+        if (current.error) return current;
+        const record = unwrapApiResponseData(current.data);
+        if (record?.id !== id || !maintenanceView(record)?.canComplete) return unavailable('Only scheduled or in-progress maintenance can be completed. Reload the records.');
         const result = await baseQuery({ url: `/maintenance/${encodeURIComponent(id)}/complete`, method: 'POST' });
         if (result.error) return result;
         const confirmed = await baseQuery(`/maintenance/${encodeURIComponent(id)}`);
         if (confirmed.error) return unavailable('Completion could not be confirmed. Reload the records before trying again.');
         const saved = unwrapApiResponseData(confirmed.data);
         return saved?.id === id && saved.status === 'COMPLETED' ? { data: maintenanceView(saved) } : unavailable('The API did not confirm completion. Reload the records.');
+      },
+      invalidatesTags: changedTags,
+    }),
+    updateFleetMaintenance: builder.mutation({
+      async queryFn({ id, serviceType, description, date, estimatedCost }, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        if (!text(id)) return unavailable('This maintenance record has no API ID.');
+        const type = maintenanceTypeToWire(serviceType);
+        if (!type || !text(description) || description.trim().length > 1000 || !validDate(date)) return unavailable('Choose a service type, a description of up to 1000 characters and a valid scheduled date.');
+        const cost = maintenanceCost(estimatedCost);
+        if (cost !== null && (!Number.isFinite(cost) || cost < 0)) return unavailable('Enter a valid estimated cost.');
+        const current = await baseQuery(`/maintenance/${encodeURIComponent(id)}`);
+        if (current.error) return current;
+        const record = unwrapApiResponseData(current.data);
+        if (record?.id !== id || !maintenanceView(record)?.canEdit) return unavailable('Only requested or scheduled maintenance can be edited. Reload the records.');
+        if (cost === null && record.estimatedCost != null) return unavailable('The API does not document clearing an estimated cost. Enter an amount before saving.');
+        const result = await baseQuery({ url: `/maintenance/${encodeURIComponent(id)}`, method: 'PATCH', body: { type, description: description.trim(), dueDate: date, ...(cost === null ? {} : { estimatedCost: cost }) } });
+        if (result.error) return result;
+        const saved = unwrapApiResponseData(result.data)?.maintenance;
+        return saved?.id === id && saved.truck?.id === record.truck?.id && saved.type === type && saved.description === description.trim() && maintenanceView(saved).dateInput === date && (cost === null || saved.currency === 'NGN' && saved.estimatedCost === cost)
+          ? { data: maintenanceView(saved) } : unavailable('The API did not confirm the maintenance changes. Reload before trying again.');
       },
       invalidatesTags: changedTags,
     }),
@@ -290,4 +325,4 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
   }),
 });
 
-export const { useAddFleetVehicleMutation, useGetFleetQuery, useGetFleetVehicleQuery, useGetFleetDocumentsQuery, useUploadFleetDocumentMutation, useUpdateFleetVehicleMutation, useLazyExportFleetVehicleQuery, useGetFleetDriversQuery, useAssignFleetDriverMutation, useGetFleetMaintenanceQuery, useRequestFleetMaintenanceMutation, useCompleteFleetMaintenanceMutation, useGetFleetTripsQuery, useLazyExportFleetTripsQuery } = fleetApi;
+export const { useAddFleetVehicleMutation, useGetFleetQuery, useGetFleetVehicleQuery, useGetFleetDocumentsQuery, useUploadFleetDocumentMutation, useUpdateFleetVehicleMutation, useLazyExportFleetVehicleQuery, useGetFleetDriversQuery, useAssignFleetDriverMutation, useGetFleetMaintenanceQuery, useRequestFleetMaintenanceMutation, useCompleteFleetMaintenanceMutation, useUpdateFleetMaintenanceMutation, useGetFleetTripsQuery, useLazyExportFleetTripsQuery } = fleetApi;

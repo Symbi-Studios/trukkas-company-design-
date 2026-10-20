@@ -1,23 +1,29 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate, useParams } from '../router.js';
-import { Badge, Button, Card, LabelValue, Modal, PageHeader, TextField } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
-import { updateDocument } from '../mock/api.js';
-import { REQUIREMENTS_BY_OWNER, documentStatusTone, formatDisplayDate, ownerLink, statusFromExpiry } from '../domain/documents.js';
+import { Badge, Button, Card, EmptyState, LabelValue, Modal, PageHeader, SkeletonRow, TextField } from '../ds.js';
+import { useGetDocumentCompanyQuery, useGetDocumentDetailQuery, useRenewComplianceDocumentMutation } from '../store/features/documents/documentsApi.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { REQUIREMENTS_BY_OWNER, documentStatusTone } from '../domain/documents.js';
+import { documentOwnerHref } from '../domain/documentLinks.js';
 
 const OWNER_LABEL = { company: 'Company', vehicle: 'Vehicle', driver: 'Driver' };
 
-export function DocumentDetail() {
-  const { documentId } = useParams();
+export function DocumentDetail({ documentId: queryId, ownerType: queryOwnerType = '', ownerId = '' } = {}) {
+  const { documentId: routeId } = useParams();
+  const documentId = queryId ?? routeId;
   const navigate = useNavigate();
-  const documents = useCollection('documents') || [];
-  const drivers = useCollection('drivers') || [];
-  const company = useCollection('companyProfile')?.[0];
-  const document_ = documents.find((d) => d.id === documentId);
+  const { currentData: document_, error, isLoading } = useGetDocumentDetailQuery({ id: documentId, ownerType: queryOwnerType, ownerId }, { skip: !documentId, refetchOnMountOrArgChange: true });
+  const { currentData: company } = useGetDocumentCompanyQuery(undefined, { skip: document_?.ownerType !== 'company' });
+  const [renewDocument, { isLoading: renewing }] = useRenewComplianceDocumentMutation();
+  const saving = useRef(false);
   const [renewOpen, setRenewOpen] = useState(false);
   const [expiryDate, setExpiryDate] = useState('');
+  const [renewError, setRenewError] = useState('');
+
+  if (isLoading) return <SkeletonRow columns={4} />;
+  if (error) return <EmptyState icon="file-text" title={getApiErrorMessage(error)} action={<Button variant="outline" onClick={() => navigate('/documents')}>Back to Documents</Button>} />;
 
   if (!document_) {
     return (
@@ -28,45 +34,47 @@ export function DocumentDetail() {
     );
   }
 
-  const ownerType = document_.ownerType || 'vehicle';
-  const ownerName = ownerType === 'driver' ? drivers.find((d) => d.id === document_.ownerId)?.name || document_.ownerId
-    : ownerType === 'company' ? company?.name : document_.truckPlate || document_.ownerId;
+  const ownerType = document_.ownerType;
+  const ownerName = ownerType === 'company' ? company?.name ?? '—' : document_.truckPlate ?? '—';
   const requirement = (REQUIREMENTS_BY_OWNER[ownerType] || []).find((r) => r.type === document_.type);
   const canRenew = requirement?.expires || (document_.expiryDate && document_.expiryDate !== '—');
 
   async function renew() {
-    if (!expiryDate) return;
-    await updateDocument(document_.id, { expiryDate: formatDisplayDate(expiryDate), status: statusFromExpiry(expiryDate), uploadedOn: 'Just now' });
-    setRenewOpen(false);
+    if (!expiryDate || saving.current) return;
+    saving.current = true; setRenewError('');
+    try { await renewDocument({ id: document_.id, ownerType, ownerId: document_.ownerId, expiryDate }).unwrap(); setRenewOpen(false); }
+    catch (error) { setRenewError(getApiErrorMessage(error)); }
+    finally { saving.current = false; }
   }
 
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
       <PageHeader
-        crumbs={[{ label: 'Documents', onClick: () => navigate('/documents') }, { label: ownerName, onClick: () => navigate(ownerLink(document_)) }, document_.name]}
+        crumbs={[{ label: 'Documents', onClick: () => navigate('/documents') }, { label: ownerName, onClick: () => navigate(documentOwnerHref(document_)) }, document_.name]}
         title={document_.name}
         description={`${requirement?.label || document_.type} · ${OWNER_LABEL[ownerType]}: ${ownerName}`}
         meta={<Badge tone={documentStatusTone(document_.status)} dot>{document_.status}</Badge>}
         actions={
           <>
-            <Button variant="outline" icon="arrow-left" onClick={() => navigate(ownerLink(document_))}>Back to {OWNER_LABEL[ownerType]}</Button>
-            {document_.url && <Button variant="outline" icon="eye" onClick={() => window.open(document_.url, '_blank', 'noopener')}>Open File</Button>}
-            {canRenew && <Button icon="refresh-cw" onClick={() => setRenewOpen(true)}>Renew Document</Button>}
+            <Button variant="outline" icon="arrow-left" onClick={() => navigate(documentOwnerHref(document_))}>Back to {OWNER_LABEL[ownerType]}</Button>
+            {document_.url && <Button variant="outline" icon="eye" onClick={() => window.open(document_.url, '_blank', 'noopener,noreferrer')}>Open File</Button>}
+            {canRenew && <Button icon="refresh-cw" onClick={() => { setRenewError(''); setRenewOpen(true); }}>Renew Document</Button>}
           </>
         }
       />
       <Card>
         <LabelValue label={OWNER_LABEL[ownerType]} value={ownerName} />
         <LabelValue label="Document Type" value={requirement?.label || document_.type} />
-        {document_.number && <LabelValue label={requirement?.number || 'Number'} value={document_.number} />}
+        {(requirement?.number || document_.number && document_.number !== '—') && <LabelValue label={requirement?.number || 'Number'} value={document_.number ?? '—'} />}
         <LabelValue label="Expiry Date" value={document_.expiryDate || '—'} />
         <LabelValue label="Uploaded On" value={document_.uploadedOn} />
         <LabelValue label="File Size" value={document_.fileSize} />
         <LabelValue label="Requirement" value={requirement ? (requirement.required ? 'Required' : 'Optional') : 'Other'} />
       </Card>
       <Modal open={renewOpen} onClose={() => setRenewOpen(false)} title="Renew Document" width={420}
-        footer={<><Button variant="outline" onClick={() => setRenewOpen(false)}>Cancel</Button><Button onClick={renew}>Save</Button></>}>
+        footer={<><Button variant="outline" disabled={renewing} onClick={() => setRenewOpen(false)}>Cancel</Button><Button disabled={renewing} onClick={renew}>Save</Button></>}>
         <TextField label="New Expiry Date" type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+        {renewError && <span className="tk-meta" style={{ color: 'var(--tk-danger)' }}>{renewError}</span>}
       </Modal>
     </div>
   );

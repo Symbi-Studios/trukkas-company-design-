@@ -1,49 +1,23 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Badge, Button, Card, DataTable, DonutChart, DropdownMenu, EmptyState, Icon, Modal, SearchField, Select, SkeletonRow, StatCard, Switch, TextField } from '../ds.js';
+import { Badge, Button, Card, DataTable, DonutChart, DropdownMenu, EmptyState, Icon, SearchField, Select, SkeletonRow, StatCard, Switch } from '../ds.js';
 import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
-import { useCompleteFleetMaintenanceMutation, useGetFleetMaintenanceQuery, useRequestFleetMaintenanceMutation, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
+import { useCompleteFleetMaintenanceMutation, useGetFleetMaintenanceQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
+import { MaintenanceModal } from '../components/MaintenanceModal.jsx';
 import { total } from '../store/features/fleet/fleetContracts.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { Toast, useToast } from '../components/Toast.jsx';
 import { formatNaira } from '../mock/format.js';
 import { VehicleDetailFrame } from './VehicleDetailFrame.jsx';
 
-const STATUS_TONE = { Completed: 'success', Upcoming: 'info', 'In Progress': 'warning', Overdue: 'danger' };
+const STATUS_TONE = { Completed: 'success', Upcoming: 'info', Requested: 'info', 'In Progress': 'warning', Overdue: 'danger', Cancelled: 'neutral', Rejected: 'danger' };
 const STATUS_OPTIONS = ['All Status', 'Completed', 'Upcoming', 'In Progress', 'Overdue'];
-
-function ScheduleModal({ open, onClose, truckId }) {
-  const [draft, setDraft] = useState({ serviceType: '', description: '', date: '', estimatedCost: '' });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [requestMaintenance] = useRequestFleetMaintenanceMutation();
-  const submitting = useRef(false);
-  async function submit(event) {
-    event.preventDefault();
-    if (submitting.current) return;
-    submitting.current = true; setBusy(true); setError('');
-    try { await requestMaintenance({ truckId, ...draft }).unwrap(); onClose(); }
-    catch (err) { setError(getApiErrorMessage(err)); }
-    finally { submitting.current = false; setBusy(false); }
-  }
-  return (
-    <Modal open={open} onClose={() => { if (!submitting.current) onClose(); }} title="Schedule Maintenance" width={440}
-      footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button form="schedule-form" type="submit" disabled={busy}>{busy ? 'Scheduling…' : 'Schedule'}</Button></>}>
-      <form id="schedule-form" onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
-        <TextField label="Service Type" required value={draft.serviceType} onChange={(e) => setDraft({ ...draft, serviceType: e.target.value })} placeholder="e.g. Oil Change" />
-        <TextField label="Description" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
-        <TextField label="Scheduled Date" type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} />
-        <TextField label="Estimated Cost (₦)" type="number" min="0" value={draft.estimatedCost} onChange={(e) => setDraft({ ...draft, estimatedCost: e.target.value })} />
-        {error && <span role="alert" className="tk-meta" style={{ color: 'var(--tk-danger)' }}>{error}</span>}
-      </form>
-    </Modal>
-  );
-}
 
 export function VehicleMaintenance() {
   const { truck } = useFleetVehicle();
-  const { data: records, error, isLoading } = useGetFleetMaintenanceQuery(truck?.id, { skip: !truck, refetchOnMountOrArgChange: true });
+  const { currentData: maintenanceData, error, isLoading } = useGetFleetMaintenanceQuery(truck?.id, { skip: !truck, refetchOnMountOrArgChange: true });
+  const records = maintenanceData?.records;
   const [completeMaintenance] = useCompleteFleetMaintenanceMutation();
   const [updateVehicle, { isLoading: savingReminders }] = useUpdateFleetVehicleMutation();
   const updatingReminders = useRef(false);
@@ -53,6 +27,7 @@ export function VehicleMaintenance() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState(null);
   const [rowMenu, setRowMenu] = useState(null);
 
   const filtered = (records ?? []).filter((r) =>
@@ -66,11 +41,12 @@ export function VehicleMaintenance() {
   const upcoming = knownStatuses ? records.filter((r) => r.status === 'Upcoming').length : null;
   const overdue = knownStatuses ? records.filter((r) => r.status === 'Overdue').length : null;
   const totalCost = knownStatuses ? total(records.filter((record) => record.status === 'Completed'), 'cost') : null;
-  const next = records?.filter((r) => r.status === 'Upcoming').sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt))[0];
+  const next = maintenanceData?.nextDue;
   const money = (value) => typeof value === 'number' && Number.isFinite(value) ? formatNaira(value) : '—';
   const percent = (value) => value === null ? '—' : `${records.length ? Math.round(value / records.length * 100) : 0}%`;
   async function complete(record) {
     if (completing.current) return;
+    if (!record.canComplete) { setRowMenu(null); showToast('Only scheduled or in-progress maintenance can be completed.'); return; }
     completing.current = true; setBusyRecord(record.id); setRowMenu(null);
     try { await completeMaintenance(record.id).unwrap(); }
     catch (err) { showToast(getApiErrorMessage(err)); }
@@ -170,7 +146,11 @@ export function VehicleMaintenance() {
                 <span style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20 }}>
                   <DropdownMenu width={190} items={[
                     ...(m.status !== 'Completed' ? [{ label: 'Mark Completed', icon: 'circle-check', onClick: () => complete(m) }] : []),
-                    { label: 'Edit Record', icon: 'pencil', onClick: () => { setRowMenu(null); showToast('Editing company maintenance records is currently unavailable from the API.'); } },
+                    { label: 'Edit Record', icon: 'pencil', onClick: () => {
+                      setRowMenu(null);
+                      if (!m.canEdit) { showToast('Only requested or scheduled maintenance can be edited.'); return; }
+                      setEditingRecord(m); setScheduleOpen(true);
+                    } },
                   ]} />
                 </span>
               )}
@@ -178,7 +158,7 @@ export function VehicleMaintenance() {
           ) },
         ]} />
       )}
-      <ScheduleModal key={String(scheduleOpen)} open={scheduleOpen} onClose={() => setScheduleOpen(false)} truckId={truck.id} />
+      <MaintenanceModal key={`${scheduleOpen}-${editingRecord?.id ?? ''}`} open={scheduleOpen} onClose={() => { setScheduleOpen(false); setEditingRecord(null); }} truckId={truck.id} record={editingRecord} />
       <Toast message={toast} />
     </VehicleDetailFrame>
   );

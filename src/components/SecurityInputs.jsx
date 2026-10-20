@@ -102,7 +102,13 @@ export function PinPrompt({ open, onClose, title = 'Enter Transaction PIN', desc
   const running = useRef(false);
 
   useEffect(() => {
-    if (open) { setPin(''); setConfirmPin(''); setError(''); setStage(pinSet ? 'enter' : 'create'); }
+    if (open) { setPin(''); setConfirmPin(''); setError(''); }
+  }, [open]);
+
+  useEffect(() => {
+    // Saving a PIN refreshes security status while approval may still be
+    // running. Move to entry without erasing the action's result or error.
+    if (open && !running.current) setStage(pinSet ? 'enter' : 'create');
   }, [open, pinSet]);
 
   async function run(value) {
@@ -141,6 +147,8 @@ export function PinPrompt({ open, onClose, title = 'Enter Transaction PIN', desc
     }
     running.current = false;
     setBusy(false);
+    setStage('enter');
+    setConfirmPin('');
     await run(pin);
   }
 

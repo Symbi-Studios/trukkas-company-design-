@@ -1,44 +1,53 @@
 'use client';
 
+import { useSearchParams } from 'next/navigation';
 import { useNavigate, useParams } from '../router.js';
-import { Badge, Banner, Button, PageHeader } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
-import { payoutReceipt, payoutStatusTone } from '../domain/payouts.js';
-import { formatNaira } from '../mock/format.js';
+import { Badge, Banner, Button, PageHeader, SkeletonRow } from '../ds.js';
+import { payoutStatusTone } from '../domain/payouts.js';
+import { payoutAmountLabel as formatNaira } from '../store/features/payouts/payoutContracts.js';
+import { useGetPayoutRecordQuery } from '../store/features/payouts/payoutsApi.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { tripDetailHref } from '../domain/tripLinks.js';
 import { ReceiptView } from '../components/Receipt.jsx';
 import { downloadReceiptPdf } from '../components/receiptPdf.js';
 
-export function PayoutDetail() {
-  const { payoutId } = useParams();
+export function PayoutDetailFromQuery() {
+  const params = useSearchParams();
+  const ids = params.getAll('payoutId');
+  const id = ids.length === 1 ? ids[0].trim() : '';
+  return <PayoutDetail key={id} payoutId={id} />;
+}
+
+export function PayoutDetail({ payoutId: explicitId }) {
+  const { payoutId: routeId } = useParams();
+  const payoutId = explicitId ?? routeId;
   const navigate = useNavigate();
-  const payouts = useCollection('payoutRequests') || [];
-  const trips = useCollection('trips') || [];
-  const jobs = useCollection('jobs') || [];
-  const wallet = useCollection('walletSummary')?.[0];
-  const company = useCollection('companyProfile')?.[0];
-  const payout = payouts.find((p) => p.id === payoutId);
+  const { currentData: data, error, isFetching } = useGetPayoutRecordQuery(payoutId, { refetchOnMountOrArgChange: true });
+  const payout = data?.payout;
+
+  if (isFetching && !data) return <SkeletonRow columns={3} />;
 
   if (!payout) {
     return (
       <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
-        <PageHeader title="Payout not found" />
+        <PageHeader title="Payout not found" description={error ? getApiErrorMessage(error) : undefined} />
         <Button variant="outline" onClick={() => navigate('/payouts')}>Back to Payouts</Button>
       </div>
     );
   }
 
-  const receipt = payoutReceipt(payout, { trips, jobs, company, bank: wallet?.bankAccount });
+  const receipt = data.receipt;
 
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)', maxWidth: 880 }}>
       <PageHeader
         crumbs={[{ label: 'Payouts', onClick: () => navigate('/payouts') }, payout.id]}
         title={payout.id}
-        description={`${formatNaira(payout.amount)} · ${payout.items.length} trip(s) · Requested ${payout.requestedOn}`}
+        description={`${formatNaira(payout.amount)} · ${payout.tripCount ?? '—'} trip(s) · Requested ${payout.requestedOn}`}
         meta={<Badge tone={payoutStatusTone(payout.status)} dot>{payout.status}</Badge>}
         actions={
           <>
-            {payout.items.length === 1 && <Button variant="outline" icon="route" onClick={() => navigate(`/trips/${payout.items[0].tripId}`)}>View Trip</Button>}
+            {payout.items.length === 1 && <Button variant="outline" icon="route" onClick={() => navigate(tripDetailHref(payout.items[0].tripId))}>View Trip</Button>}
             <Button icon="download" onClick={() => downloadReceiptPdf(receipt)}>Download Receipt</Button>
           </>
         }

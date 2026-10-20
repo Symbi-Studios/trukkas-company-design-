@@ -1,10 +1,11 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useNavigate, useParams } from '../router.js';
-import { AttachmentCard, Badge, Button, Card, IconButton, MessageBubble, PageHeader, Textarea } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
-import { replyToTicket } from '../mock/api.js';
+import { AttachmentCard, Badge, Button, Card, IconButton, MessageBubble, PageHeader, SkeletonRow, Textarea } from '../ds.js';
+import { useGetSupportTicketQuery, useReplyToSupportTicketMutation } from '../store/features/support/supportApi.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { toUploads } from '../components/FileDrop.jsx';
 import styles from './TicketDetail.module.css';
 
@@ -40,28 +41,40 @@ export function MessageAttachments({ items }) {
   );
 }
 
-export function TicketDetail() {
-  const { ticketId } = useParams();
+export function TicketDetailFromQuery() {
+  const params = useSearchParams();
+  const ids = params.getAll('ticketId');
+  const id = ids.length === 1 ? ids[0].trim() : '';
+  return <TicketDetail key={id} ticketId={id} />;
+}
+
+export function TicketDetail({ ticketId: explicitId }) {
+  const { ticketId: routeId } = useParams();
+  const ticketId = explicitId ?? routeId;
   const navigate = useNavigate();
-  const tickets = useCollection('supportTickets') || [];
-  const ticket = tickets.find((t) => t.id === ticketId);
+  const { currentData: ticket, error: loadError, isFetching } = useGetSupportTicketQuery(ticketId, { refetchOnMountOrArgChange: true });
+  const [sendReply] = useReplyToSupportTicketMutation();
   const [reply, setReply] = useState('');
   const [files, setFiles] = useState([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const input = useRef(null);
+  const running = useRef(false);
+
+  if (isFetching && !ticket) return <SkeletonRow columns={3} />;
 
   if (!ticket) {
     return (
       <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
-        <PageHeader title="Ticket not found" />
+        <PageHeader title="Ticket not found" description={loadError ? getApiErrorMessage(loadError) : undefined} />
         <Button variant="outline" onClick={() => navigate('/support')}>Back to Support</Button>
       </div>
     );
   }
 
   function addFiles(list) {
+    if (running.current) return;
     const all = Array.from(list || []);
     const tooBig = all.filter((f) => f.size > MAX_BYTES);
     setError(tooBig.length ? `${tooBig.map((f) => f.name).join(', ')} is larger than 25 MB.` : '');
@@ -70,12 +83,17 @@ export function TicketDetail() {
 
   async function submit(event) {
     event.preventDefault();
-    if (!reply.trim() && files.length === 0) return;
+    if (running.current || !reply.trim()) return;
+    running.current = true;
+    setError('');
     setBusy(true);
-    await replyToTicket(ticket.id, reply.trim(), files.map(({ name, size, type, url }) => ({ name, size, type, url })));
-    setReply('');
-    setFiles([]);
-    setBusy(false);
+    try {
+      await sendReply({ id: ticket.id, body: reply.trim(), files }).unwrap();
+      setReply('');
+      files.forEach((file) => URL.revokeObjectURL(file.url));
+      setFiles([]);
+    } catch (err) { setError(getApiErrorMessage(err)); }
+    finally { running.current = false; setBusy(false); }
   }
 
   return (
@@ -91,7 +109,7 @@ export function TicketDetail() {
           {ticket.messages.length === 0 ? (
             <p style={{ padding: '16px 0', margin: 0 }} className="tk-meta">No messages yet.</p>
           ) : ticket.messages.map((m, i) => (
-            <MessageBubble key={i} author={m.author} role={m.role} roleTone={m.agent ? 'blue' : 'neutral'} time={m.time}>
+            <MessageBubble key={m.id} author={m.author} role={m.role} roleTone={m.agent ? 'blue' : 'neutral'} time={m.time}>
               {m.body}
               <MessageAttachments items={m.attachments} />
             </MessageBubble>
@@ -110,18 +128,18 @@ export function TicketDetail() {
                 <span key={f.url} className={styles.chip}>
                   {f.type.startsWith('image/') ? <img src={f.url} alt="" /> : <span className={styles.chipIcon}>{f.type.startsWith('video/') ? '▶' : 'DOC'}</span>}
                   <span><strong>{f.name}</strong><small>{f.size}</small></span>
-                  <IconButton icon="x" size={24} label={`Remove ${f.name}`} onClick={() => setFiles((list) => list.filter((_, j) => j !== i))} />
+                  <IconButton icon="x" size={24} disabled={busy} label={`Remove ${f.name}`} onClick={() => setFiles((list) => list.filter((_, j) => j !== i))} />
                 </span>
               ))}
             </div>
           )}
-          <Textarea rows={3} placeholder="Write a reply… You can also drag files here." value={reply} onChange={(e) => setReply(e.target.value)} />
+          <Textarea rows={3} placeholder="Write a reply… You can also drag files here." disabled={busy} value={reply} onChange={(e) => setReply(e.target.value)} />
           {error && <span className={styles.error}>{error}</span>}
           <div className={styles.actions}>
             <input ref={input} type="file" hidden multiple accept={ACCEPT} onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
-            <Button variant="outline" icon="paperclip" onClick={() => input.current?.click()}>Attach</Button>
+            <Button variant="outline" icon="paperclip" disabled={busy} onClick={() => input.current?.click()}>Attach</Button>
             <span className="tk-meta">Photos, videos, PDFs or documents · up to 6 files, 25 MB each</span>
-            <Button type="submit" icon="send" disabled={busy || (!reply.trim() && files.length === 0)}>{busy ? 'Sending…' : 'Send'}</Button>
+            <Button type="submit" icon="send" disabled={busy || !reply.trim()}>{busy ? 'Sending…' : 'Send'}</Button>
           </div>
         </form>
       </Card>

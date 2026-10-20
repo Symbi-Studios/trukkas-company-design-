@@ -33,7 +33,7 @@ let activeRefresh = null;
 
 let requestSequence = 0;
 
-const privateLogField = /authorization|cookie|token|password|secret|credential|otp|^code$|pin|email|phone|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment|^body$|reason|comment|instruction|notes?/i;
+const privateLogField = /authorization|cookie|token|password|secret|credential|otp|^code$|pin|email|phone|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment|^body$|reason|comment|^reply$|instruction|notes?|documentnumber|^url$/i;
 function bodyForLog(body) {
   // Never expose credentials, personal detail fields, or conversation content.
   if (body instanceof FormData || body instanceof URLSearchParams) {

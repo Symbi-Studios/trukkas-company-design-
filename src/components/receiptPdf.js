@@ -31,6 +31,7 @@ function textWidth(text, size, bold) {
 }
 
 export function money(amount) {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) return '—';
   const sign = amount < 0 ? '-' : '';
   return `${sign}NGN ${Math.abs(amount).toLocaleString('en-NG')}`;
 }

@@ -259,7 +259,7 @@ function ReviewRow({ review, onJob }) {
         <span className="tk-meta">{review.date}</span>
       </div>
       <p>“{review.comment}”</p>
-      {review.jobId?.startsWith('TK-') && <button type="button" className={styles.link} onClick={() => onJob(review.jobId)}>{review.jobId}</button>}
+      {review.jobId && <button type="button" className={styles.link} onClick={() => onJob(review.jobId)}>{review.jobNumber}</button>}
     </div>
   );
 }

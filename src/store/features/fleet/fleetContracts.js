@@ -74,13 +74,25 @@ export function driverView(source) {
   };
 }
 
+const maintenanceTypes = { PREVENTIVE: 'Preventive', REPAIR: 'Repair', INSPECTION: 'Inspection', BREAKDOWN: 'Breakdown' };
+export const MAINTENANCE_SERVICE_TYPES = Object.values(maintenanceTypes);
+export const maintenanceTypeToWire = (value) => Object.entries(maintenanceTypes).find(([wire, label]) => value === wire || value === label)?.[0] ?? null;
+const maintenanceDateInput = (value) => dateLabel(value) === '—' ? '' : value.slice(0, 10);
+
+export function maintenanceDueView(source) {
+  if (!object(source) || !text(source.id)) return null;
+  return { id: source.id, truckId: text(source.truckId), serviceType: maintenanceTypes[source.type] ?? '—', date: dateLabel(source.dueDate) };
+}
+
 export function maintenanceView(source) {
   if (!text(source?.id)) return null;
   const overdue = source.isOverdue === true || source.displayStatus === 'OVERDUE';
   return {
     id: source.id, truckId: text(source.truck?.id), truckPlate: text(source.truck?.plateNumber) ?? '—',
-    wireStatus: text(source.status), status: overdue && source.status === 'SCHEDULED' ? 'Overdue' : ({ REQUESTED: 'Requested', SCHEDULED: 'Upcoming', IN_PROGRESS: 'In Progress', COMPLETED: 'Completed', CANCELLED: 'Cancelled', REJECTED: 'Rejected' })[source.status] ?? '—',
-    date: dateLabel(source.dueDate), dueAt: text(source.dueDate), serviceType: text(source.typeLabel) ?? '—', description: text(source.description) ?? '—',
+    wireStatus: text(source.status), status: overdue && ['REQUESTED', 'SCHEDULED', 'IN_PROGRESS'].includes(source.status) ? 'Overdue' : ({ REQUESTED: 'Requested', SCHEDULED: 'Upcoming', IN_PROGRESS: 'In Progress', COMPLETED: 'Completed', CANCELLED: 'Cancelled', REJECTED: 'Rejected' })[source.status] ?? '—',
+    date: dateLabel(source.dueDate), dueAt: text(source.dueDate), dateInput: maintenanceDateInput(source.dueDate), serviceType: text(source.typeLabel) ?? maintenanceTypes[source.type] ?? '—', serviceCategory: maintenanceTypes[source.type] ?? '', description: text(source.description) ?? '—',
+    canEdit: ['REQUESTED', 'SCHEDULED'].includes(source.status), canComplete: ['SCHEDULED', 'IN_PROGRESS'].includes(source.status),
+    estimatedCost: source.currency === 'NGN' ? number(source.estimatedCost) : null,
     odometer: number(source.odometerKm), cost: source.currency === 'NGN' ? number(source.actualCost) : null,
     nextDue: '—',
   };

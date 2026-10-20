@@ -17,7 +17,7 @@ import { useGetNotificationUnreadCountQuery } from "./store/features/notificatio
 import { setActiveCompany, clearSession } from "./store/features/auth/authSlice.js";
 import { baseApi } from "./store/api/baseApi.js";
 import { AppLoadingScreen } from "./components/AppLoadingScreen.jsx";
-import { useCollection } from "./mock/useCollection.js";
+import { useGetPayoutRecordsQuery } from "./store/features/payouts/payoutsApi.js";
 import { useGetAvailableJobsQuery, useGetJobDetailQuery, useGetMyJobsQuery } from "./store/features/jobs/jobsApi.js";
 import { onScreenSearch } from "./pageSearch.js";
 import { searchWorkspace } from "./domain/search.js";
@@ -73,7 +73,8 @@ export function CompanyShell({ children }) {
   const trucks = companyFleet ?? [];
   const { data: companyDrivers } = useGetCompanyDriversQuery(undefined, { skip: jobSearchDisabled });
   const drivers = companyDrivers ?? [];
-  const payouts = useCollection("payoutRequests") || [];
+  const { data: payoutData } = useGetPayoutRecordsQuery(undefined, { skip: jobSearchDisabled });
+  const payouts = payoutData?.records ?? [];
   const [section, detailId] = pathname.split("/").slice(1);
   // A won/past job's detail page belongs to My Jobs; open requests to Find Jobs.
   const wonJob = section === "jobs" && detailId && (routeJob && !['Pending', 'Quoted', '—'].includes(routeJob.status)

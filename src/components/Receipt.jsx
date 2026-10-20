@@ -3,6 +3,8 @@ import { formatNaira } from '../mock/format.js';
 import { downloadReceiptPdf } from './receiptPdf.js';
 import styles from './Receipt.module.css';
 
+const receiptMoney = (value) => typeof value === 'number' && Number.isFinite(value) ? formatNaira(value) : '—';
+
 /** On-screen receipt for a payout or a job's earnings (view model from domain/payouts.js). */
 export function ReceiptView({ receipt }) {
   const company = receipt.company || {};
@@ -16,7 +18,7 @@ export function ReceiptView({ receipt }) {
         <div>
           <small className={styles.caps}>Issued to</small>
           <strong>{company.name}</strong>
-          {[company.rcNumber, company.address, company.email].filter(Boolean).map((row) => <span key={row}>{row}</span>)}
+          {[company.rcNumber, company.address, company.email].filter(Boolean).map((row, index) => <span key={`${index}:${row}`}>{row}</span>)}
         </div>
         <dl>
           {receipt.meta.map(([label, value, amount]) => (
@@ -31,14 +33,14 @@ export function ReceiptView({ receipt }) {
           {receipt.lines.map((row) => (
             <tr key={row.description}>
               <td><strong>{row.description}</strong>{row.detail && <small>{row.detail}</small>}</td>
-              <td>{formatNaira(row.amount)}</td>
+              <td>{receiptMoney(row.amount)}</td>
             </tr>
           ))}
         </tbody>
       </table>
       <dl className={styles.totals}>
         {receipt.totals.map((row) => (
-          <div key={row.label} className={row.strong ? styles.strong : ''}><dt>{row.label}</dt><dd>{formatNaira(row.amount)}</dd></div>
+          <div key={row.label} className={row.strong ? styles.strong : ''}><dt>{row.label}</dt><dd>{receiptMoney(row.amount)}</dd></div>
         ))}
       </dl>
       {receipt.note && <p className={styles.note}>{receipt.note}</p>}

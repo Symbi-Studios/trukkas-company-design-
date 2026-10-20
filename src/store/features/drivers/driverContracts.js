@@ -1,4 +1,5 @@
-import { count, dateLabel, object, rows, safeUrl, text, tripView } from '../trips/tripContracts.js';
+import { count, object, rows, safeUrl, text, tripView } from '../trips/tripContracts.js';
+import { reviewView } from '../reviews/reviewContracts.js';
 
 // The command-center driver endpoints do not publish response fields yet.
 // Use only the documented company membership response from dashboard/drivers.
@@ -31,10 +32,10 @@ export function driverReviewsView(collection) {
   const average = validScores && total ? scores.reduce((sum, score) => sum + score, 0) / total : null;
   return {
     rating: average, reviewCount: total,
-    reviews: collection.map((review) => ({
-      id: review.id, rating: Number.isInteger(review.score) && review.score >= 1 && review.score <= 5 ? review.score : null,
-      comment: text(review.comment) ?? '—', poster: '—', date: dateLabel(review.createdAt), jobId: null,
-    })),
+    reviews: collection.map((review) => {
+      const view = reviewView(review);
+      return { ...view, jobNumber: view.jobId, jobId: view.apiJobId };
+    }),
     breakdown: [5, 4, 3, 2, 1].map((stars) => {
       const value = validScores ? scores.filter((score) => score === stars).length : null;
       return { stars, count: value ?? '—', pct: value !== null && total > 0 ? value / total * 100 : 0 };

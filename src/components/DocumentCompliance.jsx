@@ -24,7 +24,7 @@ export function ComplianceChecklist({ title, description, requirements, docs, on
       action={action || <Badge tone={summary.complete ? 'success' : 'warning'} dot>{summaryUnavailable ? '—' : summary.complete ? 'Compliant' : 'Action needed'}</Badge>}
     >
       <ProgressBar
-        value={pct} height={8} label="Required documents" caption={summaryUnavailable ? '—' : `${summary.requiredMet} of ${summary.requiredTotal}`}
+        value={summaryUnavailable ? 0 : pct} height={8} label="Required documents" caption={summaryUnavailable ? '—' : `${summary.requiredMet} of ${summary.requiredTotal}`}
         color={summary.complete ? 'var(--tk-success)' : 'var(--tk-warning)'}
       />
       <ul className={styles.rows}>

@@ -3,51 +3,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '../router.js';
 import {
-  Badge, Button, Card, DataTable, EmptyState, Modal, PageHeader, SearchField,
-  Select, SkeletonRow, StatCard, TextField,
+  Badge, Button, Card, DataTable, EmptyState, PageHeader, SearchField,
+  SkeletonRow, StatCard,
 } from '../ds.js';
-import { useCompleteFleetMaintenanceMutation, useGetFleetMaintenanceQuery, useGetFleetQuery, useRequestFleetMaintenanceMutation } from '../store/features/fleet/fleetApi.js';
+import { useCompleteFleetMaintenanceMutation, useGetFleetMaintenanceQuery, useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
+import { MaintenanceModal } from '../components/MaintenanceModal.jsx';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { Toast, useToast } from '../components/Toast.jsx';
 import { syncTopBarSearch } from '../pageSearch.js';
 import { fleetDetailHref } from '../domain/fleetLinks.js';
 import { formatNaira } from '../mock/format.js';
 
-const STATUS_TONE = { Completed: 'success', Upcoming: 'info', 'In Progress': 'warning', Overdue: 'danger' };
-
-function ScheduleModal({ open, onClose, trucks }) {
-  const [draft, setDraft] = useState({ truckPlate: trucks[0]?.plate || '', serviceType: '', description: '', date: '', estimatedCost: '' });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [requestMaintenance] = useRequestFleetMaintenanceMutation();
-  const submitting = useRef(false);
-  async function submit(event) {
-    event.preventDefault();
-    if (submitting.current) return;
-    submitting.current = true; setBusy(true); setError('');
-    try { await requestMaintenance({ ...draft, truckId: trucks.find((truck) => truck.plate === draft.truckPlate)?.id }).unwrap(); onClose(); }
-    catch (err) { setError(getApiErrorMessage(err)); }
-    finally { submitting.current = false; setBusy(false); }
-  }
-  return (
-    <Modal open={open} onClose={() => { if (!submitting.current) onClose(); }} title="Schedule Maintenance" width={460}
-      footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button form="schedule-maintenance-form" type="submit" disabled={busy}>{busy ? 'Scheduling…' : 'Schedule'}</Button></>}>
-      <form id="schedule-maintenance-form" onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
-        <Select label="Vehicle" value={draft.truckPlate} options={trucks.map((t) => t.plate)} onChange={(e) => setDraft({ ...draft, truckPlate: e.target.value })} />
-        <TextField label="Service Type" required value={draft.serviceType} onChange={(e) => setDraft({ ...draft, serviceType: e.target.value })} placeholder="e.g. Oil Change" />
-        <TextField label="Description" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
-        <TextField label="Scheduled Date" type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} />
-        <TextField label="Estimated Cost (₦)" type="number" min="0" value={draft.estimatedCost} onChange={(e) => setDraft({ ...draft, estimatedCost: e.target.value })} />
-        {error && <span role="alert" className="tk-meta" style={{ color: 'var(--tk-danger)' }}>{error}</span>}
-      </form>
-    </Modal>
-  );
-}
+const STATUS_TONE = { Completed: 'success', Upcoming: 'info', Requested: 'info', 'In Progress': 'warning', Overdue: 'danger', Cancelled: 'neutral', Rejected: 'danger' };
 
 export function Maintenance() {
   const navigate = useNavigate();
-  const { data: maintenance, error, isLoading } = useGetFleetMaintenanceQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: trucks = [] } = useGetFleetQuery();
+  const { currentData: maintenanceData, error, isLoading } = useGetFleetMaintenanceQuery(undefined, { refetchOnMountOrArgChange: true });
+  const maintenance = maintenanceData?.records;
+  const { currentData: trucks = [], error: trucksError, isLoading: trucksLoading } = useGetFleetQuery(undefined, { refetchOnMountOrArgChange: true });
   const records = maintenance ?? [];
   const [completeMaintenance] = useCompleteFleetMaintenanceMutation();
   const [busyRecord, setBusyRecord] = useState(null);
@@ -56,6 +29,7 @@ export function Maintenance() {
   const statusCount = (statuses) => !maintenance || records.some((record) => record.status === '—') ? '—' : records.filter((record) => statuses.includes(record.status)).length;
   async function complete(record) {
     if (completing.current) return;
+    if (!record.canComplete) { showToast('Only scheduled or in-progress maintenance can be completed.'); return; }
     completing.current = true; setBusyRecord(record.id);
     try { await completeMaintenance(record.id).unwrap(); }
     catch (err) { showToast(getApiErrorMessage(err)); }
@@ -72,7 +46,7 @@ export function Maintenance() {
 
   const filtered = useMemo(() => records
     .filter((r) => !query || [r.truckPlate, r.serviceType, r.description].some((v) => String(v || '').toLowerCase().includes(query.toLowerCase())))
-    .sort((a, b) => (a.status === 'Overdue' ? -1 : 1)), [records, query]);
+    .sort((a, b) => Number(b.status === 'Overdue') - Number(a.status === 'Overdue')), [records, query]);
 
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
@@ -102,13 +76,13 @@ export function Maintenance() {
               { key: 'cost', header: 'Cost', render: (r) => r.cost === null ? '—' : formatNaira(r.cost) },
               { key: 'status', header: 'Status', render: (r) => <Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge> },
               { key: 'actions', header: 'Actions', render: (r) => r.status !== 'Completed' && (
-                <Button size="sm" variant="outline" disabled={!!busyRecord} onClick={(e) => { e.stopPropagation(); complete(r); }}>Mark Completed</Button>
+                <Button size="sm" variant="outline" disabled={!!busyRecord || !r.canComplete} onClick={(e) => { e.stopPropagation(); complete(r); }}>Mark Completed</Button>
               ) },
             ]}
           />
         )}
       </Card>
-      <ScheduleModal key={String(scheduleOpen)} open={scheduleOpen} onClose={() => setScheduleOpen(false)} trucks={trucks} />
+      <MaintenanceModal key={String(scheduleOpen)} open={scheduleOpen} onClose={() => setScheduleOpen(false)} trucks={trucks} loading={trucksLoading} loadError={trucksError ? getApiErrorMessage(trucksError) : ''} width={460} formId="schedule-maintenance-form" />
       <Toast message={toast} />
     </div>
   );

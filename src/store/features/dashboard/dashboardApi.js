@@ -1,4 +1,5 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
+import { reviewSummaryView } from '../reviews/reviewContracts.js';
 
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
 const number = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -143,21 +144,7 @@ export const dashboardApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDas
       transformResponse(response) {
         // Keep average, count, monthly change and distribution in the same
         // company-and-linked-drivers scope as the existing reviews screen.
-        const summary = unwrapApiResponseData(response)?.summary;
-        const total = count(summary?.count);
-        const distribution = rows(summary?.distribution);
-        const validDistribution = summary?.distributionType === 'COUNT' && distribution?.length === 5
-          && new Set(distribution.map((item) => item.score)).size === 5
-          && distribution.every((item) => Number.isInteger(item.score) && item.score >= 1 && item.score <= 5 && count(item.count) !== null)
-          && total !== null && distribution.reduce((sum, item) => sum + item.count, 0) === total;
-        const average = number(summary?.average);
-        return {
-          average: average !== null && average >= 1 && average <= 5 ? average : null,
-          total, trendVsLastMonth: number(summary?.changeVsLastMonth),
-          breakdown: Object.fromEntries([5, 4, 3, 2, 1].map((score) => [score,
-            validDistribution && total > 0 ? Math.round(distribution.find((item) => item.score === score).count / total * 1000) / 10 : null,
-          ])),
-        };
+        return reviewSummaryView(unwrapApiResponseData(response)?.summary);
       },
       providesTags: ['CompanyDashboard'],
     }),

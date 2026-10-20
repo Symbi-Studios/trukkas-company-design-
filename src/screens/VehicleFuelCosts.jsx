@@ -9,7 +9,8 @@ import { VehicleDetailFrame } from './VehicleDetailFrame.jsx';
 
 export function VehicleFuelCosts() {
   const { truck } = useFleetVehicle();
-  const { data: maintenance } = useGetFleetMaintenanceQuery(truck?.id, { skip: !truck });
+  const { currentData: maintenanceData } = useGetFleetMaintenanceQuery(truck?.id, { skip: !truck });
+  const maintenance = maintenanceData?.records;
   const { data: trips } = useGetFleetTripsQuery(truck?.id, { skip: !truck });
   const totalMaintenanceCost = maintenance?.every((record) => record.status !== '—') ? total(maintenance.filter((record) => record.status === 'Completed'), 'cost') : null;
   const totalEarnings = total(trips, 'budget');

@@ -3,36 +3,43 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from '../router.js';
 import {
-  Badge, Banner, Button, Card, Checkbox, ChoiceCard, DataTable, EmptyState, IconButton, LabelValue, Modal, PageHeader, SearchField, StatCard,
+  Badge, Banner, Button, Card, Checkbox, ChoiceCard, DataTable, EmptyState, IconButton, LabelValue, Modal, PageHeader, SearchField, SkeletonRow, StatCard,
 } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
 import { syncTopBarSearch } from '../pageSearch.js';
-import { requestPayout } from '../mock/api.js';
-import { eligibleTrips, payoutReceipt, payoutStatusTone, payoutTotals, summarizePayouts } from '../domain/payouts.js';
+import { payoutStatusTone } from '../domain/payouts.js';
 import { jobTitle } from '../domain/jobs.js';
-import { formatNaira } from '../mock/format.js';
+import { payoutAmountLabel as formatNaira } from '../store/features/payouts/payoutContracts.js';
+import { useGetPayoutRecordsQuery, useLazyGetPayoutRecordQuery, useRequestCompanyPayoutMutation } from '../store/features/payouts/payoutsApi.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { payoutDetailHref } from '../domain/payoutLinks.js';
 import { ReceiptModal } from '../components/Receipt.jsx';
 import { Toast, useToast } from '../components/Toast.jsx';
 import { PinPrompt } from '../components/SecurityInputs.jsx';
+
+const EMPTY_ROWS = [];
+const EMPTY_TOTALS = { gross: null, fee: null, net: null };
 
 function RequestPayoutModal({ open, onClose, eligible, bank, onDone }) {
   const [selected, setSelected] = useState([]);
   const [destination, setDestination] = useState('Bank');
   const [pinOpen, setPinOpen] = useState(false);
   const [error, setError] = useState('');
+  const [requestPayout] = useRequestCompanyPayoutMutation();
 
   useEffect(() => {
     if (open) { setSelected(eligible.map((row) => row.trip.id)); setDestination('Bank'); setError(''); setPinOpen(false); }
   }, [open, eligible]);
 
   const chosen = eligible.filter((row) => selected.includes(row.trip.id));
-  const totals = payoutTotals(chosen);
+  const totals = EMPTY_TOTALS;
   const toggle = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   async function submitWithPin(pin) {
-    const payout = await requestPayout(selected, destination, pin);
-    setPinOpen(false);
-    onDone(payout);
+    try {
+      const payout = await requestPayout({ tripIds: selected, destination, pin }).unwrap();
+      setPinOpen(false);
+      onDone(payout);
+    } catch (err) { throw new Error(getApiErrorMessage(err)); }
   }
 
   return (
@@ -81,6 +88,7 @@ function RequestPayoutModal({ open, onClose, eligible, bank, onDone }) {
         open={pinOpen} onClose={() => setPinOpen(false)} confirmLabel="Approve Payout"
         description={`Approve a payout of ${formatNaira(totals.net)} to your ${destination === 'Wallet' ? 'Trukkas wallet' : 'bank account'}.`}
         onConfirm={submitWithPin}
+        securityState={null}
       />
     </Modal>
   );
@@ -88,11 +96,9 @@ function RequestPayoutModal({ open, onClose, eligible, bank, onDone }) {
 
 export function Payouts() {
   const navigate = useNavigate();
-  const payouts = useCollection('payoutRequests') || [];
-  const trips = useCollection('trips') || [];
-  const jobs = useCollection('jobs') || [];
-  const wallet = useCollection('walletSummary')?.[0];
-  const company = useCollection('companyProfile')?.[0];
+  const { data, error, isLoading } = useGetPayoutRecordsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const [getReceipt, { isFetching: receiptLoading }] = useLazyGetPayoutRecordQuery();
+  const payouts = data?.records ?? EMPTY_ROWS;
   const [query, setQuery] = useState('');
   const [requestOpen, setRequestOpen] = useState(false);
   const [receipt, setReceipt] = useState(null);
@@ -104,24 +110,27 @@ export function Payouts() {
     return () => window.removeEventListener('trukkas:global-search', onSearch);
   }, []);
 
-  const eligible = useMemo(() => eligibleTrips(trips, jobs, payouts), [trips, jobs, payouts]);
-  const eligibleNet = payoutTotals(eligible).net;
+  const eligible = data?.eligible ?? EMPTY_ROWS;
+  const eligibleNet = data?.availableToRequest ?? null;
   const filtered = useMemo(() => payouts
-    .filter((p) => !query || [p.id, p.reference, ...p.items.flatMap((i) => [i.jobId, i.tripId])].some((v) => String(v || '').toLowerCase().includes(query.toLowerCase())))
-    .sort((a, b) => b.id.localeCompare(a.id)), [payouts, query]);
+    .filter((p) => !query || [p.id, p.reference, ...p.items.flatMap((i) => [i.jobId, i.tripId])].some((v) => String(v || '').toLowerCase().includes(query.toLowerCase()))), [payouts, query]);
 
-  const summary = summarizePayouts(payouts);
-  const openReceipt = (p) => setReceipt(payoutReceipt(p, { trips, jobs, company, bank: wallet?.bankAccount }));
+  const summary = data?.summary ?? { paid: null, processing: null, failed: null };
+  const openReceipt = async (p) => {
+    if (receiptLoading) return;
+    try { const result = await getReceipt(p.id).unwrap(); setReceipt(result.receipt); }
+    catch (err) { showToast(getApiErrorMessage(err)); }
+  };
 
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
       <PageHeader
         title="Payouts"
-        description="Request payouts for completed trips and download a receipt for every payout."
-        actions={<Button icon="banknote" disabled={eligible.length === 0} onClick={() => setRequestOpen(true)}>Request Payout</Button>}
+        description={error ? getApiErrorMessage(error) : 'Request payouts for completed trips and download a receipt for every payout.'}
+        actions={<Button icon="banknote" disabled={!data?.canRequest || eligible.length === 0} onClick={() => setRequestOpen(true)}>Request Payout</Button>}
       />
       <section className="tk-money-stats">
-        <StatCard icon="hand-coins" tint="teal" label="Available to Request" value={formatNaira(eligibleNet)} caption={`${eligible.length} completed trip(s)`} />
+        <StatCard icon="hand-coins" tint="teal" label="Available to Request" value={formatNaira(eligibleNet)} caption={data?.eligibleCount == null ? '—' : `${data.eligibleCount} completed trip(s)`} />
         <StatCard icon="banknote" label="Total Paid Out" value={formatNaira(summary.paid)} />
         <StatCard icon="hourglass" tint="amber" label="In Progress" value={formatNaira(summary.processing)} caption="Requested or processing" />
         <StatCard icon="circle-x" tint="red" label="Failed" value={formatNaira(summary.failed)} />
@@ -135,18 +144,18 @@ export function Payouts() {
         <div style={{ padding: 14, borderBottom: '1px solid var(--tk-line)' }}>
           <SearchField placeholder="Search payouts, trips, jobs, references..." value={query} onChange={(e) => { setQuery(e.target.value); syncTopBarSearch(e.target.value); }} />
         </div>
-        {filtered.length === 0 ? (
+        {isLoading ? <SkeletonRow columns={8} /> : error ? <EmptyState icon="banknote" title={getApiErrorMessage(error)} /> : filtered.length === 0 ? (
           <EmptyState icon="banknote" title="No payouts yet" />
         ) : (
           <DataTable
             rows={filtered}
             rowKey={(p) => p.id}
-            onRowClick={(p) => navigate(`/payouts/${p.id}`)}
+            onRowClick={(p) => navigate(payoutDetailHref(p.id))}
             columns={[
-              { key: 'id', header: 'Payout ID', render: (p) => <span style={{ display: 'grid' }}><Link to={`/payouts/${p.id}`} onClick={(e) => e.stopPropagation()}>{p.id}</Link><span className="tk-meta">{p.reference}</span></span> },
-              { key: 'trips', header: 'Trips', render: (p) => <span style={{ display: 'grid' }}><span>{p.items.length === 1 ? p.items[0].tripId : `${p.items.length} trips`}</span><span className="tk-meta">{[...new Set(p.items.map((i) => i.jobId))].join(', ')}</span></span> },
+              { key: 'id', header: 'Payout ID', render: (p) => <span style={{ display: 'grid' }}><Link to={payoutDetailHref(p.id)} onClick={(e) => e.stopPropagation()}>{p.id}</Link><span className="tk-meta">{p.reference}</span></span> },
+              { key: 'trips', header: 'Trips', render: (p) => <span style={{ display: 'grid' }}><span>{p.tripCount === null ? '—' : p.items.length === 1 ? p.items[0].tripId : `${p.items.length} trips`}</span><span className="tk-meta">{[...new Set(p.items.map((i) => i.jobId))].join(', ') || '—'}</span></span> },
               { key: 'amount', header: 'Net Amount', align: 'right', render: (p) => <span style={{ display: 'grid' }}><strong>{formatNaira(p.amount)}</strong><span className="tk-meta">of {formatNaira(p.gross)}</span></span> },
-              { key: 'method', header: 'Paid To', render: (p) => (p.destination === 'Wallet' ? 'Trukkas Wallet' : `${p.method} ••${p.bankLast4}`) },
+              { key: 'method', header: 'Paid To', render: (p) => p.paidTo },
               { key: 'status', header: 'Status', render: (p) => <Badge tone={payoutStatusTone(p.status)} dot>{p.status}</Badge> },
               { key: 'requestedOn', header: 'Requested', render: (p) => p.requestedOn },
               { key: 'paidOn', header: 'Paid', render: (p) => p.paidOn || '—' },
@@ -156,7 +165,7 @@ export function Payouts() {
         )}
       </Card>
       <RequestPayoutModal
-        open={requestOpen} onClose={() => setRequestOpen(false)} eligible={eligible} bank={wallet?.bankAccount}
+        open={requestOpen} onClose={() => setRequestOpen(false)} eligible={eligible} bank={null}
         onDone={(p) => { setRequestOpen(false); showToast(`${p.id} requested for ${formatNaira(p.amount)}.`); }}
       />
       <ReceiptModal receipt={receipt} open={!!receipt} onClose={() => setReceipt(null)} />

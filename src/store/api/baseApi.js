@@ -223,6 +223,7 @@ async function baseQueryWithReauth(args, api, extraOptions) {
 
   // This 401 is a rejected financial approval, not an expired login session.
   if (unwrapApiResponseData(result.error?.data)?.code === 'TRANSACTION_PIN_INVALID') return result;
+  if (path === '/profile/password' && result.error?.status === 401 && unwrapApiResponseData(result.error.data)?.message === 'Current password is incorrect') return result;
   if (result.error?.status !== 401 || publicEndpoints.has(api.endpoint) || reauthExcludedPaths.has(path)) return result;
 
   const currentToken = api.getState().auth.accessToken;

@@ -5,10 +5,31 @@ import { VEHICLE_REQUIREMENTS } from '../../../domain/documents.js';
 import { companyDocumentTypes, companyDocumentView, companyLibraryView, documentCompanyView, documentCompliance, validDate, vehicleDocumentTypes, vehicleDocumentView } from './documentContracts.js';
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
-const signedIn = (api) => api.getState().auth.account ? null : unavailable('Sign in to manage company documents.');
+const signedIn = (api) => {
+  const account = api.getState().auth.account;
+  return account?.apiRole === 'TRUCKER' && account.truckerType === 'COMPANY' ? null : unavailable('Sign in to manage company documents.');
+};
+const companyIdentity = (api) => {
+  const { account, activeCompanyId } = api.getState().auth;
+  return JSON.stringify([account?.id, account?.actualUserId, activeCompanyId]);
+};
+const changedSession = () => unavailable('Your company session changed. Reload Documents.');
+function companyQuery(api, baseQuery) {
+  const company = companyIdentity(api);
+  return async (args) => {
+    if (companyIdentity(api) !== company) return changedSession();
+    if (api.signal.aborted) return unavailable('The document request was cancelled.');
+    const result = await baseQuery(args);
+    return companyIdentity(api) === company ? result : changedSession();
+  };
+}
 async function ownedTrucks(api) {
+  const company = companyIdentity(api);
   const request = api.dispatch(fleetApi.endpoints.getFleet.initiate(undefined, { subscribe: false, forceRefetch: true }));
-  try { return { data: await request.unwrap() }; }
+  try {
+    const data = await request.unwrap();
+    return companyIdentity(api) === company ? { data } : changedSession();
+  }
   catch (error) { return { error }; }
   finally { request.unsubscribe(); }
 }
@@ -42,6 +63,7 @@ export const documentsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDoc
     getCompanyDocumentLibrary: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         const companyId = api.getState().auth.account.id;
         const result = await baseQuery('/company-documents');
         if (result.error) return result;
@@ -54,6 +76,7 @@ export const documentsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDoc
     getDocumentCompany: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         const companyId = api.getState().auth.account.id;
         const result = await baseQuery('/profile');
         if (result.error) return result;
@@ -66,6 +89,7 @@ export const documentsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDoc
     getDocumentVehicles: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         return vehicleLibrary(api, baseQuery);
       },
       providesTags: ['CompanyDocuments', 'CompanyFleet'],
@@ -73,9 +97,11 @@ export const documentsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDoc
     getDocumentDetail: builder.query({
       async queryFn({ id, ownerType, ownerId }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         const companyId = api.getState().auth.account.id;
         if (!text(id)) return unavailable('This document has no API ID.');
         if (ownerType && !['company', 'vehicle', 'driver'].includes(ownerType)) return unavailable('This document owner type is not supported.');
+        if (ownerType === 'company' && ownerId && ownerId !== companyId) return unavailable('This document does not belong to your company.');
         if (ownerType === 'driver') return unavailable('Company access to driver document details is not documented by the API.');
         if (!ownerType || ownerType === 'company') {
           const result = await baseQuery('/company-documents');
@@ -104,6 +130,7 @@ export const documentsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDoc
     uploadCompanyComplianceDocument: builder.mutation({
       async queryFn({ type, file, number, expiryDate }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         const companyId = api.getState().auth.account.id;
         const wireType = Object.hasOwn(companyDocumentTypes, type) ? companyDocumentTypes[type] : null;
         if (!wireType) return unavailable('A separate director NIN/BVN submission is not supported by the company document API.');
@@ -122,10 +149,32 @@ export const documentsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDoc
       invalidatesTags: ['CompanyDocuments', 'AuthOnboardingDocuments', 'CompanyDashboard'],
     }),
     renewComplianceDocument: builder.mutation({
-      async queryFn(_draft, api) {
+      async queryFn({ id, ownerType, ownerId, expiryDate }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
-        return unavailable('The API requires a replacement file to renew this document. Saving only a new expiry date is not supported. Upload the replacement from the owner’s Documents screen.');
+        if (ownerType === 'company') return unavailable('The company API requires a replacement file to renew this document. Upload the replacement from the company’s Documents screen.');
+        if (ownerType !== 'vehicle') return unavailable('Company access to driver document renewal is not documented by the API.');
+        if (!text(id) || !text(ownerId)) return unavailable('Select a vehicle document with a confirmed API ID.');
+        if (!validDate(expiryDate)) return unavailable('Enter a valid expiry date.');
+        baseQuery = companyQuery(api, baseQuery);
+        const fleet = await ownedTrucks(api);
+        if (fleet.error) return fleet;
+        const truck = fleet.data.find((entry) => entry.id === ownerId);
+        if (!truck) return unavailable('This vehicle does not belong to your company.');
+        const current = await vehicleDocuments(baseQuery, truck);
+        if (current.error) return current;
+        const original = current.data.find((entry) => entry.id === id);
+        if (!original) return unavailable('This document does not belong to the selected vehicle. Reload Documents.');
+        const result = await baseQuery({
+          url: `/company/fleet/${encodeURIComponent(ownerId)}/documents/${encodeURIComponent(id)}`,
+          method: 'PATCH', body: { expiryDate },
+        });
+        if (result.error) return result;
+        const source = unwrapApiResponseData(result.data)?.document;
+        const saved = source?.id === id ? vehicleDocumentView(source, truck) : null;
+        return saved && saved.type === original.type && saved.url && source.expiryDate === expiryDate
+          ? { data: saved } : unavailable('The API did not confirm the renewed document. Reload Documents before trying again.');
       },
+      invalidatesTags: ['CompanyDocuments', 'CompanyFleet', 'CompanyDashboard'],
     }),
   }),
 });

@@ -1,4 +1,4 @@
-import { dateLabel, earningsView, jobView, number, object, rows, text } from '../jobs/jobContracts.js';
+import { count, dateLabel, earningsView, jobView, number, object, rows, text } from '../jobs/jobContracts.js';
 import { PAYOUT_TRANSACTION_TYPES } from '../payouts/payoutContracts.js';
 
 const finite = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -14,7 +14,7 @@ export function walletView(source) {
   return { available: wallet?.currency === 'NGN' ? decimal(wallet.available) : null };
 }
 
-export const EMPTY_WALLET_EARNINGS = { pendingPayout: null, earningsThisMonth: null, earningsLastMonth: null, change: null, monthlyTrend: null };
+export const EMPTY_WALLET_EARNINGS = { pendingPayout: null, earningsThisMonth: null, earningsLastMonth: null, completedThisMonth: null, change: null, monthlyTrend: null };
 export function walletEarningsView(source) {
   const monthly = object(source?.monthly), series = rows(monthly?.series);
   const valid = monthly?.currency === 'NGN';
@@ -24,6 +24,7 @@ export function walletEarningsView(source) {
     pendingPayout: number(source?.wallet?.pendingWithdrawals),
     earningsThisMonth: valid && month(monthly.currentMonth?.month) ? number(monthly.currentMonth.earnings) : null,
     earningsLastMonth: valid && month(monthly.previousMonth?.month) ? number(monthly.previousMonth.earnings) : null,
+    completedThisMonth: valid && month(monthly.currentMonth?.month) ? count(monthly.currentMonth.completedTrips) : null,
     change: valid ? finite(monthly.changePercent) : null,
     monthlyTrend: validSeries ? series.map((item) => ({ month: new Intl.DateTimeFormat('en-NG', { month: 'short', timeZone: 'Africa/Lagos' }).format(new Date(`${item.month}-15T12:00:00Z`)), earnings: item.earnings, expenses: item.expenses })) : null,
   };
@@ -45,10 +46,10 @@ export function walletJobView(jobSource, trip) {
   const job = jobView(jobSource);
   if (!job) return null;
   const earnings = earningsView(trip, job);
-  return { job, earnings, delivered: trip.status === 'COMPLETED' ? 1 : null, required: 1 };
+  return { job, earnings, completedOn: dateLabel(trip.completedAt), delivered: trip.status === 'COMPLETED' ? 1 : null, required: 1 };
 }
 
-export function walletJobReceipt({ job, earnings, delivered, required }, company) {
+export function walletJobReceipt({ job, earnings, delivered, required, completedOn }, company) {
   if (!earnings?.complete) return null;
   return {
     kind: 'Job Earnings Statement', number: `EST-${job.id}`, status: job.status,
@@ -58,7 +59,7 @@ export function walletJobReceipt({ job, earnings, delivered, required }, company
       ['Job ID', job.number], ['Job', job.title], ['Route', `${job.origin} → ${job.destination}`], ['Forwarder', job.poster.name],
       ['Job amount', null, earnings.totals.gross], ['Trucks delivered', `${delivered ?? '—'} of ${required ?? '—'}`],
     ],
-    lines: [{ description: `${job.number} · ${job.truckPlate}`, detail: `Delivered — · ${earnings.status ?? '—'}`, amount: earnings.totals.gross }],
+    lines: [{ description: `${job.number} · ${job.truckPlate}`, detail: `Delivered ${completedOn ?? '—'} · ${earnings.status ?? '—'}`, amount: earnings.totals.gross }],
     totals: [
       { label: 'Gross earnings', amount: earnings.totals.gross },
       { label: `Trukkas service fee (${earnings.totals.fee === 0 ? '0' : '—'}%)`, amount: -earnings.totals.fee },
@@ -72,4 +73,11 @@ export function withdrawalFeeView(source, amount) {
   if (source?.amount !== amount || number(source.feeAmount) === null || number(source.netAmount) === null || number(source.feePercent) === null
     || source.feeAmount > amount || Math.abs(source.netAmount + source.feeAmount - amount) > 0.01) return null;
   return { amount, fee: source.feeAmount, net: source.netAmount, feePercent: source.feePercent };
+}
+
+export function withdrawalResultView(source, amount) {
+  const transaction = object(source?.transaction);
+  const fee = transaction && withdrawalFeeView({ ...transaction, amount: transaction.grossAmount }, amount);
+  if (!fee || !text(transaction.id) || !text(transaction.reference) || transaction.status !== 'PENDING' || transaction.requiresApproval !== true) return null;
+  return { id: transaction.id, reference: transaction.reference, ...fee, status: 'Pending', requiresApproval: true };
 }

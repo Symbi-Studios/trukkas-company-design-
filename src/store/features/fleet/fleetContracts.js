@@ -1,4 +1,6 @@
 // Only documented company-facing DTOs belong here; screens consume view models.
+import { VEHICLE_REQUIREMENTS } from '../../../domain/documents.js';
+
 export const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
 export const object = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 export const rows = (value) => Array.isArray(value) && value.every(object) ? value : null;
@@ -22,9 +24,48 @@ const classes = { HEAD: 'Head', TRAILER: 'Trailer', TANKER: 'Tanker', SPECIALIZE
 export const vehicleClassToWire = (value) => Object.keys(classes).find((key) => classes[key] === value) ?? null;
 const fuelLabel = (value) => ({ DIESEL: 'Diesel', PETROL: 'Petrol', CNG: 'CNG', LNG: 'LNG', ELECTRIC: 'Electric' })[value] ?? text(value) ?? '—';
 const timestamp = (value) => instant(value) ? new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Lagos' }).format(instant(value)) : '—';
-export const fleetDocumentTypes = { Registration: 'REGISTRATION', 'Road Worthiness': 'ROADWORTHINESS', Insurance: 'INSURANCE', Customs: 'CUSTOMS' };
+export const fleetDocumentTypes = {
+  Registration: 'REGISTRATION', 'Road Worthiness': 'ROADWORTHINESS', Insurance: 'INSURANCE', Customs: 'CUSTOMS',
+  'Vehicle Licence': 'VEHICLE_LICENCE', 'Hackney Permit': 'HACKNEY_PERMIT', 'Proof of Ownership': 'PROOF_OF_OWNERSHIP',
+  Emission: 'EMISSION', 'Special Permit': 'SPECIAL_PERMIT', Safety: 'SAFETY', Other: 'OTHER',
+};
 export const fleetDocumentSupported = (type) => Object.hasOwn(fleetDocumentTypes, type);
-const documentLabels = { REGISTRATION: 'Registration', ROADWORTHINESS: 'Road Worthiness', INSURANCE: 'Insurance', CUSTOMS: 'Customs', VEHICLE_LICENCE: 'Vehicle Licence', HACKNEY_PERMIT: 'Hackney Permit', OTHER: 'Other' };
+const documentLabels = Object.fromEntries(Object.entries(fleetDocumentTypes).map(([label, type]) => [type, label]));
+const ownershipLabels = { OWNED: 'Company Owned', LEASED: 'Leased', FINANCED: 'Hire Purchase / Financed' };
+const specificationFields = {
+  engineType: 'Engine Type', engineCapacity: 'Engine Capacity', transmission: 'Transmission', fuelType: 'Fuel Type',
+  axleConfig: 'Axle Configuration', gvw: 'Gross Vehicle Weight', loadCapacity: 'Load Capacity', axles: 'Number of Axles',
+  fuelTankCapacity: 'Fuel Tank Capacity', emissionStandard: 'Emission Standard', trailerCompatibility: 'Trailer Compatibility',
+};
+
+export const ownershipToWire = (value) => Object.keys(ownershipLabels).find((key) => ownershipLabels[key] === value) ?? null;
+export function fleetSpecificationsBody(draft) {
+  const fields = Object.entries(specificationFields).filter(([key]) => draft.vehicleClass !== 'Trailer' || ['axleConfig', 'gvw', 'loadCapacity', 'axles'].includes(key));
+  return Object.fromEntries(fields.filter(([key]) => text(draft.specs?.[key])).map(([key, label]) => [label, draft.specs[key].trim()]));
+}
+
+export function fleetActivityView(entry) {
+  return {
+    id: text(entry.id) ?? text(entry.refId), title: text(entry.label) ?? '—', detail: '—',
+    time: timestamp(entry.at), occurredAt: instant(entry.at)?.getTime() ?? null,
+    tone: entry.kind === 'MAINTENANCE' ? 'warning' : 'info',
+  };
+}
+
+export function fleetDocumentCompliance(documents) {
+  const known = Array.isArray(documents);
+  const requirements = VEHICLE_REQUIREMENTS.map((req) => {
+    const doc = known ? documents.find((item) => item.type === req.type) : undefined;
+    return { req, doc, status: doc?.status ?? (known && fleetDocumentSupported(req.type) ? 'Missing' : '—') };
+  });
+  const required = requirements.filter(({ req }) => req.required);
+  const statusesKnown = known && required.every(({ req, doc, status }) => !doc || ['Valid', 'Expiring Soon', 'Expired'].includes(status) || !req.expires && status === 'Uploaded');
+  return { rows: requirements, summary: {
+    missing: known ? required.filter(({ doc }) => !doc).length : '—',
+    requiredTotal: required.length,
+    requiredMet: statusesKnown ? required.filter(({ req, doc, status }) => doc && (['Valid', 'Expiring Soon'].includes(status) || !req.expires && status === 'Uploaded')).length : '—',
+  } };
+}
 export function fleetDocumentView(source) {
   if (!text(source?.id)) return null;
   return {
@@ -49,17 +90,32 @@ export function truckView(source, detail = false) {
     vehicleClass, type: [text(source.containerSize?.name ?? specs?.containerSize?.name), text(source.containerType?.name ?? specs?.containerType?.name)].filter(Boolean).join(' ') || text(source.truckType?.name ?? specs?.truckType?.name) || vehicleClass,
     make: text(source.make) ?? '—', model: text(source.model) ?? '—', makeModel: text(source.makeModel) ?? ([text(source.make), text(source.model)].filter(Boolean).join(' ') || '—'),
     year: text(source.year) ?? '—', vin: detail ? text(source.vin) ?? '—' : '—', engineNumber: detail ? text(source.engineNumber) ?? '—' : '—',
-    purchaseDate: '—', color: text(source.color) ?? '—', ownership: detail && source.ownership === 'OWNED' ? 'Company Owned' : '—',
+    purchaseDate: detail ? dateLabel(source.purchaseDate) : '—', color: text(source.color) ?? '—', ownership: detail ? ownershipLabels[source.ownership] ?? '—' : '—',
     insuranceExpiry: dateLabel(detail ? source.insuranceExpiry : source.insurance?.expiresAt), roadWorthinessExpiry: dateLabel(roadWorthiness?.expiryDate),
     odometer: number(detail ? source.odometerKm : source.mileageKm), odometerUpdated: timestamp(detail ? source.lastActivityAt : source.location?.updatedAt),
     location: '—', notes: detail ? text(source.notes) : null,
-    activityLog: activity?.map((entry) => ({ id: text(entry.id), title: text(entry.label) ?? '—', detail: '—', time: timestamp(entry.at), tone: entry.kind === 'MAINTENANCE' ? 'warning' : 'info' })) ?? null,
+    activityLog: activity?.map(fleetActivityView) ?? null,
     remindersEnabled: detail ? boolean(source.remindersEnabled) : null,
     driverId: text(driver?.id), driver: driver ? text(driver.name) ?? '—' : source.driver === null ? null : '—',
     driverKnown: source.driver === null || !!text(driver?.id),
     assignedDriver: driver ? { id: driver.id, name: text(driver.name) ?? '—', phone: text(driver.phone) ?? '—', rating: null, tripsCompleted: '—', licenseClass: '—', licenseNumber: '—', licenseExpiry: '—', status: '—', photo: safeUrl(driver.avatarUrl) } : null,
-    specs: { ...Object.fromEntries(['engineType', 'engineCapacity', 'transmission', 'fuelType', 'axleConfig', 'gvw', 'loadCapacity', 'axles', 'fuelTankCapacity', 'emissionStandard', 'trailerCompatibility'].map((key) => [key, '—'])), fuelType: detail ? fuelLabel(source.fuelType ?? specs?.fuelType) : '—' },
+    specs: {
+      ...Object.fromEntries(Object.entries(specificationFields).map(([key, label]) => [key, detail ? text(specs?.[label]) ?? text(specs?.[key]) ?? '—' : '—'])),
+      fuelType: detail ? fuelLabel(source.fuelType ?? specs?.['Fuel Type'] ?? specs?.fuelType) : '—',
+    },
     photos: Array.isArray(source.photos) ? source.photos.map(safeUrl).filter(Boolean).map((url) => ({ url, label: '—' })) : null,
+  };
+}
+
+export function assignedFleetDriverView(source) {
+  const rating = number(source.rating?.average);
+  return {
+    id: source.id, name: text(source.name) ?? '—', phone: text(source.phone) ?? '—', photo: safeUrl(source.avatarUrl),
+    rating: rating !== null && rating >= 1 && rating <= 5 ? rating : null,
+    tripsCompleted: count(source.stats?.completedTrips) ?? '—',
+    licenseClass: text(source.license?.class) ?? '—', licenseNumber: text(source.license?.number) ?? '—',
+    licenseExpiry: dateLabel(source.license?.expiresAt),
+    status: ({ ACTIVE: 'Active', SUSPENDED: 'Suspended', INVITED: 'Invited', UNLINKED: 'Unlinked' })[source.status] ?? '—',
   };
 }
 
@@ -77,7 +133,13 @@ export function driverView(source) {
 const maintenanceTypes = { PREVENTIVE: 'Preventive', REPAIR: 'Repair', INSPECTION: 'Inspection', BREAKDOWN: 'Breakdown' };
 export const MAINTENANCE_SERVICE_TYPES = Object.values(maintenanceTypes);
 export const maintenanceTypeToWire = (value) => Object.entries(maintenanceTypes).find(([wire, label]) => value === wire || value === label)?.[0] ?? null;
-const maintenanceDateInput = (value) => dateLabel(value) === '—' ? '' : value.slice(0, 10);
+const maintenanceDateInput = (value) => {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return dateLabel(value) === '—' ? '' : value;
+  const date = instant(value);
+  if (!date) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Africa/Lagos' }).formatToParts(date);
+  return ['year', 'month', 'day'].map((type) => parts.find((part) => part.type === type).value).join('-');
+};
 
 export function maintenanceDueView(source) {
   if (!object(source) || !text(source.id)) return null;
@@ -88,13 +150,13 @@ export function maintenanceView(source) {
   if (!text(source?.id)) return null;
   const overdue = source.isOverdue === true || source.displayStatus === 'OVERDUE';
   return {
-    id: source.id, truckId: text(source.truck?.id), truckPlate: text(source.truck?.plateNumber) ?? '—',
+    id: source.id, reference: text(source.reference) ?? '—', truckId: text(source.truck?.id), truckPlate: text(source.truck?.plateNumber) ?? '—',
     wireStatus: text(source.status), status: overdue && ['REQUESTED', 'SCHEDULED', 'IN_PROGRESS'].includes(source.status) ? 'Overdue' : ({ REQUESTED: 'Requested', SCHEDULED: 'Upcoming', IN_PROGRESS: 'In Progress', COMPLETED: 'Completed', CANCELLED: 'Cancelled', REJECTED: 'Rejected' })[source.status] ?? '—',
     date: dateLabel(source.dueDate), dueAt: text(source.dueDate), dateInput: maintenanceDateInput(source.dueDate), serviceType: text(source.typeLabel) ?? maintenanceTypes[source.type] ?? '—', serviceCategory: maintenanceTypes[source.type] ?? '', description: text(source.description) ?? '—',
     canEdit: ['REQUESTED', 'SCHEDULED'].includes(source.status), canComplete: ['SCHEDULED', 'IN_PROGRESS'].includes(source.status),
     estimatedCost: source.currency === 'NGN' ? number(source.estimatedCost) : null,
     odometer: number(source.odometerKm), cost: source.currency === 'NGN' ? number(source.actualCost) : null,
-    nextDue: '—',
+    nextDue: dateLabel(source.nextDueDate),
   };
 }
 

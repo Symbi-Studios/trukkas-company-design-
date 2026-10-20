@@ -6,7 +6,7 @@ import {
   Avatar, Badge, Button, Card, DataTable, EmptyState, EntityHeaderCard, Icon, PageHeader, ProgressBar,
   SectionCard, SkeletonRow, StatCard, Tabs, Timeline,
 } from '../ds.js';
-import { useGetCompanyDriversQuery, useGetDriverReviewsQuery, useGetDriverTripsQuery } from '../store/features/drivers/driversApi.js';
+import { useGetCompanyDriverQuery, useGetDriverReviewsQuery, useGetDriverTripsQuery } from '../store/features/drivers/driversApi.js';
 import { useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { formatNaira } from '../mock/format.js';
@@ -44,8 +44,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
   const { driverId: routeDriverId } = useParams();
   const driverId = queryDriverId ?? routeDriverId;
   const navigate = useNavigate();
-  const { currentData: drivers, error: driverError, isLoading: driverLoading } = useGetCompanyDriversQuery(undefined, { refetchOnMountOrArgChange: true });
-  const driver = drivers?.find((item) => item.id === driverId);
+  const { currentData: driver, error: driverError, isLoading: driverLoading } = useGetCompanyDriverQuery(driverId, { skip: !driverId, refetchOnMountOrArgChange: true });
   const { currentData: trucks, error: truckError, isLoading: truckLoading } = useGetFleetQuery(undefined, { skip: !driver, refetchOnMountOrArgChange: true });
   const { currentData: trips, error: tripsError, isLoading: tripsLoading } = useGetDriverTripsQuery(driverId, { skip: !driver, refetchOnMountOrArgChange: true });
   const { currentData: feedback, error: reviewsError, isLoading: reviewsLoading } = useGetDriverReviewsQuery(driverId, { skip: !driver, refetchOnMountOrArgChange: true });
@@ -57,7 +56,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
   const [toast, showToast] = useToast();
 
   const reviews = !reviewsError ? feedback?.reviews ?? [] : [];
-  const docs = [];
+  const docs = driver?.documents ?? [];
 
   if (driverLoading) return <SkeletonRow columns={4} />;
   if (driverError) return <EmptyState icon="user" title={getApiErrorMessage(driverError)} action={<Button variant="outline" onClick={() => navigate('/drivers')}>Back to Drivers</Button>} />;
@@ -76,13 +75,13 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
   const closed = knownTrips ? trips.filter((trip) => trip.status === 'Completed' || trip.status === 'Cancelled').length : 0;
   const sumCompleted = (value) => !knownTrips || completed.some((trip) => value(trip) == null) ? null : completed.reduce((sum, trip) => sum + value(trip), 0);
   const perf = {
-    rating: reviewsError ? null : feedback?.rating, reviewCount: !reviewsError ? feedback?.reviewCount ?? '—' : '—',
-    tripsCompleted: knownTrips ? completed.length : '—', completionRate: closed ? Math.round(completed.length / closed * 100) : null,
+    rating: driver.rating ?? (reviewsError ? null : feedback?.rating), reviewCount: driver.reviewCount !== '—' ? driver.reviewCount : !reviewsError ? feedback?.reviewCount ?? '—' : '—',
+    tripsCompleted: driver.tripsCompleted !== '—' ? driver.tripsCompleted : knownTrips ? completed.length : '—', completionRate: closed ? Math.round(completed.length / closed * 100) : null,
     onTimeRate: null, safetyScore: null, incidents: '—',
-    distanceKm: null, earnings: sumCompleted((trip) => trip.revenue),
+    distanceKm: sumCompleted((trip) => trip.distanceKm), earnings: sumCompleted((trip) => trip.revenue),
     activeTrip: !tripsError ? trips?.find((trip) => trip.open) ?? null : null,
   };
-  const activity = [];
+  const activity = !tripsError ? (trips ?? []).flatMap((trip) => trip.activity ?? []).sort((a, b) => Date.parse(b.at) - Date.parse(a.at)) : [];
   const breakdown = !reviewsError && feedback ? feedback.breakdown : [5, 4, 3, 2, 1].map((stars) => ({ stars, count: '—', pct: 0 }));
   const locked = !!perf.activeTrip;
   const status = locked ? 'On Trip' : driver.status;
@@ -230,7 +229,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
               title="Driver Documents" description="Required to dispatch this driver on trips. Trip paperwork lives on each trip."
               requirements={DRIVER_REQUIREMENTS} docs={docs}
               unavailable
-              onUpload={(req) => setUploadType(req.type)} onOpen={() => showToast('Driver document viewing is not supported by the documented company API.')}
+              onUpload={(req) => setUploadType(req.type)} onOpen={(doc) => doc.url ? window.open(doc.url, '_blank', 'noopener,noreferrer') : showToast('The API did not return a document URL.')}
               style={{ boxShadow: 'none', border: 0 }}
             />
           )}

@@ -7,17 +7,37 @@ import { bankRequestResult, syncOnboardingBank } from '../auth/onboardingApi.js'
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
 const bool = (value) => typeof value === 'boolean' ? value : null;
 export const settingsUnavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
-const date = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))
+const date = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && /(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value))
   ? new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Lagos' }).format(new Date(value)) : '—';
-const epoch = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
+const epoch = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && /(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
 
 export function settingsAccess(api, owner = false) {
   const account = api.getState().auth.account;
-  const access = profileApi.endpoints.getMyProfileAccess.select()(api.getState()).data;
-  if (!account || access?.companyId !== account.id || (owner ? access.isOwner !== true : access.canEdit !== true)) {
+  const result = profileApi.endpoints.getMyProfileAccess.select()(api.getState());
+  const access = result.data;
+  if (!account || result.isError || access?.companyId !== account.id || (owner ? access.isOwner !== true : access.canEdit !== true)) {
     return settingsUnavailable(owner ? 'Only the company owner can manage the team and roles.' : 'You need settings.edit permission to change company settings.');
   }
   return null;
+}
+
+function settingsBankAccess(api) {
+  const result = profileApi.endpoints.getMyProfileAccess.select()(api.getState());
+  return result.isError || result.data?.companyId !== api.getState().auth.account?.id || result.data?.canManageBank !== true
+    ? settingsUnavailable('You need finance.withdraw permission to change the payout account.') : null;
+}
+
+export function settingsCompanyQuery(api, baseQuery) {
+  const identity = () => {
+    const { account, activeCompanyId } = api.getState().auth;
+    return JSON.stringify([account?.id, account?.actualUserId, activeCompanyId]);
+  };
+  const company = identity();
+  return async (args) => {
+    if (!api.getState().auth.account || identity() !== company) return settingsUnavailable('Your company session changed. Reload settings.');
+    const result = await baseQuery(args);
+    return identity() === company ? result : settingsUnavailable('Your company session changed. Reload settings.');
+  };
 }
 
 export const EMPTY_COMPANY_SETTINGS = { name: '—', rcNumber: '—', email: '—', phone: '—', address: '—', founded: '—', industry: '—', verification: '—' };
@@ -30,7 +50,7 @@ function companyResult(response, api) {
     company: {
       ...EMPTY_COMPANY_SETTINGS, name: text(user.businessName) ?? '—', rcNumber: text(user.cacNumber) ?? '—',
       address: text(user.businessAddress) ?? '—', email: text(details?.companyEmail) ?? '—', phone: text(details?.companyPhone) ?? '—',
-      founded: Number.isInteger(details?.yearFounded) && details.yearFounded >= 1900 ? String(details.yearFounded) : '—',
+      founded: Number.isInteger(details?.yearFounded) && details.yearFounded >= 1900 && details.yearFounded <= new Date().getUTCFullYear() ? String(details.yearFounded) : '—',
       industry: text(details?.industry) ?? '—',
       verification: ({ VERIFIED: 'Verified', IN_REVIEW: 'Pending Review', PENDING: 'Pending', REJECTED: 'Rejected' })[user.kycStatus] ?? '—',
     },
@@ -53,10 +73,12 @@ function notificationView(response) {
 }
 
 export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySettings', 'SettingsNotifications', 'SettingsSessions'] }).injectEndpoints({
+  overrideExisting: process.env.NODE_ENV === 'development',
   endpoints: (builder) => ({
     updateSettingsBank: builder.mutation({
       async queryFn({ bankName, accountNumber, transactionPin }, api, _options, baseQuery) {
-        const blocked = settingsAccess(api); if (blocked) return blocked;
+        const blocked = settingsBankAccess(api); if (blocked) return blocked;
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         if (!text(bankName) || !/^\d{10}$/.test(accountNumber || '') || !/^\d{4}$/.test(transactionPin || '')) {
           return settingsUnavailable('Choose a supported bank, enter a 10-digit account number and approve with your four-digit PIN.');
         }
@@ -68,6 +90,7 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
     }),
     getCompanySettings: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         const result = await baseQuery('/profile');
         return result.error ? result : companyResult(result.data, api);
       },
@@ -77,6 +100,7 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
     updateCompanySettings: builder.mutation({
       async queryFn(changes, api, _options, baseQuery) {
         const blocked = settingsAccess(api); if (blocked) return blocked;
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         const fields = { name: 'businessName', rcNumber: 'cacNumber', address: 'businessAddress', email: 'companyEmail', phone: 'companyPhone', founded: 'yearFounded', industry: 'industry' };
         if (Object.keys(changes).some((key) => !Object.hasOwn(fields, key))) return settingsUnavailable('The company form contains an unsupported field.');
         const body = {};
@@ -84,6 +108,7 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
           if (typeof value !== 'string') return settingsUnavailable('Enter valid company details.');
           const next = value.trim();
           if (['name', 'rcNumber', 'address'].includes(key) && !next) return settingsUnavailable('Company name, RC number and address cannot be blank.');
+          if ((key === 'name' && next.length > 150) || (key === 'rcNumber' && next.length > 30) || (key === 'address' && next.length > 300)) return settingsUnavailable('Company name, RC number or address exceeds the supported length.');
           if (key === 'email' && next && !/^\S+@\S+\.\S+$/.test(next)) return settingsUnavailable('Enter a valid company email.');
           if (key === 'phone' && next && !/^\+?\d{10,15}$/.test(next.replace(/\s/g, ''))) return settingsUnavailable('Enter a valid company phone.');
           if (key === 'founded' && next && (!/^\d{4}$/.test(next) || Number(next) < 1900 || Number(next) > new Date().getUTCFullYear())) return settingsUnavailable('Enter a year founded between 1900 and this year.');
@@ -115,30 +140,40 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
     changeSettingsPassword: builder.mutation({
       async queryFn({ currentPassword, newPassword, confirmPassword }, api, _options, baseQuery) {
         const blocked = settingsAccess(api); if (blocked) return blocked;
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         if (!text(currentPassword) || typeof newPassword !== 'string' || newPassword.length < 8 || newPassword !== confirmPassword) return settingsUnavailable('Enter your current password and matching new passwords of at least 8 characters.');
-        return baseQuery({ url: '/profile/password', method: 'PATCH', body: { currentPassword, newPassword, confirmPassword } });
+        const result = await baseQuery({ url: '/profile/password', method: 'PATCH', body: { currentPassword, newPassword, confirmPassword } });
+        if (result.error) return result;
+        return text(unwrapApiResponseData(result.data)?.message) ? { data: { changed: true } } : settingsUnavailable('The API did not confirm the password change. Please sign in again before retrying.');
       },
-      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
-        try { await queryFulfilled; dispatch(clearSession()); dispatch(baseApi.util.resetApiState()); } catch { /* The form shows the error. */ }
+      async onQueryStarted(_arg, { dispatch, getState, queryFulfilled }) {
+        const accountId = getState().auth.account?.id, token = getState().auth.refreshToken;
+        try {
+          await queryFulfilled;
+          if (getState().auth.account?.id === accountId && getState().auth.refreshToken === token) { dispatch(clearSession()); dispatch(baseApi.util.resetApiState()); }
+        } catch { /* The form shows the error. */ }
       },
     }),
     requestSettingsPinReset: builder.mutation({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = settingsAccess(api); if (blocked) return blocked;
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         const result = await baseQuery({ url: '/profile/transaction-pin/forgot', method: 'POST' });
         if (result.error) {
           const seconds = unwrapApiResponseData(result.error.data)?.retryAfterSeconds;
           return { error: { ...result.error, retryAt: Number.isFinite(seconds) && seconds > 0 ? Date.now() + seconds * 1000 : null } };
         }
         const data = unwrapApiResponseData(result.data);
-        if (!text(data?.message)) return settingsUnavailable('The API did not confirm that a PIN reset code was sent.');
-        return { data: { expiresAt: epoch(data.expiresAt), resendAt: epoch(data.resendAvailableAt) } };
+        const expiresAt = epoch(data?.expiresAt), resendAt = epoch(data?.resendAvailableAt);
+        if (!text(data?.message) || expiresAt === null || resendAt === null || expiresAt <= Date.now() || resendAt > expiresAt) return settingsUnavailable('The API did not confirm the PIN reset code expiry and resend time.');
+        return { data: { expiresAt, resendAt } };
       },
     }),
     resetSettingsPin: builder.mutation({
       async queryFn({ code, newPin, confirmPin }, api, _options, baseQuery) {
         const blocked = settingsAccess(api); if (blocked) return blocked;
-        if (typeof code !== 'string' || !/^\d{6}$/.test(code) || !/^\d{4}$/.test(newPin) || newPin !== confirmPin) return settingsUnavailable('Enter the reset code and matching four-digit PINs.');
+        baseQuery = settingsCompanyQuery(api, baseQuery);
+        if (typeof code !== 'string' || !/^\d{6}$/.test(code) || typeof newPin !== 'string' || !/^\d{4}$/.test(newPin) || newPin !== confirmPin) return settingsUnavailable('Enter the reset code and matching four-digit PINs.');
         const result = await baseQuery({ url: '/profile/transaction-pin/reset', method: 'POST', body: { code, newPin, confirmPin } });
         if (result.error) return result;
         return unwrapApiResponseData(result.data)?.transactionPinSet === true ? { data: { transactionPinSet: true } } : settingsUnavailable('The API did not confirm your new PIN.');
@@ -146,19 +181,27 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
       invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingSecurity'],
     }),
     getSettingsSessions: builder.query({
-      query: () => '/profile/sessions',
-      transformResponse(response) {
-        const data = unwrapApiResponseData(response);
-        if (!Array.isArray(data?.sessions) || data.sessions.some((row) => !row || typeof row !== 'object')) return null;
+      async queryFn(_arg, api, _options, baseQuery) {
+        const result = await settingsCompanyQuery(api, baseQuery)('/profile/sessions');
+        if (result.error) return result;
+        const data = unwrapApiResponseData(result.data);
+        if (!Array.isArray(data?.sessions) || data.sessions.some((row) => !row || typeof row !== 'object' || Array.isArray(row) || !text(row.id)) || new Set(data.sessions.map((row) => row.id)).size !== data.sessions.length) return settingsUnavailable('The API did not return valid sessions.');
         const active = data.sessions.filter((row) => row.status === 'ACTIVE');
-        return active.map((row) => ({ id: text(row.id), device: text(row.device) ?? '—', ip: text(row.ipAddress) ?? '—', location: text(row.location) ?? '—', lastActive: date(row.lastActiveAt), current: active.length === 1 ? true : null }));
+        return { data: active.map((row) => ({ id: text(row.id), device: text(row.device) ?? '—', ip: text(row.ipAddress) ?? '—', location: text(row.location) ?? '—', lastActive: date(row.lastActiveAt), current: active.length === 1 ? true : null })) };
       },
       providesTags: ['SettingsSessions'],
     }),
-    getSettingsNotifications: builder.query({ query: () => '/profile/notification-settings', transformResponse: notificationView, providesTags: ['SettingsNotifications'] }),
+    getSettingsNotifications: builder.query({
+      async queryFn(_arg, api, _options, baseQuery) {
+        const result = await settingsCompanyQuery(api, baseQuery)('/profile/notification-settings');
+        return result.error ? result : { data: notificationView(result.data) };
+      },
+      providesTags: ['SettingsNotifications'],
+    }),
     updateSettingsNotifications: builder.mutation({
       async queryFn(changes, api, _options, baseQuery) {
         const blocked = settingsAccess(api); if (blocked) return blocked;
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         const fields = { newJobs: 'emailNewJobs', tripUpdates: 'emailTripUpdates', payouts: 'emailPayouts', documents: 'emailDocuments', reviews: 'emailReviews' };
         const entries = Object.entries(changes);
         if (!entries.length || entries.some(([key, value]) => !Object.hasOwn(fields, key) || typeof value !== 'boolean')) return settingsUnavailable('Choose supported email preferences. Security alerts must stay on.');

@@ -1,106 +1,35 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSelector } from 'react-redux';
 import { Link, useNavigate } from '../router.js';
 import {
-  Badge, Banner, Button, Card, Checkbox, ChoiceCard, DataTable, EmptyState, IconButton, LabelValue, Modal, PageHeader, SearchField, SkeletonRow, StatCard,
+  Badge, Banner, Button, Card, DataTable, EmptyState, IconButton, PageHeader, SearchField, SkeletonRow, StatCard,
 } from '../ds.js';
 import { syncTopBarSearch } from '../pageSearch.js';
 import { payoutStatusTone } from '../domain/payouts.js';
-import { jobTitle } from '../domain/jobs.js';
 import { payoutAmountLabel as formatNaira } from '../store/features/payouts/payoutContracts.js';
-import { useGetPayoutRecordsQuery, useLazyGetPayoutRecordQuery, useRequestCompanyPayoutMutation } from '../store/features/payouts/payoutsApi.js';
+import { useGetPayoutRecordsQuery, useLazyGetPayoutRecordQuery } from '../store/features/payouts/payoutsApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { payoutDetailHref } from '../domain/payoutLinks.js';
 import { ReceiptModal } from '../components/Receipt.jsx';
 import { Toast, useToast } from '../components/Toast.jsx';
-import { PinPrompt } from '../components/SecurityInputs.jsx';
+import { WalletWithdrawModal, useWalletWithdrawalAttempt } from '../components/WalletWithdrawModal.jsx';
+import { useGetCompanyWalletQuery } from '../store/features/wallet/walletApi.js';
+import { useGetOnboardingBankQuery } from '../store/features/auth/onboardingApi.js';
 
 const EMPTY_ROWS = [];
-const EMPTY_TOTALS = { gross: null, fee: null, net: null };
-
-function RequestPayoutModal({ open, onClose, eligible, bank, onDone }) {
-  const [selected, setSelected] = useState([]);
-  const [destination, setDestination] = useState('Bank');
-  const [pinOpen, setPinOpen] = useState(false);
-  const [error, setError] = useState('');
-  const [requestPayout] = useRequestCompanyPayoutMutation();
-
-  useEffect(() => {
-    if (open) { setSelected(eligible.map((row) => row.trip.id)); setDestination('Bank'); setError(''); setPinOpen(false); }
-  }, [open, eligible]);
-
-  const chosen = eligible.filter((row) => selected.includes(row.trip.id));
-  const totals = EMPTY_TOTALS;
-  const toggle = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
-
-  async function submitWithPin(pin) {
-    try {
-      const payout = await requestPayout({ tripIds: selected, destination, pin }).unwrap();
-      setPinOpen(false);
-      onDone(payout);
-    } catch (err) { throw new Error(getApiErrorMessage(err)); }
-  }
-
-  return (
-    <Modal
-      open={open} onClose={onClose} width={620} title="Request Payout"
-      description="Choose completed trips to be paid out by Trukkas. Payouts are usually processed within 1–3 business days."
-      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button icon="banknote" disabled={chosen.length === 0 || (destination === 'Bank' && !bank)} onClick={() => { setError(''); setPinOpen(true); }}>{`Request ${formatNaira(totals.net)}`}</Button></>}
-    >
-      <div style={{ display: 'grid', gap: 16 }}>
-        {eligible.length === 0 ? (
-          <EmptyState icon="banknote" title="Nothing to pay out yet" description="Completed trips that haven't been paid out will appear here." style={{ padding: 16 }} />
-        ) : (
-          <div style={{ display: 'grid', border: '1px solid var(--tk-line)', borderRadius: 'var(--tk-r-lg)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--tk-line)' }}>
-              <Checkbox label={`Select all (${eligible.length})`} checked={selected.length === eligible.length} indeterminate={selected.length > 0 && selected.length < eligible.length}
-                onChange={(on) => setSelected(on ? eligible.map((r) => r.trip.id) : [])} />
-              <span className="tk-meta">Gross at agreed rate per truck</span>
-            </div>
-            {eligible.map((row) => (
-              <div key={row.trip.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: '1px solid var(--tk-line)' }}>
-                <Checkbox checked={selected.includes(row.trip.id)} onChange={() => toggle(row.trip.id)} />
-                <span style={{ flex: 1, display: 'grid', minWidth: 0 }}>
-                  <strong style={{ font: '600 13px/18px var(--tk-font-sans)', color: 'var(--tk-ink-900)' }}>{row.trip.id} · {jobTitle(row.job)}</strong>
-                  <span className="tk-meta">{row.trip.jobId} · {row.trip.truckPlate} · Delivered {row.trip.deliveryDate}</span>
-                </span>
-                <strong style={{ font: '600 13px/18px var(--tk-font-sans)' }}>{formatNaira(row.gross)}</strong>
-              </div>
-            ))}
-          </div>
-        )}
-        <div>
-          <span style={{ display: 'block', marginBottom: 8, font: '500 13px/18px var(--tk-font-sans)', color: 'var(--tk-ink-500)' }}>Pay to</span>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <ChoiceCard icon="landmark" title="Bank Account" description={bank ? `${bank.bankName} •••• ${bank.last4} · ${bank.accountName}` : 'No bank account yet — add one in Company Settings.'} selected={destination === 'Bank'} onSelect={() => setDestination('Bank')} />
-            <ChoiceCard icon="wallet" title="Trukkas Wallet" description="Credited to your wallet balance once approved." selected={destination === 'Wallet'} onSelect={() => setDestination('Wallet')} />
-          </div>
-        </div>
-        <Card tone="sunk" style={{ display: 'grid' }}>
-          <LabelValue label={`Gross earnings (${chosen.length} trip${chosen.length === 1 ? '' : 's'})`} value={formatNaira(totals.gross)} />
-          <LabelValue label="Trukkas service fee (5%)" value={`-${formatNaira(totals.fee)}`} />
-          <LabelValue label="You receive" value={formatNaira(totals.net)} valueTone="var(--tk-blue)" style={{ borderTop: '1px solid var(--tk-line)' }} />
-        </Card>
-        {error && <span style={{ color: 'var(--tk-danger)', font: '500 13px/18px var(--tk-font-sans)' }}>{error}</span>}
-      </div>
-      <PinPrompt
-        open={pinOpen} onClose={() => setPinOpen(false)} confirmLabel="Approve Payout"
-        description={`Approve a payout of ${formatNaira(totals.net)} to your ${destination === 'Wallet' ? 'Trukkas wallet' : 'bank account'}.`}
-        onConfirm={submitWithPin}
-        securityState={null}
-      />
-    </Modal>
-  );
-}
-
 export function Payouts() {
   const navigate = useNavigate();
-  const { data, error, isLoading } = useGetPayoutRecordsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: data, error, isLoading } = useGetPayoutRecordsQuery(undefined, { refetchOnMountOrArgChange: true });
   const [getReceipt, { isFetching: receiptLoading }] = useLazyGetPayoutRecordQuery();
   const payouts = data?.records ?? EMPTY_ROWS;
   const [query, setQuery] = useState('');
   const [requestOpen, setRequestOpen] = useState(false);
+  const company = useSelector((state) => state.auth.account);
+  const withdrawalAttempt = useWalletWithdrawalAttempt(company?.id, company?.actualUserId);
+  const { currentData: wallet, error: walletError } = useGetCompanyWalletQuery(undefined, { skip: !requestOpen, refetchOnMountOrArgChange: true });
+  const { currentData: bank, error: bankError } = useGetOnboardingBankQuery(undefined, { skip: !requestOpen, refetchOnMountOrArgChange: true });
   const [receipt, setReceipt] = useState(null);
   const [toast, showToast] = useToast();
 
@@ -111,11 +40,11 @@ export function Payouts() {
   }, []);
 
   const eligible = data?.eligible ?? EMPTY_ROWS;
-  const eligibleNet = data?.availableToRequest ?? null;
+  const eligibleNet = !error ? data?.availableToRequest ?? null : null;
   const filtered = useMemo(() => payouts
-    .filter((p) => !query || [p.id, p.reference, ...p.items.flatMap((i) => [i.jobId, i.tripId])].some((v) => String(v || '').toLowerCase().includes(query.toLowerCase()))), [payouts, query]);
+    .filter((p) => !query || [p.id, p.reference, p.description, ...p.items.flatMap((i) => [i.jobId, i.tripId, i.jobNumber])].some((v) => String(v || '').toLowerCase().includes(query.toLowerCase()))), [payouts, query]);
 
-  const summary = data?.summary ?? { paid: null, processing: null, failed: null };
+  const summary = (!error && data?.summary) || { paid: null, processing: null, failed: null };
   const openReceipt = async (p) => {
     if (receiptLoading) return;
     try { const result = await getReceipt(p.id).unwrap(); setReceipt(result.receipt); }
@@ -126,11 +55,11 @@ export function Payouts() {
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
       <PageHeader
         title="Payouts"
-        description={error ? getApiErrorMessage(error) : 'Request payouts for completed trips and download a receipt for every payout.'}
-        actions={<Button icon="banknote" disabled={!data?.canRequest || eligible.length === 0} onClick={() => setRequestOpen(true)}>Request Payout</Button>}
+        description={error ? getApiErrorMessage(error) : 'Track job payments and wallet withdrawals, and download payout receipts.'}
+        actions={<Button icon="banknote" disabled={!!error || !data?.canRequest && !withdrawalAttempt.current} onClick={() => setRequestOpen(true)}>Request Payout</Button>}
       />
       <section className="tk-money-stats">
-        <StatCard icon="hand-coins" tint="teal" label="Available to Request" value={formatNaira(eligibleNet)} caption={data?.eligibleCount == null ? '—' : `${data.eligibleCount} completed trip(s)`} />
+        <StatCard icon="hand-coins" tint="teal" label="Available to Request" value={formatNaira(eligibleNet)} caption="Available wallet balance" />
         <StatCard icon="banknote" label="Total Paid Out" value={formatNaira(summary.paid)} />
         <StatCard icon="hourglass" tint="amber" label="In Progress" value={formatNaira(summary.processing)} caption="Requested or processing" />
         <StatCard icon="circle-x" tint="red" label="Failed" value={formatNaira(summary.failed)} />
@@ -164,10 +93,9 @@ export function Payouts() {
           />
         )}
       </Card>
-      <RequestPayoutModal
-        open={requestOpen} onClose={() => setRequestOpen(false)} eligible={eligible} bank={null}
-        onDone={(p) => { setRequestOpen(false); showToast(`${p.id} requested for ${formatNaira(p.amount)}.`); }}
-      />
+      {requestOpen && <WalletWithdrawModal onClose={() => setRequestOpen(false)}
+        onDone={(result) => { setRequestOpen(false); showToast(`${result.reference}: withdrawal request submitted. Awaiting approval.`); }}
+        available={walletError ? null : wallet?.available} bank={bankError ? undefined : bank} attempt={withdrawalAttempt} companyId={company?.id} />}
       <ReceiptModal receipt={receipt} open={!!receipt} onClose={() => setReceipt(null)} />
       <Toast message={toast} />
     </div>

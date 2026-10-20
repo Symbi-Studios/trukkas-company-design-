@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { useNavigate } from '../router.js';
 import { ActivityFeed, Avatar, Badge, Button, Card, EmptyState, Icon, LabelValue, Modal, SectionCard, TextField } from '../ds.js';
 import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
-import { useGetFleetDriversQuery, useGetFleetTripsQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
+import { useGetFleetAssignedDriverQuery, useGetFleetTripsQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
 import { total } from '../store/features/fleet/fleetContracts.js';
 import { fleetDetailHref } from '../domain/fleetLinks.js';
 import { driverDetailHref } from '../domain/driverLinks.js';
@@ -29,7 +29,7 @@ export function VehicleDetail() {
   const navigate = useNavigate();
   const { truck } = useFleetVehicle();
   const { data: trips } = useGetFleetTripsQuery(truck?.id, { skip: !truck });
-  const { data: drivers } = useGetFleetDriversQuery(undefined, { skip: !truck?.driverId });
+  const { currentData: assignedDriver } = useGetFleetAssignedDriverQuery(truck?.driverId, { skip: !truck?.driverId, refetchOnMountOrArgChange: true });
   const [notesOpen, setNotesOpen] = useState(false);
   const [notesDraft, setNotesDraft] = useState('');
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
@@ -38,8 +38,7 @@ export function VehicleDetail() {
   const [toast, showToast] = useToast();
   const [update, { isLoading: saving }] = useUpdateFleetVehicleMutation();
   const updating = useRef(false);
-  const membership = drivers?.find((item) => item.id === truck?.driverId);
-  const driver = truck?.assignedDriver ? { ...membership, ...truck.assignedDriver } : null;
+  const driver = truck?.assignedDriver ? { ...truck.assignedDriver, ...assignedDriver } : null;
   const onTrip = truck?.onTrip || trips?.some((trip) => !['Completed', 'Cancelled', 'Disputed', '—'].includes(trip.status));
   const changesLocked = !trips || onTrip || !truck?.driverKnown;
   const totalEarnings = total(trips, 'budget');

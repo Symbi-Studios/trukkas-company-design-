@@ -124,6 +124,7 @@ async function syncProfilePhoto(_arg, { dispatch, getState, queryFulfilled }) {
 }
 
 export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'ProfileAccess'] }).injectEndpoints({
+  overrideExisting: process.env.NODE_ENV === 'development',
   endpoints: (builder) => ({
     getMyProfile: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
@@ -166,6 +167,7 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
           roleName: text(me.role?.name) ?? (me.isOwner ? 'Owner' : '—'),
           roleDescription: text(role?.description) ?? '—',
           canEdit: me.isOwner || (permissions === null ? null : permissions.includes('settings.edit')),
+          canManageBank: me.isOwner || (permissions === null ? null : permissions.includes('finance.withdraw')),
           groups,
         } };
       },

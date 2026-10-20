@@ -27,7 +27,7 @@ export function PayoutDetail({ payoutId: explicitId }) {
 
   if (isFetching && !data) return <SkeletonRow columns={3} />;
 
-  if (!payout) {
+  if (!payout || error) {
     return (
       <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
         <PageHeader title="Payout not found" description={error ? getApiErrorMessage(error) : undefined} />

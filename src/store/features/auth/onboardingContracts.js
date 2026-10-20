@@ -9,6 +9,13 @@ const operatingZones = {
   'Cross-border (ECOWAS)': 'ECOWAS',
 };
 
+export function registrationTermsConsent(user) {
+  const acceptedAt = user?.termsAcceptedAt;
+  if (acceptedAt === null) return false;
+  return typeof acceptedAt === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(acceptedAt)
+    && Number.isFinite(Date.parse(acceptedAt)) ? true : null;
+}
+
 export function isAdultDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const birth = new Date(`${value}T00:00:00Z`);

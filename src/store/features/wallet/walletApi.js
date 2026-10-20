@@ -1,6 +1,6 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
 import { count, rows, text } from '../jobs/jobContracts.js';
-import { walletEarningsView, walletJobView, walletTransactionView, walletView, withdrawalFeeView } from './walletContracts.js';
+import { walletEarningsView, walletJobView, walletTransactionView, walletView, withdrawalFeeView, withdrawalResultView } from './walletContracts.js';
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const signedIn = (api) => {
@@ -8,6 +8,18 @@ const signedIn = (api) => {
   return account?.apiRole === 'TRUCKER' && account?.truckerType === 'COMPANY'
     ? null : unavailable('Sign in with your trucking-company account to manage earnings and wallet.');
 };
+function companyQuery(api, baseQuery) {
+  const identity = () => {
+    const { account, activeCompanyId } = api.getState().auth;
+    return JSON.stringify([account?.id, account?.actualUserId, activeCompanyId]);
+  };
+  const company = identity();
+  return async (args) => {
+    if (identity() !== company) return unavailable('Your company session changed. Please reload the wallet.');
+    const result = await baseQuery(args);
+    return identity() === company ? result : unavailable('Your company session changed. Please reload the wallet.');
+  };
+}
 async function allPages(api, baseQuery, url, key, params = {}) {
   const collection = [];
   let total = null, pages = 1;
@@ -32,6 +44,7 @@ export const walletApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyWallet
     getCompanyWallet: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         const result = await baseQuery('/wallets');
         return result.error ? result : { data: walletView(unwrapApiResponseData(result.data)) };
       },
@@ -40,6 +53,7 @@ export const walletApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyWallet
     getWalletEarnings: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         const result = await baseQuery({ url: '/company/earnings', params: { period: '12m' } });
         return result.error ? result : { data: walletEarningsView(unwrapApiResponseData(result.data)) };
       },
@@ -48,6 +62,7 @@ export const walletApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyWallet
     getWalletTransactions: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         const wallet = await baseQuery('/wallets');
         if (wallet.error) return wallet;
         if (unwrapApiResponseData(wallet.data)?.wallet?.currency !== 'NGN') return unavailable('The API did not confirm an NGN wallet for these transactions.');
@@ -74,6 +89,7 @@ export const walletApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyWallet
     getWalletJobs: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         const result = await allPages(api, baseQuery, '/company/trips', 'trips', { group: 'COMPLETED' });
         if (result.error) return result;
         if (result.data.some((trip) => trip.status !== 'COMPLETED')) return unavailable('The API returned trips outside the completed group.');
@@ -92,15 +108,14 @@ export const walletApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyWallet
           }));
           for (const item of loaded) { if (item.error) return item; jobRows.push(item.data); }
         }
-        // Trip filters use job-created dates; no completion date/monthly count
-        // is documented, so these records cannot supply "trips this month".
-        return { data: { rows: jobRows, completedThisMonth: null } };
+        return { data: { rows: jobRows } };
       },
       providesTags: ['CompanyJobs', 'CompanyTrips', 'CompanyTrip', 'CompanyWallet'],
     }),
     getWithdrawalFee: builder.query({
       async queryFn(amount, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 1000 || amount > Number.MAX_SAFE_INTEGER) return unavailable('Enter a withdrawal amount of at least ₦1,000.');
         const result = await baseQuery({ url: '/wallets/withdraw/fee', params: { amount } });
         if (result.error) return result;
@@ -110,9 +125,20 @@ export const walletApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyWallet
       keepUnusedDataFor: 0,
     }),
     requestWalletWithdrawal: builder.mutation({
-      // WithdrawDto currently has no transactionPin. Do not submit a financial
-      // write that bypasses the PIN approval required by this screen.
-      queryFn: () => unavailable('Withdrawal is unavailable until the backend supports transaction PIN verification. No withdrawal was submitted.'),
+      async queryFn({ amount, transactionPin, idempotencyKey }, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
+        if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 1000 || amount > Number.MAX_SAFE_INTEGER) return unavailable('Enter a withdrawal amount of at least ₦1,000.');
+        if (typeof transactionPin !== 'string' || !/^\d{4}$/.test(transactionPin)) return unavailable('Enter your 4-digit transaction PIN.');
+        if (typeof idempotencyKey !== 'string' || !/^[a-zA-Z0-9_-]{8,128}$/.test(idempotencyKey)) return unavailable('The withdrawal request could not be identified. Please reopen the form.');
+        const result = await baseQuery({ url: '/wallets/withdraw', method: 'POST', headers: { 'x-idempotency-key': idempotencyKey }, body: { amount, transactionPin } });
+        if (result.error) return result;
+        const mapped = withdrawalResultView(unwrapApiResponseData(result.data), amount);
+        return mapped ? { data: mapped } : unavailable('The API did not confirm this withdrawal. Retry this same request before starting another withdrawal.');
+      },
+      // An uncertain response may already have reserved funds. Refresh reads,
+      // but never automatically repeat the financial write.
+      invalidatesTags: ['CompanyWallet', 'CompanyWalletTransactions', 'CompanyPayouts', 'CompanyDashboard', 'CompanyJobs'],
     }),
   }),
 });

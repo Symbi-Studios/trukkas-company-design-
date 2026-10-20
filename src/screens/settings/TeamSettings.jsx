@@ -61,17 +61,20 @@ function InviteModal({ open, onClose, roles, onDone, security, createPin }) {
 }
 
 export function TeamSettings({ onToast }) {
-  const { data, error: loadError, isLoading } = useGetSettingsTeamQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: roleData } = useGetSettingsRolesQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: access } = useGetMyProfileAccessQuery();
-  const { data: security } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: teamData, error: loadError, isLoading } = useGetSettingsTeamQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: loadedRoles, error: rolesError } = useGetSettingsRolesQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: access, error: accessError } = useGetMyProfileAccessQuery();
+  const { currentData: loadedSecurity, error: securityError } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
+  const data = !loadError ? teamData : undefined;
+  const roleData = !rolesError ? loadedRoles : undefined;
+  const security = !securityError ? loadedSecurity : null;
   const [savePin, { isLoading: savingPin }] = useSaveOnboardingPinMutation();
   const [updateMember, { isLoading: updating }] = useUpdateSettingsMemberMutation();
   const [removeMember, { isLoading: removing }] = useRemoveSettingsMemberMutation();
   const [resendInvite, { isLoading: resending }] = useResendSettingsInviteMutation();
   const members = data?.members ?? [];
   const roles = roleData?.roles ?? [];
-  const canManage = access?.isOwner === true;
+  const canManage = !accessError && !loadError && access?.isOwner === true;
   const busy = updating || removing || resending || savingPin;
   const [inviteOpen, setInviteOpen] = useState(false);
   const [menu, setMenu] = useState(null);
@@ -84,6 +87,7 @@ export function TeamSettings({ onToast }) {
     catch (err) { throw new Error(getApiErrorMessage(err)); }
   }
   async function updateTeamMember(id, changes, pin) {
+    if (!canManage) throw new Error('Only the company owner can manage the team.');
     try { return await updateMember({ id, changes, pin }).unwrap(); }
     catch (err) { throw new Error(getApiErrorMessage(err)); }
   }
@@ -115,7 +119,7 @@ export function TeamSettings({ onToast }) {
         action={<Button icon="user-plus" disabled={!canManage || !roleData || busy} onClick={() => setInviteOpen(true)}>Invite Member</Button>}
         pad="none"
       >
-        {(error || loadError || data?.warning) && <div style={{ padding: '0 var(--tk-card-pad) 12px' }}><Banner tone="danger" title="Couldn’t update member">{error || (loadError ? getApiErrorMessage(loadError) : data.warning)}</Banner></div>}
+        {(error || loadError || rolesError || data?.warning) && <div style={{ padding: '0 var(--tk-card-pad) 12px' }}><Banner tone="danger" title="Couldn’t update member">{error || (loadError || rolesError ? getApiErrorMessage(loadError || rolesError) : data.warning)}</Banner></div>}
         {isLoading ? <SkeletonRow columns={5} /> : !data && !loadError && <span className="tk-meta">—</span>}
         <DataTable
           rows={members}
@@ -168,14 +172,16 @@ export function TeamSettings({ onToast }) {
 }
 
 export function RolesSettings({ onToast }) {
-  const { data, error: loadError, isLoading } = useGetSettingsRolesQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: access } = useGetMyProfileAccessQuery();
-  const { data: security } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: roleData, error: loadError, isLoading } = useGetSettingsRolesQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: access, error: accessError } = useGetMyProfileAccessQuery();
+  const { currentData: loadedSecurity, error: securityError } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
+  const data = !loadError ? roleData : undefined;
+  const security = !securityError ? loadedSecurity : null;
   const [savePin, { isLoading: savingPin }] = useSaveOnboardingPinMutation();
   const [saveRole, { isLoading: saving }] = useSaveSettingsRoleMutation();
   const [deleteRole, { isLoading: deleting }] = useDeleteSettingsRoleMutation();
   const roles = data?.roles ?? [];
-  const canManage = access?.isOwner === true;
+  const canManage = !accessError && !loadError && access?.isOwner === true;
   const busy = saving || deleting || savingPin;
   const [selectedId, setSelectedId] = useState('');
   const [draft, setDraft] = useState(null);

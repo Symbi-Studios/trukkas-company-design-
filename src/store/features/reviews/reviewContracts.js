@@ -1,4 +1,6 @@
-import { count, dateLabel, number, rows, text } from '../jobs/jobContracts.js';
+import { count, dateLabel, number, rows, safeUrl, text } from '../jobs/jobContracts.js';
+
+const rating = (value) => number(value) !== null && value >= 1 && value <= 5 ? value : null;
 
 export function reviewSummaryView(source) {
   const total = count(source?.count);
@@ -16,21 +18,30 @@ export function reviewSummaryView(source) {
     breakdown: Object.fromEntries([5, 4, 3, 2, 1].map((score) => [score,
       validDistribution && total > 0 ? Math.round(distribution.find((item) => item.score === score).count / total * 1000) / 10 : null,
     ])),
+    subscores: { punctuality: rating(source?.punctuality), communication: rating(source?.communication), professionalism: rating(source?.professionalism) },
+    topTags: rows(source?.topTags)?.map((item) => ({ tag: text(item.tag), count: count(item.count) })).filter((item) => item.tag) ?? null,
   };
 }
 
 export const EMPTY_REVIEW_SUMMARY = reviewSummaryView(null);
 
 export function reviewView(source) {
+  const score = number(source.score);
   return {
     id: source.id,
-    rating: Number.isInteger(source.score) && source.score >= 1 && source.score <= 5 ? source.score : null,
+    rating: score !== null && score >= 1 && score <= 5 ? score : null,
     comment: text(source.comment) ?? '—',
     poster: text(source.reviewer?.name) ?? '—',
+    posterPhoto: safeUrl(source.reviewer?.avatarUrl),
+    replyKnown: source.reply === null || !!text(source.reply?.text),
+    reply: text(source.reply?.text) ? { text: source.reply.text.trim(), date: dateLabel(source.reply.repliedAt) } : null,
+    tags: Array.isArray(source.tags) && source.tags.every((tag) => !!text(tag)) ? [...new Set(source.tags.map((tag) => tag.trim()))] : null,
+    subscores: { punctuality: rating(source.punctuality), communication: rating(source.communication), professionalism: rating(source.professionalism) },
     date: dateLabel(source.createdAt),
     jobId: text(source.job?.jobNumber) ?? '—',
     apiJobId: text(source.jobId) ?? text(source.job?.id),
-    // A COMPANY review names the company, not an associated driver.
-    driverName: source.reviewed?.type === 'DRIVER' ? text(source.reviewed.name) ?? '—' : '—',
+    // Company reviews can name the driver who handled the job separately
+    // from the company being reviewed. Never use the company name as a driver.
+    driverName: text(source.driver?.name) ?? (source.reviewed?.type === 'DRIVER' ? text(source.reviewed.name) : null) ?? '—',
   };
 }

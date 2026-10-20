@@ -68,7 +68,7 @@ function PasswordCard({ email, updatedOn, onToast, canEdit }) {
           {error && <p className={`${styles.error} ${styles.full}`}>{error}</p>}
           <div className={styles.formActions}>
             <Button variant="outline" onClick={() => { setOpen(false); setError(''); }}>Cancel</Button>
-            <Button type="submit" disabled={busy || !form.current || form.next.length < 8 || form.next !== form.confirm}>{busy ? 'Updating…' : 'Update Password'}</Button>
+            <Button type="submit" disabled={!canEdit || busy || !form.current || form.next.length < 8 || form.next !== form.confirm}>{busy ? 'Updating…' : 'Update Password'}</Button>
           </div>
         </form>
       ) : <span className="tk-meta">Use a strong password you don’t use anywhere else. Changing it signs out your other devices.</span>}
@@ -195,16 +195,16 @@ function TwoFactorCard({ security, email, phone, onToast }) {
 
 export function SecuritySettings({ onToast }) {
   const account = useSelector((state) => state.auth.account);
-  const { data, error, isLoading } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: sessions, error: sessionsError, isLoading: sessionsLoading } = useGetSettingsSessionsQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: access } = useGetMyProfileAccessQuery();
-  const security = { passwordUpdatedOn: data?.passwordUpdatedOn ?? '—', twoFactor: { enabled: data?.twoFactor?.enabled ?? null, method: data?.twoFactor?.method ?? '—', backupCodes: null, enabledOn: '—' }, loginAlerts: null, sessions: sessions ?? [] };
+  const { currentData: data, error, isLoading } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: sessions, error: sessionsError, isLoading: sessionsLoading } = useGetSettingsSessionsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: access, error: accessError } = useGetMyProfileAccessQuery();
+  const security = { passwordUpdatedOn: !error ? data?.passwordUpdatedOn ?? '—' : '—', twoFactor: { enabled: !error ? data?.twoFactor?.enabled ?? null : null, method: !error ? data?.twoFactor?.method ?? '—' : '—', backupCodes: null, enabledOn: '—' }, loginAlerts: null, sessions: !sessionsError ? sessions ?? [] : [] };
   const others = security.sessions.filter((s) => s.current === false);
 
   return (
     <>
       {isLoading ? <SkeletonRow columns={2} /> : error && <EmptyState icon="shield-check" title={getApiErrorMessage(error)} />}
-      <PasswordCard email={account?.email} updatedOn={security.passwordUpdatedOn} canEdit={access?.canEdit === true} onToast={onToast} />
+      <PasswordCard email={account?.email} updatedOn={security.passwordUpdatedOn} canEdit={!accessError && access?.canEdit === true} onToast={onToast} />
       <TwoFactorCard security={security} email={account?.email} phone={account?.phoneVerified ? account.phone : null} onToast={onToast} />
       <SectionCard title="Sign-in Alerts">
         <Switch label="Email me about new sign-ins" hint="Get an alert when your account is used from a new device or location." checked={security.loginAlerts} disabled onChange={async (v) => { await setLoginAlerts(v); onToast(v ? 'Sign-in alerts on.' : 'Sign-in alerts off.'); }} />

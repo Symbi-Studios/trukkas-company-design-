@@ -91,17 +91,18 @@ export function PinForm({ mode, phone, onDone, savePin, sendResetCode, disabled 
 
 export function PinSettings({ onToast }) {
   const account = useSelector((state) => state.auth.account);
-  const { data: security, error, isLoading } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: access } = useGetMyProfileAccessQuery();
+  const { currentData: security, error, isLoading } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: access, error: accessError } = useGetMyProfileAccessQuery();
   const [save] = useSaveOnboardingPinMutation();
   const [requestReset] = useRequestSettingsPinResetMutation();
   const [reset] = useResetSettingsPinMutation();
   const [mode, setMode] = useState(null);
-  const pin = security?.pin ?? { set: null, updatedOn: '—' };
+  const pin = !error && security?.pin ? security.pin : { set: null, updatedOn: '—' };
   const locked = false; // The API explicitly does not expose PIN-entry lockouts.
   const activeMode = mode || (pin.set === false ? 'create' : null);
-  const canEdit = access?.canEdit === true;
+  const canEdit = !accessError && !error && typeof pin.set === 'boolean' && access?.canEdit === true;
   async function savePin(values) {
+    if (!canEdit) throw new Error('Load your current PIN status and settings access before saving.');
     try { return await (mode === 'reset' ? reset({ code: values.otp, newPin: values.newPin, confirmPin: values.confirmPin }) : save(values)).unwrap(); }
     catch (err) { throw new Error(getApiErrorMessage(err)); }
   }
@@ -124,7 +125,7 @@ export function PinSettings({ onToast }) {
           <>
             {!pin.set && <p className="tk-meta" style={{ marginTop: 0 }}>You haven’t set a transaction PIN yet. You’ll need one before requesting payouts or withdrawing funds.</p>}
             <PinForm
-              key={activeMode} mode={activeMode} phone={account?.phone} disabled={!canEdit} savePin={savePin} sendResetCode={() => requestReset().unwrap()}
+              key={activeMode} mode={activeMode} phone={account?.phone} disabled={!canEdit} loadError={error || accessError ? getApiErrorMessage(error || accessError) : ''} savePin={savePin} sendResetCode={() => requestReset().unwrap()}
               onDone={() => { setMode(null); onToast(activeMode === 'create' ? 'Transaction PIN created.' : 'Transaction PIN updated.'); }}
             />
             {pin.set && <Button variant="ghost" style={{ marginTop: 10 }} onClick={() => setMode(null)}>Cancel</Button>}
@@ -139,7 +140,7 @@ export function PinSettings({ onToast }) {
             <Badge tone="neutral">—</Badge>
           </div>
         ))}
-        <p className={styles.hint}>Trukkas staff will never ask for your PIN. Five wrong attempts lock it for 15 minutes.</p>
+        <p className={styles.hint}>Trukkas staff will never ask for your PIN.</p>
       </SectionCard>
     </>
   );

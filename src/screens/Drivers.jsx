@@ -82,7 +82,7 @@ export function Drivers() {
             rowKey={(d) => d.id}
             onRowClick={(d) => navigate(driverDetailHref(d.id))}
             columns={[
-              { key: 'name', header: 'Driver', render: (d) => <Link to={driverDetailHref(d.id)} onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Avatar name={d.name} size={30} /><span><strong style={{ display: 'block', color: 'var(--tk-ink-900)' }}>{d.name}</strong><span className="tk-meta">{d.phone}</span></span></Link> },
+              { key: 'name', header: 'Driver', render: (d) => <Link to={driverDetailHref(d.id)} onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Avatar name={d.name} src={d.photo || undefined} size={30} /><span><strong style={{ display: 'block', color: 'var(--tk-ink-900)' }}>{d.name}</strong><span className="tk-meta">{d.phone}</span></span></Link> },
               { key: 'license', header: 'License', render: (d) => <span><span style={{ display: 'block' }}>{d.licenseNumber}</span><span className="tk-meta">{d.licenseClass}</span></span> },
               { key: 'truck', header: 'Assigned Truck', render: (d) => d.truckPlate || '—' },
               { key: 'status', header: 'Status', render: (d) => <Badge tone={STATUS_TONE[d.status]} dot>{d.status}</Badge> },

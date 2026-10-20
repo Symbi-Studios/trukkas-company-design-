@@ -45,7 +45,7 @@ export function Maintenance() {
   }, []);
 
   const filtered = useMemo(() => records
-    .filter((r) => !query || [r.truckPlate, r.serviceType, r.description].some((v) => String(v || '').toLowerCase().includes(query.toLowerCase())))
+    .filter((r) => !query || [r.reference, r.truckPlate, r.serviceType, r.description].some((v) => String(v || '').toLowerCase().includes(query.toLowerCase())))
     .sort((a, b) => Number(b.status === 'Overdue') - Number(a.status === 'Overdue')), [records, query]);
 
   return (

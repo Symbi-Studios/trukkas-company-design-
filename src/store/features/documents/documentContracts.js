@@ -1,5 +1,5 @@
-import { maskNumber } from '../../../domain/documents.js';
-import { dateLabel, number, rows, safeUrl, text } from '../fleet/fleetContracts.js';
+import { COMPANY_REQUIREMENTS, maskNumber } from '../../../domain/documents.js';
+import { dateLabel, fleetDocumentTypes, number, rows, safeUrl, text } from '../fleet/fleetContracts.js';
 
 export const companyDocumentTypes = {
   'CAC Certificate': 'CAC_CERTIFICATE', 'CAC Status Report': 'CAC_STATUS_REPORT', TIN: 'TIN_CERTIFICATE',
@@ -8,9 +8,12 @@ export const companyDocumentTypes = {
   'Government ID': 'DIRECTOR_ID', 'Bank Verification': 'BANK_CONFIRMATION_LETTER',
 };
 const companyNames = Object.fromEntries(Object.entries(companyDocumentTypes).map(([label, wire]) => [wire, label]));
-export const vehicleDocumentTypes = { Registration: 'REGISTRATION', 'Road Worthiness': 'ROADWORTHINESS', Insurance: 'INSURANCE', Customs: 'CUSTOMS' };
-const vehicleNames = { ...Object.fromEntries(Object.entries(vehicleDocumentTypes).map(([label, wire]) => [wire, label])), VEHICLE_LICENCE: 'Vehicle Licence', HACKNEY_PERMIT: 'Hackney Permit', OTHER: 'Other' };
+export const vehicleDocumentTypes = fleetDocumentTypes;
+const vehicleNames = Object.fromEntries(Object.entries(vehicleDocumentTypes).map(([label, wire]) => [wire, label]));
 const requiredCompanyTypes = ['CAC_CERTIFICATE', 'TIN_CERTIFICATE', 'GOODS_IN_TRANSIT_INSURANCE'];
+export const COMPANY_DOCUMENT_REQUIREMENTS = COMPANY_REQUIREMENTS.map((requirement) => ({
+  ...requirement, required: requiredCompanyTypes.includes(companyDocumentTypes[requirement.type]),
+}));
 const label = (mapping, value) => Object.hasOwn(mapping, value) ? mapping[value] : null;
 export const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 const dayKey = (value) => {
@@ -70,8 +73,10 @@ export function documentCompliance(requirements, documents, supportedTypes, miss
     return { req, doc, status: doc?.status ?? (knownMissing ? 'Missing' : '—') };
   });
   const required = entries.filter((entry) => entry.req.required);
-  const known = required.every((entry) => !['—', 'Uploaded'].includes(entry.status));
-  const met = required.filter((entry) => entry.doc && ['Valid', 'Verified', 'Pending Review', 'Expiring Soon'].includes(entry.status)).length;
+  const uploadedWithoutExpiry = (entry) => entry.status === 'Uploaded' && entry.req.file !== false && !entry.req.expires
+    && entry.doc?.expiryKnown === true && entry.doc.expiryDays === null && !!entry.doc.url;
+  const known = required.every((entry) => entry.status !== '—' && (entry.status !== 'Uploaded' || uploadedWithoutExpiry(entry)));
+  const met = required.filter((entry) => entry.doc && (['Valid', 'Verified', 'Pending Review', 'Expiring Soon'].includes(entry.status) || uploadedWithoutExpiry(entry))).length;
   const requiredMet = known ? met : null;
   const expiry = documentExpiryTotals([documents]);
   return {

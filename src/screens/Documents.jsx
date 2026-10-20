@@ -6,7 +6,7 @@ import {
   Avatar, Badge, Banner, Button, Card, DataTable, EmptyState, Icon, LabelValue, PageHeader, ProgressBar, SearchField, SectionCard, SkeletonRow, StatCard, Tabs,
 } from '../ds.js';
 import { useGetCompanyDocumentLibraryQuery, useGetDocumentCompanyQuery, useGetDocumentVehiclesQuery, useUploadCompanyComplianceDocumentMutation } from '../store/features/documents/documentsApi.js';
-import { companyDocumentTypes, documentCompliance, documentExpiryTotals, EMPTY_DOCUMENT_COMPANY } from '../store/features/documents/documentContracts.js';
+import { COMPANY_DOCUMENT_REQUIREMENTS, companyDocumentTypes, documentCompliance, documentExpiryTotals, EMPTY_DOCUMENT_COMPANY } from '../store/features/documents/documentContracts.js';
 import { useGetCompanyDriversQuery } from '../store/features/drivers/driversApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { documentDetailHref } from '../domain/documentLinks.js';
@@ -14,7 +14,7 @@ import { fleetDetailHref } from '../domain/fleetLinks.js';
 import { driverDetailHref } from '../domain/driverLinks.js';
 import { syncTopBarSearch } from '../pageSearch.js';
 import {
-  COMPANY_REQUIREMENTS, DRIVER_REQUIREMENTS,
+  DRIVER_REQUIREMENTS,
 } from '../domain/documents.js';
 import { VEHICLE_CLASSES } from '../domain/vehicles.js';
 import { ComplianceChecklist, UploadDocumentModal } from '../components/DocumentCompliance.jsx';
@@ -64,7 +64,7 @@ export function Documents() {
   }, []);
 
   const companyDocs = !companyDocsError ? library?.documents : null;
-  const companyCompliance = documentCompliance(COMPANY_REQUIREMENTS, companyDocs, Object.keys(companyDocumentTypes), library?.missingTypes ?? []);
+  const companyCompliance = documentCompliance(COMPANY_DOCUMENT_REQUIREMENTS, companyDocs, Object.keys(companyDocumentTypes), library?.missingTypes ?? []);
   const vehicleRows = !vehicleError ? vehicleData ?? [] : [];
   const driverRows = useMemo(() => (driverData ?? []).map((driver) => ({ driver, ...documentCompliance(DRIVER_REQUIREMENTS, null, []) })), [driverData]);
   const { expiring, expired } = documentExpiryTotals([
@@ -81,7 +81,7 @@ export function Documents() {
       <PageHeader
         title="Documents"
         description="Compliance documents for your company, vehicles and drivers. Waybills and delivery notes stay with each job."
-        actions={tab === 'company' && <Button icon="upload" onClick={() => setUploadType(COMPANY_REQUIREMENTS[0].type)}>Upload Document</Button>}
+        actions={tab === 'company' && <Button icon="upload" onClick={() => setUploadType(COMPANY_DOCUMENT_REQUIREMENTS[0].type)}>Upload Document</Button>}
       />
 
       <section className={styles.stats}>
@@ -112,7 +112,7 @@ export function Documents() {
             {companyDocsLoading ? <SkeletonRow columns={3} /> : companyDocsError ? <EmptyState icon="file-text" title={getApiErrorMessage(companyDocsError)} /> : <ComplianceChecklist
               title="Business Onboarding Documents"
               description="Required by Trukkas to verify your company before you can bid on jobs and receive payouts."
-              requirements={COMPANY_REQUIREMENTS} docs={companyDocs ?? []}
+              requirements={COMPANY_DOCUMENT_REQUIREMENTS} docs={companyDocs ?? []}
               unavailableTypes={companyCompliance.unavailableTypes}
               onUpload={(req) => setUploadType(req.type)} onOpen={(doc) => navigate(documentDetailHref(doc))}
               style={{ boxShadow: 'none' }}
@@ -199,7 +199,7 @@ export function Documents() {
 
       <UploadDocumentModal
         open={!!uploadType} onClose={() => setUploadType(null)} ownerType="company" ownerId={company?.id} ownerLabel={company?.name}
-        requirements={COMPANY_REQUIREMENTS} initialType={uploadType}
+        requirements={COMPANY_DOCUMENT_REQUIREMENTS} initialType={uploadType}
         submitDocument={async (draft) => {
           try { return await uploadCompanyDocument(draft).unwrap(); }
           catch (error) { throw new Error(getApiErrorMessage(error)); }

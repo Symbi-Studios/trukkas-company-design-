@@ -32,7 +32,7 @@ export function VehicleMaintenance() {
 
   const filtered = (records ?? []).filter((r) =>
     (statusFilter === 'All Status' || r.status === statusFilter)
-    && (!query || [r.serviceType, r.description].some((v) => String(v || '').toLowerCase().includes(query.toLowerCase()))));
+    && (!query || [r.reference, r.serviceType, r.description].some((v) => String(v || '').toLowerCase().includes(query.toLowerCase()))));
 
   if (!truck) return <VehicleDetailFrame tab="maintenance" title="Vehicle not found"><EmptyState icon="wrench" title="Not found" /></VehicleDetailFrame>;
 

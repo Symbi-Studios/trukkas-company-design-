@@ -61,6 +61,7 @@ export function Fleet() {
   const statusBreakdown = dashboard.fleetStatus;
   const recentActivity = useMemo(() => trucks
     .flatMap((t) => (t.activityLog || []).map((a) => ({ ...a, plate: t.plate })))
+    .sort((a, b) => (b.occurredAt ?? -Infinity) - (a.occurredAt ?? -Infinity))
     .slice(0, 5)
     .map((a) => ({ text: `${a.plate} ${a.title.charAt(0).toLowerCase() + a.title.slice(1)}`, time: a.time })),
   [trucks]);

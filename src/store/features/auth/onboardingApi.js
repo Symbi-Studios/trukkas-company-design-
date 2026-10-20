@@ -136,7 +136,15 @@ export const onboardingApi = baseApi.injectEndpoints({
       query: () => '/wallets/banks',
       transformResponse: (response) => {
         const banks = unwrapApiResponseData(response)?.banks;
-        return Array.isArray(banks) ? banks.filter((bank) => typeof bank?.code === 'string' && bank.code.trim() && typeof bank.name === 'string' && bank.name.trim()) : null;
+        if (!Array.isArray(banks)) return null;
+        const seenCodes = new Set();
+        return banks.filter((bank) => {
+          if (typeof bank?.code !== 'string' || !bank.code.trim() || typeof bank.name !== 'string' || !bank.name.trim()) return false;
+          const code = bank.code.trim();
+          if (seenCodes.has(code)) return false;
+          seenCodes.add(code);
+          return true;
+        }).map((bank) => ({ ...bank, code: bank.code.trim(), name: bank.name.trim() }));
       },
     }),
     resolveOnboardingBank: builder.mutation({
@@ -198,9 +206,11 @@ export const onboardingApi = baseApi.injectEndpoints({
         return data?.transactionPinSet === true ? { data: { transactionPinSet: true } }
           : { error: { status: 'CUSTOM_ERROR', error: 'The API did not confirm that your PIN was saved.' } };
       },
-      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+      async onQueryStarted(_arg, { dispatch, getState, queryFulfilled }) {
+        const account = getState().auth.account;
         try {
           await queryFulfilled;
+          if (!account || getState().auth.account !== account) return;
           dispatch(onboardingApi.util.updateQueryData('getOnboardingSecurity', undefined, (security) => {
             security.pin.set = true;
           }));

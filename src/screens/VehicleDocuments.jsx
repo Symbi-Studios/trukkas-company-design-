@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Badge, Button, Card, DataTable, DonutChart, EmptyState, Icon, SearchField, Select, SkeletonRow } from '../ds.js';
 import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
 import { useGetFleetDocumentsQuery, useUploadFleetDocumentMutation } from '../store/features/fleet/fleetApi.js';
-import { fleetDocumentSupported } from '../store/features/fleet/fleetContracts.js';
+import { fleetDocumentCompliance } from '../store/features/fleet/fleetContracts.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { VEHICLE_REQUIREMENTS, documentStatusTone } from '../domain/documents.js';
 import { UploadDocumentModal } from '../components/DocumentCompliance.jsx';
@@ -29,10 +29,7 @@ export function VehicleDocuments() {
 
   const completeStatuses = documents && !error && documents.every((doc) => ['Valid', 'Expiring Soon', 'Expired'].includes(doc.status));
   const summary = { total: !error ? documents?.length ?? '—' : '—', ...Object.fromEntries([['valid', 'Valid'], ['expiringSoon', 'Expiring Soon'], ['expired', 'Expired']].map(([key, status]) => [key, completeStatuses ? documents.filter((doc) => doc.status === status).length : '—'])) };
-  const compliance = { rows: VEHICLE_REQUIREMENTS.map((req) => {
-    const doc = truckDocs.find((item) => item.type === req.type);
-    return { req, doc, status: doc?.status ?? (documents && !error && fleetDocumentSupported(req.type) ? 'Missing' : '—') };
-  }), summary: { missing: '—', requiredMet: '—', requiredTotal: VEHICLE_REQUIREMENTS.filter((req) => req.required).length } };
+  const compliance = fleetDocumentCompliance(error ? null : documents);
   const missing = compliance.summary.missing;
   const chartData = completeStatuses ? [
     { label: 'Valid', value: summary.valid, color: 'var(--tk-success)' },

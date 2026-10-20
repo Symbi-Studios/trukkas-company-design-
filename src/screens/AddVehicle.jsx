@@ -81,7 +81,7 @@ export function AddVehicle() {
     if (key === 'details') {
       const plate = draft.plate.trim().toUpperCase();
       if (!plate) next.plate = 'Registration number is required.';
-      else if (trucks.some((t) => t.plate.toUpperCase() === plate)) next.plate = 'A vehicle with this registration is already in your fleet.';
+      else if (trucks.some((t) => t.id !== partialSave.current?.id && t.plate.toUpperCase() === plate)) next.plate = 'A vehicle with this registration is already in your fleet.';
       if (!draft.make.trim()) next.make = 'Make is required.';
       if (!draft.model.trim()) next.model = 'Model is required.';
       if (!draft.year) next.year = 'Year of manufacture is required.';

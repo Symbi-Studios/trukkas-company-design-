@@ -1,10 +1,10 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
-import { settingsAccess, settingsUnavailable } from './settingsApi.js';
+import { settingsAccess, settingsCompanyQuery, settingsUnavailable } from './settingsApi.js';
 
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
 const collection = (value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && !Array.isArray(row)) ? value : null;
 const keys = (value) => Array.isArray(value) && value.every((key) => text(key)) ? value : null;
-const date = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))
+const date = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && /(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value))
   ? new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Lagos' }).format(new Date(value)) : '—';
 const roleView = (row) => ({
   id: text(row.id), name: text(row.name) ?? '—', description: text(row.description) ?? '—',
@@ -26,14 +26,14 @@ function permissionBindings(supportedKeys) {
     // The existing label covers adding/editing/assignment, not deletion.
     'fleet.manage': ['fleet.view', 'fleet.create', 'fleet.edit'],
     'finance.bank': ['finance.withdraw'],
+    'finance.payout': ['finance.withdraw'],
     'documents.manage': ['documents.upload'],
     'settings.manage': ['settings.edit'],
   })) bindings[key] = permissions.every((permission) => supportedKeys.includes(permission)) ? permissions : null;
   // Team and role administration is explicitly owner-only, with no delegable key.
   bindings['team.manage'] = null;
   bindings['roles.manage'] = null;
-  // The API documents withdrawals, but no separate request-payout permission.
-  bindings['finance.payout'] = null;
+  // Payouts now uses the documented wallet withdrawal flow as approved.
   return bindings;
 }
 
@@ -69,13 +69,15 @@ async function teamApproval(pin, api, baseQuery) {
 }
 
 export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['SettingsTeam'] }).injectEndpoints({
+  overrideExisting: process.env.NODE_ENV === 'development',
   endpoints: (builder) => ({
     getSettingsRoles: builder.query({
-      async queryFn(_arg, _api, _options, baseQuery) {
+      async queryFn(_arg, api, _options, baseQuery) {
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         const [roleResult, catalogResult] = await Promise.all([baseQuery('/team/roles'), baseQuery('/team/permissions')]);
         if (roleResult.error) return roleResult;
         const roles = collection(unwrapApiResponseData(roleResult.data)?.roles);
-        if (!roles) return settingsUnavailable('The API did not return a valid role collection.');
+        if (!roles || roles.some((role) => !text(role.id)) || new Set(roles.map((role) => role.id)).size !== roles.length) return settingsUnavailable('The API did not return a valid role collection.');
         const modules = catalogResult.error ? null : unwrapApiResponseData(catalogResult.data)?.modules;
         const entries = modules && typeof modules === 'object' && !Array.isArray(modules) ? Object.values(modules).flatMap((items) => collection(items) ?? []) : null;
         const supportedKeys = entries?.map((entry) => text(entry.key)).filter(Boolean) ?? null;
@@ -84,12 +86,14 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
       providesTags: ['SettingsTeam'],
     }),
     getSettingsTeam: builder.query({
-      async queryFn(_arg, _api, _options, baseQuery) {
+      async queryFn(_arg, api, _options, baseQuery) {
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         const [memberResult, inviteResult] = await Promise.all([baseQuery('/team/members'), baseQuery('/team/invites')]);
         if (memberResult.error) return memberResult;
         const members = collection(unwrapApiResponseData(memberResult.data)?.members);
-        if (!members) return settingsUnavailable('The API did not return a valid member collection.');
-        const invites = inviteResult.error ? null : collection(unwrapApiResponseData(inviteResult.data)?.invites);
+        if (!members || members.some((member) => !text(member.id)) || new Set(members.map((member) => member.id)).size !== members.length) return settingsUnavailable('The API did not return a valid member collection.');
+        const loadedInvites = inviteResult.error ? null : collection(unwrapApiResponseData(inviteResult.data)?.invites);
+        const invites = loadedInvites && loadedInvites.every((row) => text(row.id)) && new Set(loadedInvites.map((row) => row.id)).size === loadedInvites.length ? loadedInvites : null;
         return { data: { members: [
           ...members.map((row) => ({ id: text(row.id), kind: 'member', name: [text(row.user?.firstName), text(row.user?.lastName)].filter(Boolean).join(' ') || '—', email: text(row.user?.email) ?? '—', roleId: text(row.roleId) ?? text(row.role?.id), roleName: text(row.role?.name) ?? '—', status: ({ ACTIVE: 'Active', SUSPENDED: 'Suspended' })[row.status] ?? '—', twoFactor: null, lastActive: date(row.user?.lastLoginAt) })),
           ...(invites ?? []).map((row) => ({ id: text(row.id), kind: 'invite', name: text(row.name) ?? '—', email: text(row.email) ?? '—', roleId: text(row.role?.id), roleName: text(row.role?.name) ?? '—', status: row.status === 'PENDING' ? 'Invited' : '—', twoFactor: null, lastActive: '—' })),
@@ -99,6 +103,7 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
     }),
     inviteSettingsMember: builder.mutation({
       async queryFn({ name, email, phone, roleId, pin }, api, _options, baseQuery) {
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         const blocked = settingsAccess(api, true); if (blocked) return blocked;
         if (!text(email) || !/^\S+@\S+\.\S+$/.test(email.trim()) || !text(roleId)) return settingsUnavailable('Enter a valid email and choose a role.');
         if (typeof name !== 'string' || !name.trim() || name.trim().length > 120 || (phone !== undefined && (typeof phone !== 'string' || phone.trim().length > 25))) return settingsUnavailable('Enter a name of at most 120 characters and a phone of at most 25 characters.');
@@ -121,7 +126,10 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
     }),
     updateSettingsMember: builder.mutation({
       async queryFn({ id, changes, pin }, api, _options, baseQuery) {
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         const blocked = settingsAccess(api, true); if (blocked) return blocked;
+        const members = settingsTeamApi.endpoints.getSettingsTeam.select()(api.getState()).data?.members;
+        if (!members?.some((member) => member.id === id && member.kind === 'member')) return settingsUnavailable('Choose a confirmed team member. Pending invitations can be resent or cancelled.');
         if (!text(id) || Object.keys(changes).some((key) => !['roleId', 'status'].includes(key))) return settingsUnavailable('Choose a valid member change.');
         const body = {};
         if ('roleId' in changes) { if (!text(changes.roleId)) return settingsUnavailable('Choose a role.'); body.roleId = changes.roleId; }
@@ -147,14 +155,22 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
     }),
     removeSettingsMember: builder.mutation({
       async queryFn({ id, kind }, api, _options, baseQuery) {
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         const blocked = settingsAccess(api, true); if (blocked) return blocked;
         if (!text(id) || !['member', 'invite'].includes(kind)) return settingsUnavailable('Choose a valid member or invitation.');
-        return baseQuery({ url: `/team/${kind === 'invite' ? 'invites' : 'members'}/${encodeURIComponent(id)}`, method: 'DELETE' });
+        const path = `/team/${kind === 'invite' ? 'invites' : 'members'}`;
+        const result = await baseQuery({ url: `${path}/${encodeURIComponent(id)}`, method: 'DELETE' });
+        if (result.error) return result;
+        const saved = await baseQuery(path);
+        if (saved.error) return settingsUnavailable('The removal could not be confirmed. Reload the team list before retrying.');
+        const remaining = collection(unwrapApiResponseData(saved.data)?.[kind === 'invite' ? 'invites' : 'members']);
+        return remaining && remaining.every((row) => text(row.id)) && !remaining.some((row) => row.id === id) ? { data: { removed: true } } : settingsUnavailable('The API did not confirm removal. Reload the team list before retrying.');
       },
       invalidatesTags: tags,
     }),
     resendSettingsInvite: builder.mutation({
       async queryFn(id, api, _options, baseQuery) {
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         const blocked = settingsAccess(api, true); if (blocked) return blocked;
         if (!text(id)) return settingsUnavailable('Choose a valid invitation.');
         const result = await baseQuery({ url: `/team/invites/${encodeURIComponent(id)}/resend`, method: 'POST' });
@@ -166,8 +182,10 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
     }),
     saveSettingsRole: builder.mutation({
       async queryFn({ pin, ...draft }, api, _options, baseQuery) {
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         const blocked = settingsAccess(api, true); if (blocked) return blocked;
         const cached = settingsTeamApi.endpoints.getSettingsRoles.select()(api.getState()).data;
+        if (!cached?.roles) return settingsUnavailable('Load the company role list before saving a role.');
         if (Object.hasOwn(draft, 'id') && !text(draft.id)) return settingsUnavailable('The role has no confirmed API ID.');
         const current = cached?.roles?.find((role) => role.id === draft.id);
         if (draft.id && (!current || current.locked)) return settingsUnavailable('System roles cannot be edited.');
@@ -209,10 +227,16 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
     }),
     deleteSettingsRole: builder.mutation({
       async queryFn(id, api, _options, baseQuery) {
+        baseQuery = settingsCompanyQuery(api, baseQuery);
         const blocked = settingsAccess(api, true); if (blocked) return blocked;
         const role = settingsTeamApi.endpoints.getSettingsRoles.select()(api.getState()).data?.roles.find((row) => row.id === id);
         if (!text(id) || !role || role.locked) return settingsUnavailable('System roles cannot be deleted.');
-        return baseQuery({ url: `/team/roles/${encodeURIComponent(id)}`, method: 'DELETE' });
+        const result = await baseQuery({ url: `/team/roles/${encodeURIComponent(id)}`, method: 'DELETE' });
+        if (result.error) return result;
+        const saved = await baseQuery('/team/roles');
+        if (saved.error) return settingsUnavailable('Role deletion could not be confirmed. Reload before retrying.');
+        const remaining = collection(unwrapApiResponseData(saved.data)?.roles);
+        return remaining && remaining.every((row) => text(row.id)) && !remaining.some((row) => row.id === id) ? { data: { removed: true } } : settingsUnavailable('The API did not confirm role deletion. Reload before retrying.');
       },
       invalidatesTags: tags,
     }),

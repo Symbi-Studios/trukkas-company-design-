@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { useNavigate, useParams } from '../router.js';
 import { Badge, Button, Card, EmptyState, LabelValue, Modal, PageHeader, SkeletonRow, TextField } from '../ds.js';
 import { useGetDocumentCompanyQuery, useGetDocumentDetailQuery, useRenewComplianceDocumentMutation } from '../store/features/documents/documentsApi.js';
+import { COMPANY_DOCUMENT_REQUIREMENTS, validDate } from '../store/features/documents/documentContracts.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { REQUIREMENTS_BY_OWNER, documentStatusTone } from '../domain/documents.js';
 import { documentOwnerHref } from '../domain/documentLinks.js';
@@ -36,11 +37,12 @@ export function DocumentDetail({ documentId: queryId, ownerType: queryOwnerType 
 
   const ownerType = document_.ownerType;
   const ownerName = ownerType === 'company' ? company?.name ?? '—' : document_.truckPlate ?? '—';
-  const requirement = (REQUIREMENTS_BY_OWNER[ownerType] || []).find((r) => r.type === document_.type);
+  const requirement = (ownerType === 'company' ? COMPANY_DOCUMENT_REQUIREMENTS : REQUIREMENTS_BY_OWNER[ownerType] || []).find((r) => r.type === document_.type);
   const canRenew = requirement?.expires || (document_.expiryDate && document_.expiryDate !== '—');
 
   async function renew() {
-    if (!expiryDate || saving.current) return;
+    if (saving.current) return;
+    if (!validDate(expiryDate)) { setRenewError('Enter a valid expiry date.'); return; }
     saving.current = true; setRenewError('');
     try { await renewDocument({ id: document_.id, ownerType, ownerId: document_.ownerId, expiryDate }).unwrap(); setRenewOpen(false); }
     catch (error) { setRenewError(getApiErrorMessage(error)); }
@@ -71,8 +73,8 @@ export function DocumentDetail({ documentId: queryId, ownerType: queryOwnerType 
         <LabelValue label="File Size" value={document_.fileSize} />
         <LabelValue label="Requirement" value={requirement ? (requirement.required ? 'Required' : 'Optional') : 'Other'} />
       </Card>
-      <Modal open={renewOpen} onClose={() => setRenewOpen(false)} title="Renew Document" width={420}
-        footer={<><Button variant="outline" disabled={renewing} onClick={() => setRenewOpen(false)}>Cancel</Button><Button disabled={renewing} onClick={renew}>Save</Button></>}>
+      <Modal open={renewOpen} onClose={() => { if (!saving.current) setRenewOpen(false); }} title="Renew Document" width={420}
+        footer={<><Button variant="outline" disabled={renewing} onClick={() => setRenewOpen(false)}>Cancel</Button><Button disabled={renewing || !validDate(expiryDate)} onClick={renew}>Save</Button></>}>
         <TextField label="New Expiry Date" type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
         {renewError && <span className="tk-meta" style={{ color: 'var(--tk-danger)' }}>{renewError}</span>}
       </Modal>

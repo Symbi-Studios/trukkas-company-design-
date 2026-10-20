@@ -34,7 +34,8 @@ export function DriverAssignTruckModal({ driver, open, onClose, onDone }) {
   async function submit() {
     if (submitting.current || !selected) return;
     const truck = trucks?.find((item) => item.id === selected);
-    if (!driver.active || !truck || !trips || items.find((item) => item.id === selected)?.blocked) { setError('This driver or truck cannot be assigned right now.'); return; }
+    const currentTrip = trips?.some((trip) => trip.open && (trip.driverId === driver.id || driver.truckId && trip.truckId === driver.truckId || driver.truckPlate && trip.truckPlate === driver.truckPlate));
+    if (!driver.active || !truck || !trips || trucksError || tripsError || currentTrip || items.find((item) => item.id === selected)?.blocked) { setError('This driver or truck cannot be assigned right now.'); return; }
     submitting.current = true; setBusy(true); setError('');
     try { await assign({ truckId: selected, driverId: driver.id }).unwrap(); onDone?.(truck.plate); }
     catch (err) { setError(getApiErrorMessage(err)); }

@@ -42,7 +42,7 @@ function ProfileSection({ company, canEdit, onToast }) {
   const form = { ...company, ...draft };
   const set = (key) => (e) => setDraft((previous) => ({ ...previous, [key]: e.target.value }));
   async function save() {
-    if (saving || !draft) return;
+    if (saving || !draft || !canEdit) return;
     const changes = Object.fromEntries(Object.entries(draft).filter(([key, value]) => value !== company[key]));
     if (!Object.keys(changes).length) { setDraft(null); return; }
     try { await updateCompany(changes).unwrap(); setDraft(null); onToast('Company profile saved.'); }
@@ -76,12 +76,12 @@ function ProfileSection({ company, canEdit, onToast }) {
 }
 
 function NotificationsSection({ onToast, canEdit }) {
-  const { data, error, isLoading } = useGetSettingsNotificationsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: data, error, isLoading } = useGetSettingsNotificationsQuery(undefined, { refetchOnMountOrArgChange: true });
   const [update, { isLoading: saving }] = useUpdateSettingsNotificationsMutation();
   const [draft, setDraft] = useState(null);
-  const prefs = { ...data, ...draft };
+  const prefs = { ...(!error ? data : null), ...draft };
   async function save() {
-    if (!draft || saving || !canEdit) return;
+    if (!draft || saving || !canEdit || error || isLoading) return;
     try { await update(draft).unwrap(); setDraft(null); onToast('Notification preferences saved.'); }
     catch (requestError) { onToast(getApiErrorMessage(requestError)); }
   }
@@ -91,7 +91,7 @@ function NotificationsSection({ onToast, canEdit }) {
       {error && <p className={styles.error}>{getApiErrorMessage(error)}</p>}
       <div style={{ display: 'grid', gap: 16 }}>
         {NOTIFICATION_PREFS.map((p) => (
-          <Switch key={p.key} label={p.label} hint={p.hint} checked={prefs[p.key] ?? null} disabled={p.locked || !canEdit || saving || isLoading || typeof data?.[p.key] !== 'boolean'} onChange={(v) => setDraft({ ...draft, [p.key]: v })} />
+          <Switch key={p.key} label={p.label} hint={p.hint} checked={prefs[p.key] ?? null} disabled={p.locked || !canEdit || saving || isLoading || !!error || typeof data?.[p.key] !== 'boolean'} onChange={(v) => setDraft({ ...draft, [p.key]: v })} />
         ))}
         <Button style={{ justifySelf: 'start' }} disabled={!draft || saving || !canEdit || isLoading || !!error} onClick={save}>Save Preferences</Button>
       </div>
@@ -107,11 +107,11 @@ function CompanySettingsContent() {
   const searchParams = useSearchParams();
   const requested = searchParams.get('tab');
   const account = useSelector((state) => state.auth.account);
-  const { data, error, isLoading } = useGetCompanySettingsQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
-  const { data: access, error: accessError } = useGetMyProfileAccessQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
-  const { data: security } = useGetOnboardingSecurityQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
-  const company = data?.company ?? EMPTY_COMPANY_SETTINGS;
-  const canEdit = access?.canEdit === true;
+  const { currentData: data, error, isLoading } = useGetCompanySettingsQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const { currentData: access, error: accessError } = useGetMyProfileAccessQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const { currentData: security, error: securityError } = useGetOnboardingSecurityQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const company = !error ? data?.company ?? EMPTY_COMPANY_SETTINGS : EMPTY_COMPANY_SETTINGS;
+  const canEdit = !error && !accessError && access?.canEdit === true;
   const [tab, setTab] = useState('profile');
   const [toast, showToast] = useToast();
 
@@ -120,7 +120,7 @@ function CompanySettingsContent() {
   }, [requested]);
 
   if (!account) return null;
-  const flag = { security: security?.twoFactor?.available === true && security.twoFactor.enabled === false, pin: security?.pin?.set === false };
+  const flag = { security: !securityError && security?.twoFactor?.available === true && security.twoFactor.enabled === false, pin: !securityError && security?.pin?.set === false };
 
   return (
     <div className={styles.page}>

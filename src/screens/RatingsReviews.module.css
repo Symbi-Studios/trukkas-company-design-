@@ -1,0 +1,19 @@
+.page { display: grid; gap: var(--tk-grid-gap); }
+.layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: var(--tk-grid-gap); align-items: start; }
+.summary { display: grid; gap: 16px; text-align: center; min-width: 0; }
+.reviews { display: grid; gap: 12px; min-width: 0; }
+.scores { display: grid; gap: 10px; border-top: 1px solid var(--tk-line); padding-top: 16px; text-align: left; }
+.score { display: flex; justify-content: space-between; gap: 12px; font: 400 13px/20px var(--tk-font-sans); color: var(--tk-ink-500); }
+.score strong { color: var(--tk-ink-900); font-weight: 600; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; text-align: left; }
+.tags > * { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.tagsTitle { width: 100%; margin-bottom: 2px; font: 600 13px/20px var(--tk-font-sans); color: var(--tk-ink-700); }
+.comment { margin: 0; font: 400 13px/20px var(--tk-font-sans); color: var(--tk-ink-500); white-space: pre-wrap; overflow-wrap: anywhere; }
+.reply { display: grid; gap: 8px; margin-top: 4px; padding: 12px 14px; background: var(--tk-surface-sunk); border-left: 3px solid var(--tk-blue); border-radius: var(--tk-r-md); }
+.replyHead { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.replyTitle { font: 600 13px/20px var(--tk-font-sans); color: var(--tk-ink-900); }
+.replyActions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.context { display: grid; gap: 6px; margin-bottom: 16px; padding: 12px 14px; border: 1px solid var(--tk-line); border-radius: var(--tk-r-md); background: var(--tk-surface-sunk); }
+.context p { max-height: 120px; overflow: auto; }
+.error { margin: 0; color: var(--tk-danger); font: 400 13px/20px var(--tk-font-sans); overflow-wrap: anywhere; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }

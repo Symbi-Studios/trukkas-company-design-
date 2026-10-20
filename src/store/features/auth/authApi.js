@@ -1,7 +1,7 @@
 import { baseApi, refreshSession, unwrapApiResponseData } from '../../api/baseApi.js';
 import { setCredentials } from './authSlice.js';
 import { companySession } from './authSession.js';
-import { companyFormBody, companyFormView, isAdultDate } from './onboardingContracts.js';
+import { companyFormBody, companyFormView, isAdultDate, registrationTermsConsent } from './onboardingContracts.js';
 
 const post = (url, body) => ({ url, method: 'POST', body });
 const unavailable = (message) => ({ error: { status: 'CUSTOM_ERROR', error: message } });
@@ -47,6 +47,7 @@ function onboardingAccount(user, companyId, companyProfile) {
     businessAddress: typeof user.businessAddress === 'string' ? user.businessAddress : null,
     businessType: typeof user.businessType === 'string' ? user.businessType : null,
     phoneVerified: typeof user.phoneVerified === 'boolean' ? user.phoneVerified : null,
+    registrationTermsConsent: registrationTermsConsent(user),
     onboardingCompany: companyFormView(user, companyProfile),
     onboardingStep: user.onboarding.nextStep ?? null,
     onboardingComplete: user.onboarding.complete,
@@ -134,7 +135,7 @@ export const authApi = baseApi.injectEndpoints({
         if (!result) result = await baseQuery(post('/auth/register/create-account', {
           sessionToken, firstName: names[0], lastName: names[names.length - 1],
           ...(names.length > 2 ? { middleName: names.slice(1, -1).join(' ') } : {}),
-          dateOfBirth, email: email.trim().toLowerCase(), password, confirmPassword: password,
+          dateOfBirth, email: email.trim().toLowerCase(), password, confirmPassword: password, acceptedTerms,
         }));
         if (result.error) return result;
         const data = unwrapApiResponseData(result.data);

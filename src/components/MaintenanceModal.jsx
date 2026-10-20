@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Modal, Select, TextField } from '../ds.js';
 import { useRequestFleetMaintenanceMutation, useUpdateFleetMaintenanceMutation } from '../store/features/fleet/fleetApi.js';
 import { MAINTENANCE_SERVICE_TYPES } from '../store/features/fleet/fleetContracts.js';
@@ -17,10 +17,17 @@ export function MaintenanceModal({ open, onClose, trucks, truckId, record = null
   const [requestMaintenance] = useRequestFleetMaintenanceMutation();
   const [updateMaintenance] = useUpdateFleetMaintenanceMutation();
   const submitting = useRef(false);
+  const selectedVehicleAvailable = trucks ? trucks.some((truck) => truck.id === draft.truckId) : !!truckId && truckId === draft.truckId;
+
+  useEffect(() => {
+    if (!open || record || truckId || !trucks?.[0]?.id) return;
+    setDraft((previous) => previous.truckId ? previous : { ...previous, truckId: trucks[0].id });
+  }, [open, record, truckId, trucks]);
 
   async function submit(event) {
     event.preventDefault();
     if (submitting.current || loading || loadError) return;
+    if (!selectedVehicleAvailable) { setError('Select a vehicle from your current fleet.'); return; }
     submitting.current = true; setBusy(true); setError('');
     try {
       if (record) await updateMaintenance({ id: record.id, ...draft }).unwrap();
@@ -32,7 +39,7 @@ export function MaintenanceModal({ open, onClose, trucks, truckId, record = null
 
   return (
     <Modal open={open} onClose={() => { if (!submitting.current) onClose(); }} title={record ? 'Edit Maintenance' : 'Schedule Maintenance'} width={width}
-      footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button form={formId} type="submit" disabled={busy || loading || !!loadError || !draft.truckId || !draft.serviceType || !draft.description.trim() || !draft.date}>{busy ? (record ? 'Saving…' : 'Scheduling…') : record ? 'Save Changes' : 'Schedule'}</Button></>}>
+      footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button form={formId} type="submit" disabled={busy || loading || !!loadError || !selectedVehicleAvailable || !draft.truckId || !draft.serviceType || !draft.description.trim() || !draft.date}>{busy ? (record ? 'Saving…' : 'Scheduling…') : record ? 'Save Changes' : 'Schedule'}</Button></>}>
       <form id={formId} onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
         {trucks && <Select label="Vehicle" disabled={busy || loading || !!record} value={draft.truckId} options={trucks.map((truck) => ({ value: truck.id, label: truck.plate }))} onChange={(e) => setDraft({ ...draft, truckId: e.target.value })} />}
         <Select label="Service Type" required disabled={busy} value={draft.serviceType} options={MAINTENANCE_SERVICE_TYPES} onChange={(e) => setDraft({ ...draft, serviceType: e.target.value })} />

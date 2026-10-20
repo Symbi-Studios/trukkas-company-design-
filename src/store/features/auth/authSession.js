@@ -1,4 +1,4 @@
-import { companyFormView } from './onboardingContracts.js';
+import { companyFormView, registrationTermsConsent } from './onboardingContracts.js';
 
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
 
@@ -33,6 +33,7 @@ export function companySession(session, profile, access) {
     title: text(profile.title) ?? '—',
     emailVerified: typeof profile.emailVerified === 'boolean' ? profile.emailVerified : null,
     phoneVerified: typeof profile.phoneVerified === 'boolean' ? profile.phoneVerified : null,
+    registrationTermsConsent: registrationTermsConsent(profile),
     onboardingComplete: typeof profile.onboarding?.complete === 'boolean' ? profile.onboarding.complete : null,
     onboardingStep: text(profile.onboarding?.nextStep),
     photoUrl: text(profile.avatarUrl),

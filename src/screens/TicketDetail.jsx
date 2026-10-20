@@ -62,7 +62,7 @@ export function TicketDetail({ ticketId: explicitId }) {
   const input = useRef(null);
   const running = useRef(false);
 
-  if (isFetching && !ticket) return <SkeletonRow columns={3} />;
+  if (isFetching && !ticket) return <SkeletonRow variant="detail" />;
 
   if (!ticket) {
     return (

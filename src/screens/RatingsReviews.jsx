@@ -104,7 +104,7 @@ export function RatingsReviews() {
           </div>
         </Card>
         <div className={styles.reviews}>
-          {isLoading ? <Card><SkeletonRow columns={3} /></Card> : error ? <Card><EmptyState icon="star" title={getApiErrorMessage(error)} /></Card> : visible.length === 0 && <Card><EmptyState icon="star" title="No reviews match your search" /></Card>}
+          {isLoading ? <Card><SkeletonRow variant="review" rows={3} /></Card> : error ? <Card><EmptyState icon="star" title={getApiErrorMessage(error)} /></Card> : visible.length === 0 && <Card><EmptyState icon="star" title="No reviews match your search" /></Card>}
           {visible.map((r) => (
             <Card key={r.id} style={{ display: 'grid', gap: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>

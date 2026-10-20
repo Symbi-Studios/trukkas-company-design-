@@ -50,7 +50,7 @@ export function DriverAssignTruckModal({ driver, open, onClose, onDone }) {
       footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button icon="truck" disabled={!selected || busy || !trucks || !trips || !!trucksError || !!tripsError || !driver.active} onClick={submit}>{busy ? 'Saving…' : 'Assign Truck'}</Button></>}>
       <div style={{ display: 'grid', gap: 12 }}>
         <SearchField placeholder="Search trucks by plate or model..." value={query} onChange={(event) => setQuery(event.target.value)} />
-        {isLoading ? <SkeletonRow columns={3} /> : <PickList items={items} selected={selected} onSelect={setSelected} empty="No trucks match your search." />}
+        {isLoading ? <SkeletonRow variant="list" rows={3} /> : <PickList items={items} selected={selected} onSelect={setSelected} empty="No trucks match your search." />}
         {(error || trucksError || tripsError) && <span className={styles.error}>{error || getApiErrorMessage(trucksError || tripsError)}</span>}
       </div>
     </Modal>

@@ -50,7 +50,7 @@ export function VehicleDetailFrame({ tab, title, description, primaryAction, chi
   }
   const unavailableAction = () => { setMoreOpen(false); showToast('This fleet action is currently unavailable from the API.'); };
 
-  if (isLoading) return <SkeletonRow columns={4} />;
+  if (isLoading) return <SkeletonRow variant="detail" />;
   if (!truck) {
     return (
       <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>

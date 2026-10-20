@@ -23,7 +23,7 @@ export function DocumentDetail({ documentId: queryId, ownerType: queryOwnerType 
   const [expiryDate, setExpiryDate] = useState('');
   const [renewError, setRenewError] = useState('');
 
-  if (isLoading) return <SkeletonRow columns={4} />;
+  if (isLoading) return <SkeletonRow variant="detail" />;
   if (error) return <EmptyState icon="file-text" title={getApiErrorMessage(error)} action={<Button variant="outline" onClick={() => navigate('/documents')}>Back to Documents</Button>} />;
 
   if (!document_) {

@@ -166,7 +166,7 @@ function ProfileContent() {
   if (isLoading) return (
     <div className={styles.page}>
       <PageHeader title="My Profile" description="Your personal details, sign-in security and access on this company account." />
-      <Card><SkeletonRow columns={3} /><SkeletonRow columns={3} /></Card>
+      <SkeletonRow variant="detail" />
     </div>
   );
 

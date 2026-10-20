@@ -122,7 +122,7 @@ export function PayoutAccountSettings({ onToast }) {
   return (
     <>
       <SectionCard title="Payout Account" description="Where Trukkas sends your payouts and withdrawals.">
-        {isLoading ? <SkeletonRow columns={2} /> : error || banksError ? <EmptyState icon="landmark" title={getApiErrorMessage(error || banksError)} /> : bank === undefined && <span className="tk-meta">—</span>}
+        {isLoading ? <SkeletonRow variant="bank" /> : error || banksError ? <EmptyState icon="landmark" title={getApiErrorMessage(error || banksError)} /> : bank === undefined && <span className="tk-meta">—</span>}
         {bank === null && !editing && !error && (
           <Banner tone="warning" title="No payout account yet" action={<Button size="sm" disabled={!canManageBank} onClick={() => setEditing(true)}>Add Bank Account</Button>}>
             Add a company bank account to request payouts and withdraw your wallet balance.

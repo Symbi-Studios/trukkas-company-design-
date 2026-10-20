@@ -201,9 +201,16 @@ export function SecuritySettings({ onToast }) {
   const security = { passwordUpdatedOn: !error ? data?.passwordUpdatedOn ?? '—' : '—', twoFactor: { enabled: !error ? data?.twoFactor?.enabled ?? null : null, method: !error ? data?.twoFactor?.method ?? '—' : '—', backupCodes: null, enabledOn: '—' }, loginAlerts: null, sessions: !sessionsError ? sessions ?? [] : [] };
   const others = security.sessions.filter((s) => s.current === false);
 
+  if (isLoading) return <>
+    <SectionCard title="Password"><SkeletonRow variant="security" /></SectionCard>
+    <SectionCard title="Two-Factor Authentication (2FA)" description="Require a one-time code in addition to your password."><SkeletonRow variant="security" /></SectionCard>
+    <SectionCard title="Sign-in Alerts"><SkeletonRow variant="preferences" rows={1} action={false} /></SectionCard>
+    <SectionCard title="Active Sessions" description="Devices currently signed in to your account."><SkeletonRow variant="list" rows={1} /></SectionCard>
+  </>;
+
   return (
     <>
-      {isLoading ? <SkeletonRow columns={2} /> : error && <EmptyState icon="shield-check" title={getApiErrorMessage(error)} />}
+      {error && <EmptyState icon="shield-check" title={getApiErrorMessage(error)} />}
       <PasswordCard email={account?.email} updatedOn={security.passwordUpdatedOn} canEdit={!accessError && access?.canEdit === true} onToast={onToast} />
       <TwoFactorCard security={security} email={account?.email} phone={account?.phoneVerified ? account.phone : null} onToast={onToast} />
       <SectionCard title="Sign-in Alerts">
@@ -211,8 +218,8 @@ export function SecuritySettings({ onToast }) {
       </SectionCard>
       <SectionCard title="Active Sessions" description="Devices currently signed in to your account."
         action={others.length > 0 && <Button variant="outline" icon="log-out" disabled onClick={async () => { await revokeOtherSessions(); onToast('Signed out of all other devices.'); }}>Sign Out Others</Button>}>
-        {sessionsLoading ? <SkeletonRow columns={2} /> : sessionsError ? <EmptyState icon="monitor" title={getApiErrorMessage(sessionsError)} /> : sessions == null && <span className="tk-meta">—</span>}
-        {security.sessions.map((s) => (
+        {sessionsLoading ? <SkeletonRow variant="list" rows={1} /> : sessionsError ? <EmptyState icon="monitor" title={getApiErrorMessage(sessionsError)} /> : sessions == null && <span className="tk-meta">—</span>}
+        {!sessionsLoading && security.sessions.map((s) => (
           <div key={s.id} className={styles.row}>
             <span className={styles.iconTile} data-tone="neutral"><Icon name={/iphone|ios|android/i.test(s.device) ? 'smartphone' : 'monitor'} size={18} /></span>
             <span className={styles.rowMain}><strong>{s.device}{s.current && <Badge tone="success" style={{ marginLeft: 8 }}>This device</Badge>}</strong><small>{s.location} · {s.ip} · {s.lastActive}</small></span>

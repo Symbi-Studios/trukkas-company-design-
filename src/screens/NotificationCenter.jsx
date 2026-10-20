@@ -69,7 +69,7 @@ export function NotificationCenter() {
       </div>
       <Card pad="none">
         {isLoading ? (
-          <div style={{ padding: '0 16px' }}>{Array.from({ length: 4 }, (_, i) => <SkeletonRow key={i} columns={3} />)}</div>
+          <SkeletonRow variant="list" rows={4} style={{ padding: '0 16px' }} />
         ) : error ? (
           <EmptyState icon="bell" title={getApiErrorMessage(error)} />
         ) : filtered.length === 0 ? (

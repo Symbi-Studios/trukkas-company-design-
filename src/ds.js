@@ -41,6 +41,7 @@ export { Tooltip } from './ds/components/feedback/Tooltip.jsx';
 
 export { Checkbox } from './ds/components/forms/Checkbox.jsx';
 export { ChoiceCard } from './ds/components/forms/ChoiceCard.jsx';
+export { DatePicker } from './ds/components/forms/DatePicker.jsx';
 export { ColorSwatchPicker } from './ds/components/forms/ColorSwatchPicker.jsx';
 export { FilterSelect } from './ds/components/forms/FilterSelect.jsx';
 export { Radio } from './ds/components/forms/Radio.jsx';

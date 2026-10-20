@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '../router.js';
 import {
-  Avatar, Badge, Button, Card, Checkbox, EmptyState, Icon, IconButton, LabelValue, Modal, PageHeader,
+  Avatar, Badge, Button, Card, Checkbox, DatePicker, EmptyState, Icon, IconButton, LabelValue, Modal, PageHeader,
   Pagination, Select, SkeletonRow, Tabs, Textarea, TextField,
 } from '../ds.js';
 import { syncTopBarSearch } from '../pageSearch.js';
@@ -21,6 +21,7 @@ import { MessageModal } from '../components/MessageModal.jsx';
 import { RouteMap } from '../components/RouteMap.jsx';
 import { Toast, copyLink, useToast } from '../components/Toast.jsx';
 import styles from './Jobs.module.css';
+import { monthValue } from '../ds/components/forms/datePickerDates.js';
 
 const EMPTY_FILTERS = { from: '', to: '', cargo: '', jobType: '', month: '', weight: '', savedOnly: false, multiTruck: false };
 const WEIGHTS = [
@@ -438,7 +439,9 @@ export function Jobs() {
           <IconButton icon="arrow-right-left" tone="outline" size={40} label="Swap From and To" onClick={() => setDraft((d) => ({ ...d, from: d.to, to: d.from }))} />
           <FilterField label="To" value={draft.to} onChange={setField('to')} options={options.to} placeholder="All Locations" />
           <FilterField label="Cargo Type" value={draft.cargo} onChange={setField('cargo')} options={options.cargo} placeholder="All Types" />
-          <FilterField label="Date Range" icon="calendar" value={draft.month} onChange={setField('month')} options={options.month} placeholder="Any Date" />
+          <DatePicker label="Date Range" icon="calendar" mode="month" variant="filter" value={monthValue(draft.month)}
+            allowedMonths={options.month.map(monthValue).filter(Boolean)} placeholder="Any Date" style={{ '--tk-date-height': '52px' }}
+            onChange={(event) => setField('month')(options.month.find((label) => monthValue(label) === event.target.value) ?? '')} />
           <FilterField label="Weight/Size" value={draft.weight} onChange={setField('weight')} options={WEIGHTS} placeholder="Any" />
           <Button variant="outline" icon="filter" onClick={() => setMoreOpen((v) => !v)} style={{ height: 52 }}>More Filters</Button>
           <button type="button" className={styles.resetLink} onClick={reset}>Reset</button>
@@ -465,7 +468,7 @@ export function Jobs() {
               }} style={{ width: 170 }} />
             </span>
           </div>
-          {jobsLoading ? <SkeletonRow columns={4} /> : jobsError ? <EmptyState icon="briefcase" title={getApiErrorMessage(jobsError)} /> : pageRows.length === 0 ? (
+          {jobsLoading ? <SkeletonRow variant="list" rows={5} style={{ padding: '0 16px' }} /> : jobsError ? <EmptyState icon="briefcase" title={getApiErrorMessage(jobsError)} /> : pageRows.length === 0 ? (
             <div style={{ padding: 40 }}>
               <EmptyState
                 icon="search-x" title={bidsOnly ? 'No open bids' : 'No jobs match your filters'}

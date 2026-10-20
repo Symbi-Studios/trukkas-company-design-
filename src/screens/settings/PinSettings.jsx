@@ -111,9 +111,9 @@ export function PinSettings({ onToast }) {
     <>
       <SectionCard title="Transaction PIN" description="A 4-digit PIN that approves money movement from your account."
         action={<Badge tone={pin.set ? (locked ? 'danger' : 'success') : 'warning'} dot>{pin.set === null ? '—' : pin.set ? (locked ? 'Locked' : 'Active') : 'Not set'}</Badge>}>
-        {isLoading ? <SkeletonRow columns={2} /> : error ? <EmptyState icon="lock" title={getApiErrorMessage(error)} /> : pin.set === null && <span className="tk-meta">—</span>}
+        {isLoading ? <SkeletonRow variant="security" /> : error ? <EmptyState icon="lock" title={getApiErrorMessage(error)} /> : pin.set === null && <span className="tk-meta">—</span>}
         {locked && <Banner tone="danger" title="PIN temporarily locked">Too many wrong attempts. Wait 15 minutes or reset your PIN below.</Banner>}
-        {pin.set && !activeMode && (
+        {!isLoading && pin.set && !activeMode && (
           <div className={styles.row}>
             <span className={styles.iconTile} data-tone="green"><Icon name="lock-keyhole" size={18} /></span>
             <span className={styles.rowMain}><strong>PIN is set</strong><small>Last changed {pin.updatedOn}</small></span>
@@ -121,7 +121,7 @@ export function PinSettings({ onToast }) {
             <Button variant="ghost" disabled={!canEdit} onClick={() => setMode('reset')}>Forgot PIN?</Button>
           </div>
         )}
-        {activeMode && (
+        {!isLoading && activeMode && (
           <>
             {!pin.set && <p className="tk-meta" style={{ marginTop: 0 }}>You haven’t set a transaction PIN yet. You’ll need one before requesting payouts or withdrawing funds.</p>}
             <PinForm

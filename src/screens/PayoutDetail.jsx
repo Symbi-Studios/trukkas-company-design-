@@ -25,7 +25,7 @@ export function PayoutDetail({ payoutId: explicitId }) {
   const { currentData: data, error, isFetching } = useGetPayoutRecordQuery(payoutId, { refetchOnMountOrArgChange: true });
   const payout = data?.payout;
 
-  if (isFetching && !data) return <SkeletonRow columns={3} />;
+  if (isFetching && !data) return <SkeletonRow variant="detail" />;
 
   if (!payout || error) {
     return (

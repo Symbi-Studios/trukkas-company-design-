@@ -58,7 +58,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
   const reviews = !reviewsError ? feedback?.reviews ?? [] : [];
   const docs = driver?.documents ?? [];
 
-  if (driverLoading) return <SkeletonRow columns={4} />;
+  if (driverLoading) return <SkeletonRow variant="detail" />;
   if (driverError) return <EmptyState icon="user" title={getApiErrorMessage(driverError)} action={<Button variant="outline" onClick={() => navigate('/drivers')}>Back to Drivers</Button>} />;
 
   if (!driver) {
@@ -151,7 +151,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
               </section>
               <div className={styles.twoUp}>
                 <SectionCard title="Assigned Truck">
-                  {truckLoading ? <SkeletonRow columns={3} /> : truckError ? <EmptyState icon="truck" title={getApiErrorMessage(truckError)} /> : truck ? (
+                  {truckLoading ? <SkeletonRow variant="list" rows={1} /> : truckError ? <EmptyState icon="truck" title={getApiErrorMessage(truckError)} /> : truck ? (
                     <div style={{ display: 'grid', gap: 12 }}>
                       <div className={styles.truckRow}>
                         {truck.photos?.[0]?.url
@@ -217,7 +217,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
                 <span className="tk-meta">Breakdown of the {!reviewsError && feedback ? reviews.length : '—'} written review(s) below.</span>
               </Card>
               <div className={styles.reviewList}>
-                {reviewsLoading ? <SkeletonRow columns={3} /> : reviewsError ? <EmptyState icon="message-square" title={getApiErrorMessage(reviewsError)} /> : reviews.length === 0
+                {reviewsLoading ? <SkeletonRow variant="review" rows={2} /> : reviewsError ? <EmptyState icon="message-square" title={getApiErrorMessage(reviewsError)} /> : reviews.length === 0
                   ? <EmptyState icon="message-square" title="No written feedback yet" description="Forwarders can rate a driver after each delivery." />
                   : reviews.map((r) => <ReviewRow key={r.id} review={r} onJob={(id) => navigate(jobDetailHref(id))} />)}
               </div>

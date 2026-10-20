@@ -171,7 +171,7 @@ export function Dashboard() {
                 { key: 'status', header: 'Status', width: 142, render: (trip) => <Badge tone={trip.tone}>{trip.status}</Badge> },
               ]}
             />
-            {tripsLoading ? <SkeletonRow columns={3} /> : tripsError ? <EmptyState icon="route" title={getApiErrorMessage(tripsError)} /> : data.activeTrips === null && <span className="tk-meta">—</span>}
+            {tripsLoading ? <SkeletonRow variant="list" rows={3} /> : tripsError ? <EmptyState icon="route" title={getApiErrorMessage(tripsError)} /> : data.activeTrips === null && <span className="tk-meta">—</span>}
           </div>
         </SectionCard>
       </section>
@@ -188,14 +188,14 @@ export function Dashboard() {
             <strong>{earningsLoading ? <Skeleton width={120} height={28} /> : earnings.earningsThisMonth}</strong>
             <span>{earnings.change}</span>
           </div>
-          {earningsLoading ? <SkeletonRow columns={3} /> : earningsError ? <EmptyState icon="wallet" title={getApiErrorMessage(earningsError)} /> : earnings.monthlyTrend === null ? <span className="tk-meta">—</span> : <EarningsExpensesChart trend={earnings.monthlyTrend} height={170} />}
+          {earningsLoading ? <SkeletonRow variant="chart" style={{ '--skeleton-chart-height': '170px' }} /> : earningsError ? <EmptyState icon="wallet" title={getApiErrorMessage(earningsError)} /> : earnings.monthlyTrend === null ? <span className="tk-meta">—</span> : <EarningsExpensesChart trend={earnings.monthlyTrend} height={170} />}
         </SectionCard>
       </section>
 
       <section className={styles.insightsGrid}>
         <SectionCard title="Recent Activity" action={<button className={styles.linkButton} onClick={() => router.push('/notifications')}>View all</button>} pad="none">
           <div style={{ padding: '4px var(--tk-card-pad) var(--tk-card-pad)' }}>
-            {overviewLoading ? <SkeletonRow columns={2} /> : data.activityFeed === null ? <span className="tk-meta">—</span> : data.activityFeed.length === 0 && <span className="tk-meta">No activity yet.</span>}
+            {overviewLoading ? <SkeletonRow variant="list" rows={3} /> : data.activityFeed === null ? <span className="tk-meta">—</span> : data.activityFeed.length === 0 && <span className="tk-meta">No activity yet.</span>}
             {data.activityFeed?.map((item, i) => (
               <div key={item.id || i} style={{ display: 'flex', gap: 10, padding: '10px 0', borderBottom: i < data.activityFeed.length - 1 ? '1px solid var(--tk-line)' : 0 }}>
                 <span style={{ width: 8, height: 8, borderRadius: 999, marginTop: 6, flex: '0 0 auto', background: item.tone }} />
@@ -215,7 +215,7 @@ export function Dashboard() {
                 <span className="tk-meta">{expiringDocs} document{expiringDocs === 1 ? '' : 's'} expiring or expired across your fleet.</span>
               </Card>
             )}
-            {notificationsLoading ? <SkeletonRow columns={2} /> : notificationsError ? <EmptyState icon="bell" title={getApiErrorMessage(notificationsError)} /> : latestNotifications === null || expiringDocs === null ? <span className="tk-meta">—</span> : latestNotifications.length === 0 && expiringDocs === 0 && <p className="tk-meta" style={{ margin: '8px 0 12px' }}>You're all caught up.</p>}
+            {notificationsLoading ? <SkeletonRow variant="list" rows={2} /> : notificationsError ? <EmptyState icon="bell" title={getApiErrorMessage(notificationsError)} /> : latestNotifications === null || expiringDocs === null ? <span className="tk-meta">—</span> : latestNotifications.length === 0 && expiringDocs === 0 && <p className="tk-meta" style={{ margin: '8px 0 12px' }}>You're all caught up.</p>}
             {latestNotifications?.map((n, i) => (
               <NotificationItem
                 key={n.id ?? i} icon={n.icon} tone={NOTIFICATION_TONE[n.type] || 'blue'} title={n.title} preview={n.body} meta={n.createdAt}
@@ -226,7 +226,7 @@ export function Dashboard() {
           </div>
         </SectionCard>
         <SectionCard title="Average Rating" action={<button className={styles.linkButton} onClick={() => router.push('/ratings-reviews')}>View reviews</button>}>
-          {ratingLoading ? <SkeletonRow columns={2} /> : ratingError ? <EmptyState icon="star" title={getApiErrorMessage(ratingError)} />
+          {ratingLoading ? <SkeletonRow variant="review" rows={1} /> : ratingError ? <EmptyState icon="star" title={getApiErrorMessage(ratingError)} />
             : <StarRating rating={reviewSummary?.average} reviews={reviewSummary?.total} trend={reviewSummary?.trendVsLastMonth} breakdown={reviewSummary?.breakdown} />}
         </SectionCard>
       </section>

@@ -120,8 +120,8 @@ export function TeamSettings({ onToast }) {
         pad="none"
       >
         {(error || loadError || rolesError || data?.warning) && <div style={{ padding: '0 var(--tk-card-pad) 12px' }}><Banner tone="danger" title="Couldn’t update member">{error || (loadError || rolesError ? getApiErrorMessage(loadError || rolesError) : data.warning)}</Banner></div>}
-        {isLoading ? <SkeletonRow columns={5} /> : !data && !loadError && <span className="tk-meta">—</span>}
-        <DataTable
+        {isLoading ? <SkeletonRow columns={6} /> : !data && !loadError && <span className="tk-meta">—</span>}
+        {!isLoading && <DataTable
           rows={members}
           rowKey={(m, i) => `${m.kind}:${m.id ?? i}`}
           columns={[
@@ -158,7 +158,7 @@ export function TeamSettings({ onToast }) {
               )),
             },
           ]}
-        />
+        />}
       </SectionCard>
       <InviteModal open={inviteOpen} onClose={() => setInviteOpen(false)} roles={roles} security={security} createPin={createPin} onDone={(m) => { setInviteOpen(false); onToast(`Invite sent to ${m.email}.`); }} />
       <PinPrompt
@@ -190,7 +190,7 @@ export function RolesSettings({ onToast }) {
   const selected = roleById(roles, selectedId) || roles[0];
 
   useEffect(() => { if (selected) setDraft({ ...selected, permissions: [...(selected.permissions ?? [])] }); else setDraft(null); setError(''); }, [selected?.id, selected]);
-  if (!draft) return <SectionCard title="Roles & Permissions" description="Control what each role can see and do. Permissions marked with a lock also need the transaction PIN." action={<Button variant="secondary" icon="plus" disabled={!canManage || busy || !data?.supportedKeys} onClick={create}>New Role</Button>}>{isLoading ? <SkeletonRow columns={2} /> : <span className="tk-meta">{loadError ? getApiErrorMessage(loadError) : error || '—'}</span>}</SectionCard>;
+  if (!draft) return <SectionCard title="Roles & Permissions" description="Control what each role can see and do. Permissions marked with a lock also need the transaction PIN." action={<Button variant="secondary" icon="plus" disabled={!canManage || busy || !data?.supportedKeys} onClick={create}>New Role</Button>}>{isLoading ? <SkeletonRow variant="roles" /> : <span className="tk-meta">{loadError ? getApiErrorMessage(loadError) : error || '—'}</span>}</SectionCard>;
 
   const dirty = JSON.stringify([...draft.permissions].sort()) !== JSON.stringify([...(selected?.permissions || [])].sort()) || draft.name !== selected?.name || draft.description !== selected?.description;
   const toggle = (key) => setDraft((d) => ({ ...d, permissions: toggleSettingsPermission(d.permissions, data?.permissionBindings?.[key]) }));

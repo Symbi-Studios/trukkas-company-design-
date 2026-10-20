@@ -109,7 +109,7 @@ export function Documents() {
 
         {tab === 'company' && (
           <div className={styles.companyGrid}>
-            {companyDocsLoading ? <SkeletonRow columns={3} /> : companyDocsError ? <EmptyState icon="file-text" title={getApiErrorMessage(companyDocsError)} /> : <ComplianceChecklist
+            {companyDocsLoading ? <SkeletonRow variant="list" rows={5} /> : companyDocsError ? <EmptyState icon="file-text" title={getApiErrorMessage(companyDocsError)} /> : <ComplianceChecklist
               title="Business Onboarding Documents"
               description="Required by Trukkas to verify your company before you can bid on jobs and receive payouts."
               requirements={COMPANY_DOCUMENT_REQUIREMENTS} docs={companyDocs ?? []}

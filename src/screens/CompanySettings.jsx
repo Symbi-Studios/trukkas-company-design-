@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSelector } from 'react-redux';
 import { useNavigate } from '../router.js';
-import { Badge, Button, Card, Icon, PageHeader, SectionCard, SkeletonRow, Switch, TextField } from '../ds.js';
+import { Badge, Button, Card, Icon, PageHeader, SectionCard, Select, SkeletonRow, Switch, TextField } from '../ds.js';
 import { EMPTY_COMPANY_SETTINGS, useGetCompanySettingsQuery, useUpdateCompanySettingsMutation, useGetSettingsNotificationsQuery, useUpdateSettingsNotificationsMutation } from '../store/features/settings/settingsApi.js';
 import { useGetMyProfileAccessQuery } from '../store/features/profile/profileApi.js';
 import { useGetOnboardingSecurityQuery } from '../store/features/auth/onboardingApi.js';
@@ -35,11 +35,13 @@ const NOTIFICATION_PREFS = [
   { key: 'security', label: 'Security alerts', hint: 'PIN changes, bank changes and new team members. Always on for owners.', locked: true },
 ];
 
-function ProfileSection({ company, canEdit, onToast }) {
+function ProfileSection({ company, canEdit, onToast, loading = false }) {
   const navigate = useNavigate();
   const [draft, setDraft] = useState(null);
   const [updateCompany, { isLoading: saving }] = useUpdateCompanySettingsMutation();
   const form = { ...company, ...draft };
+  const currentYear = new Date().getUTCFullYear();
+  const foundedYears = [{ value: '', label: '—' }, ...Array.from({ length: currentYear - 1900 + 1 }, (_, index) => String(currentYear - index))];
   const set = (key) => (e) => setDraft((previous) => ({ ...previous, [key]: e.target.value }));
   async function save() {
     if (saving || !draft || !canEdit) return;
@@ -52,19 +54,19 @@ function ProfileSection({ company, canEdit, onToast }) {
     <>
       <SectionCard title="Company Profile" description="Shown to forwarders on your bids and receipts."
         action={<Badge tone={company.verification === 'Verified' ? 'success' : 'warning'} dot>{company.verification}</Badge>}>
-        <div className={styles.form}>
+        {loading ? <SkeletonRow variant="form" rows={7} /> : <div className={styles.form}>
           <TextField label="Registered Company Name" value={form.name} onChange={set('name')} />
           <TextField label="RC Number" value={form.rcNumber} onChange={set('rcNumber')} />
           <TextField label="Company Email" type="email" value={form.email} onChange={set('email')} />
           <TextField label="Company Phone" value={form.phone} onChange={set('phone')} />
           <div className={styles.full}><TextField label="Business Address" value={form.address} onChange={set('address')} /></div>
-          <TextField label="Year Founded" value={form.founded || ''} onChange={set('founded')} />
+          <Select label="Year Founded" value={form.founded === '—' ? '' : form.founded || ''} options={foundedYears} placeholder="—" disabled={!canEdit || saving} onChange={set('founded')} />
           <TextField label="Industry" value={form.industry || ''} onChange={set('industry')} />
           <div className={styles.formActions}>
             <Button onClick={save} disabled={!draft || saving || !canEdit}>Save Changes</Button>
             {draft && <Button variant="outline" onClick={() => setDraft(null)}>Discard</Button>}
           </div>
-        </div>
+        </div>}
       </SectionCard>
       <Card tone="cool" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
         <Icon name="file-check" size={18} color="var(--tk-blue)" />
@@ -87,7 +89,7 @@ function NotificationsSection({ onToast, canEdit }) {
   }
   return (
     <SectionCard title="Notifications" description="Choose what we email you about.">
-      {isLoading && <SkeletonRow columns={2} />}
+      {isLoading ? <SkeletonRow variant="preferences" rows={NOTIFICATION_PREFS.length} /> : <>
       {error && <p className={styles.error}>{getApiErrorMessage(error)}</p>}
       <div style={{ display: 'grid', gap: 16 }}>
         {NOTIFICATION_PREFS.map((p) => (
@@ -95,6 +97,7 @@ function NotificationsSection({ onToast, canEdit }) {
         ))}
         <Button style={{ justifySelf: 'start' }} disabled={!draft || saving || !canEdit || isLoading || !!error} onClick={save}>Save Preferences</Button>
       </div>
+      </>}
     </SectionCard>
   );
 }
@@ -136,7 +139,7 @@ function CompanySettingsContent() {
           ))}
         </Card>
         <div className={styles.content}>
-          {tab === 'profile' && (isLoading ? <Card><SkeletonRow columns={3} /></Card> : <ProfileSection company={company} canEdit={canEdit} onToast={showToast} />)}
+          {tab === 'profile' && <ProfileSection company={company} canEdit={canEdit} onToast={showToast} loading={isLoading} />}
           {tab === 'payout' && <PayoutAccountSettings onToast={showToast} />}
           {tab === 'team' && <TeamSettings onToast={showToast} />}
           {tab === 'roles' && <RolesSettings onToast={showToast} />}

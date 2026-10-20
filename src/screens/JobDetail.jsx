@@ -265,7 +265,7 @@ function JobRatingCard({ jobId }) {
   const review = data?.review;
   return (
     <SectionCard title="Forwarder Rating" description="How the forwarder rated this job once it was completed.">
-      {isLoading ? <SkeletonRow columns={2} /> : error ? <EmptyState icon="star" title={getApiErrorMessage(error)} /> : review ? (
+      {isLoading ? <SkeletonRow variant="review" rows={1} /> : error ? <EmptyState icon="star" title={getApiErrorMessage(error)} /> : review ? (
         <div style={{ display: 'grid', gap: 8 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <strong style={{ font: '700 22px/28px var(--tk-font-sans)', color: 'var(--tk-ink-900)' }}>{review.rating.toFixed(1)}</strong>
@@ -329,7 +329,7 @@ export function JobDetail({ apiJobId } = {}) {
       .slice(0, 3);
   }, [availableJobs, job]);
 
-  if (isFetching && !job) return <SkeletonRow columns={3} />;
+  if (isFetching && !job) return <SkeletonRow variant="detail" />;
 
   if (!job) {
     return (
@@ -528,7 +528,7 @@ export function JobDetail({ apiJobId } = {}) {
                   {!marketplace && (
                     <>
                       <h4 className={styles.docGroup}>Trip paperwork ({tripDocs?.length ?? '—'})</h4>
-                      {paperworkLoading ? <SkeletonRow columns={3} /> : paperworkError ? <EmptyState icon="file-text" title={getApiErrorMessage(paperworkError)} /> : tripDocs === null ? <span className="tk-meta">—</span> : tripDocs.length === 0 && <span className="tk-meta">Waybills, pickup and delivery notes uploaded on this job’s trips appear here.</span>}
+                      {paperworkLoading ? <SkeletonRow variant="list" rows={3} /> : paperworkError ? <EmptyState icon="file-text" title={getApiErrorMessage(paperworkError)} /> : tripDocs === null ? <span className="tk-meta">—</span> : tripDocs.length === 0 && <span className="tk-meta">Waybills, pickup and delivery notes uploaded on this job’s trips appear here.</span>}
                       {!paperworkLoading && !paperworkError && tripDocs?.map((doc, index) => (
                         <div key={doc.id ?? index}>
                           <Icon name="file-text" size={18} color={doc.status === 'Uploaded' ? 'var(--tk-success)' : 'var(--tk-ink-300)'} />

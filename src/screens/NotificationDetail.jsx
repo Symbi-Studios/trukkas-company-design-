@@ -26,7 +26,7 @@ export function NotificationDetail() {
     return (
       <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
         <PageHeader title="—" />
-        <Card><SkeletonRow columns={3} /></Card>
+        <Card><SkeletonRow variant="list" rows={1} /></Card>
       </div>
     );
   }

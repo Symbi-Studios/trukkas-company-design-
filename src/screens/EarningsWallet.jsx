@@ -57,7 +57,7 @@ export function EarningsWallet() {
       </section>
       <Card>
         <h3 className="tk-title" style={{ margin: '0 0 12px' }}>Earnings vs Expenses</h3>
-        {earningsLoading ? <SkeletonRow columns={3} /> : earningsError ? <EmptyState icon="wallet" title={getApiErrorMessage(earningsError)} /> : earnings.monthlyTrend === null ? <span className="tk-meta">—</span> : <EarningsExpensesChart trend={earnings.monthlyTrend} />}
+        {earningsLoading ? <SkeletonRow variant="chart" /> : earningsError ? <EmptyState icon="wallet" title={getApiErrorMessage(earningsError)} /> : earnings.monthlyTrend === null ? <span className="tk-meta">—</span> : <EarningsExpensesChart trend={earnings.monthlyTrend} />}
       </Card>
       <Card style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span className="tk-meta">Payout bank account</span>

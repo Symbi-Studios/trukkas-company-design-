@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '../router.js';
 import {
-  Avatar, Badge, Banner, Button, Card, DataTable, EmptyState, Icon, PageHeader,
+  Avatar, Badge, Banner, Button, Card, DataTable, DatePicker, EmptyState, Icon, PageHeader,
   Pagination, SearchField, Select, Skeleton, SkeletonRow, StatCard, Tabs,
 } from '../ds.js';
 import { useGetCompanyTripsQuery } from '../store/features/trips/tripsApi.js';
@@ -16,6 +16,7 @@ import {
 } from '../domain/trips.js';
 import { CargoThumb } from '../components/CargoThumb.jsx';
 import styles from './Trips.module.css';
+import { monthValue } from '../ds/components/forms/datePickerDates.js';
 
 const matchesPhase = (trip, phase) => trip.phase === phase && (phase !== 'Upcoming' || trip.driverAssigned === true);
 
@@ -99,14 +100,9 @@ export function Trips() {
         </div>
         <div className={styles.toolbar}>
           <SearchField placeholder="Search trips, job ID, route, cargo..." value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); syncTopBarSearch(e.target.value); }} />
-          <label className={styles.filterField}>
-            <span>Date Range</span>
-            <select value={month} onChange={(e) => { setMonth(e.target.value); setPage(1); }}>
-              <option value="">All Time</option>
-              {months.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-            <Icon name="chevron-down" size={16} color="var(--tk-ink-400)" />
-          </label>
+          <DatePicker label="Date Range" mode="month" variant="filter" value={monthValue(month)}
+            allowedMonths={months.map(monthValue).filter(Boolean)} placeholder="All Time" style={{ '--tk-date-height': '46px' }}
+            onChange={(event) => { setMonth(months.find((label) => monthValue(label) === event.target.value) ?? ''); setPage(1); }} />
           <label className={styles.filterField}>
             <span>Trip Status</span>
             <select value={stage} onChange={(e) => { setStage(e.target.value); setPage(1); }}>

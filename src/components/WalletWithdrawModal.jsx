@@ -75,7 +75,7 @@ export function WalletWithdrawModal({ onClose, onDone, available, bank, attempt,
     </Modal>
     <Modal open={step === 'confirm'} onClose={onClose} title="Confirm Withdrawal" description="Review the fee and amount your bank will receive. Withdrawals require backend approval." width={420}
       footer={<><Button variant="outline" onClick={() => setStep('amount')}>Back</Button><Button disabled={!ready} onClick={() => { if (ready) setStep('pin'); }}>Continue</Button></>}>
-      {feeLoading || securityLoading ? <SkeletonRow columns={2} /> : feeError || securityError ? <EmptyState icon="wallet" title={getApiErrorMessage(feeError || securityError)} /> : <>
+      {feeLoading || securityLoading ? <SkeletonRow variant="form" rows={2} action={false} /> : feeError || securityError ? <EmptyState icon="wallet" title={getApiErrorMessage(feeError || securityError)} /> : <>
         <LabelValue label="Withdrawal amount" value={money(fee?.amount)} />
         <LabelValue label="Withdrawal fee" value={money(fee?.fee)} />
         <LabelValue label="Amount received" value={money(fee?.net)} />

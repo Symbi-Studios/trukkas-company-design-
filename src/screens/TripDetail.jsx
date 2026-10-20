@@ -305,7 +305,7 @@ function CommunicationSection({ trip, onToast }) {
   }
   return (
     <SectionCard title="Communication" description={`Private messages between your company and ${driverName} about ${trip.number}. Forwarders can’t see or join this conversation.`}>
-      {isFetching && !messages ? <SkeletonRow columns={2} /> : messageError ? <EmptyState icon="messages-square" title={getApiErrorMessage(messageError)} /> : messages === undefined ? <span className="tk-meta">—</span> : messages.length === 0 ? <EmptyState icon="messages-square" title="No messages yet" description="Start the conversation with your driver." /> : (
+      {isFetching && !messages ? <SkeletonRow variant="list" rows={3} /> : messageError ? <EmptyState icon="messages-square" title={getApiErrorMessage(messageError)} /> : messages === undefined ? <span className="tk-meta">—</span> : messages.length === 0 ? <EmptyState icon="messages-square" title="No messages yet" description="Start the conversation with your driver." /> : (
         <div>
           {messages.map((m, i) => (
             <MessageBubble key={m.id ?? i} author={m.author} role={m.role} roleTone={m.role === 'Driver' ? 'orange' : 'blue'} time={m.time}>
@@ -355,7 +355,7 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }) {
   if (isFetching && !trip) return (
     <div className={styles.page}>
       <PageHeader title="—" crumbs={[{ label: 'My Trips', onClick: () => navigate('/trips') }, tripId]} />
-      <Card><SkeletonRow columns={3} /><SkeletonRow columns={3} /></Card>
+      <SkeletonRow variant="detail" />
     </div>
   );
   if (error || !trip || !job) {

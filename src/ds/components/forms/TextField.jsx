@@ -1,5 +1,6 @@
 import React from 'react';
 import { Icon } from '../../assets/icons/Icon.jsx';
+import { DatePicker } from './DatePicker.jsx';
 
 const shell = (invalid, focused, disabled) => ({
   display: 'flex', alignItems: 'center', gap: 8,
@@ -15,6 +16,10 @@ const input = { flex: 1, border: 0, outline: 'none', background: 'transparent',
 
 export function TextField({ label, required, hint, error, icon, suffix, disabled, style, ...rest }) {
   const [f, setF] = React.useState(false);
+  if (rest.type === 'date' || rest.type === 'month') {
+    const { type, ...dateProps } = rest;
+    return <DatePicker {...dateProps} mode={type === 'month' ? 'month' : 'date'} label={label} required={required} hint={hint} error={error} icon={icon} suffix={suffix} disabled={disabled} style={style} />;
+  }
   return (
     <label className="tk-field" style={{ display: 'grid', gap: 6, ...style }}>
       {label && (

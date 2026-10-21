@@ -55,5 +55,6 @@ export const SEARCH_PLACEHOLDER = {
   payouts: 'Search payouts, trips, references...',
   'ratings-reviews': 'Search reviews by job, driver, forwarder...',
   notifications: 'Search notifications...',
-  support: 'Search support tickets and help articles...',
+  support: 'Search support tickets and help guides...',
+  'support-guides': 'Search help guides...',
 };

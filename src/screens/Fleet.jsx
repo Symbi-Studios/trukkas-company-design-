@@ -178,7 +178,7 @@ export function Fleet() {
             <span>
               <strong style={{ display: 'block', font: '600 13px/18px var(--tk-font-sans)' }}>Need Help?</strong>
               <span className="tk-meta">For fleet management support, contact our team.</span>
-              <Button variant="outline" size="sm" fullWidth style={{ marginTop: 10 }} onClick={() => navigate('/support')}>Contact Support</Button>
+              <Button variant="outline" size="sm" fullWidth style={{ marginTop: 10 }} onClick={() => navigate('/support/new')}>Contact Support</Button>
             </span>
           </Card>
         </div>

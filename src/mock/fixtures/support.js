@@ -24,12 +24,3 @@ export const supportTickets = [
     ],
   },
 ];
-
-export const faqs = [
-  { id: 'FAQ-01', category: 'Getting Started', question: 'How do I bid on a job request?', answer: 'Open Jobs & Trips, switch to the Job Requests tab, choose a request, and select Place a Bid. Enter your amount and an optional note, then submit.' },
-  { id: 'FAQ-02', category: 'Fleet', question: 'How do I keep a vehicle’s documents compliant?', answer: 'Open Fleet, select a vehicle, and use the Documents tab to upload or renew registration, insurance, road worthiness, and any special permits before they expire.' },
-  { id: 'FAQ-03', category: 'Payments', question: 'When are payouts released?', answer: 'Payouts are released within 3–5 business days after a trip is marked Delivered and the forwarder confirms receipt.' },
-  { id: 'FAQ-04', category: 'Payments', question: 'How do I withdraw my wallet balance?', answer: 'Go to Earnings & Wallet and select Withdraw. Funds are sent to the bank account on file in Company Settings.' },
-  { id: 'FAQ-05', category: 'Fleet', question: 'What happens if a vehicle’s insurance expires?', answer: 'The vehicle is flagged as non-compliant and cannot be assigned to new trips until a valid certificate is uploaded.' },
-  { id: 'FAQ-06', category: 'Jobs & Trips', question: 'Can I withdraw a bid after submitting it?', answer: 'Yes, while the request is still in the Quoted stage and the forwarder has not yet accepted it.' },
-];

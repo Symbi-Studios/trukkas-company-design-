@@ -5,6 +5,7 @@ import { jobs } from './mock/fixtures/jobs.js';
 import { notifications } from './mock/fixtures/notifications.js';
 import { payoutRequests } from './mock/fixtures/payouts.js';
 import { supportTickets } from './mock/fixtures/support.js';
+import { guides } from './mock/fixtures/guides.js';
 import { trips } from './mock/fixtures/trips.js';
 import { trucks } from './mock/fixtures/trucks.js';
 import { plateSlug } from './domain/vehicles.js';
@@ -18,6 +19,7 @@ const routeValues = {
   notificationId: notifications.map((item) => item.id),
   payoutId: payoutRequests.map((item) => item.id),
   ticketId: supportTickets.map((item) => item.id),
+  guideId: guides.map((item) => item.id),
   tripId: trips.map((item) => item.id),
   vehicleId: trucks.map((item) => plateSlug(item.plate)),
 };

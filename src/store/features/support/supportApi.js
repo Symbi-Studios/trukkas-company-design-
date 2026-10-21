@@ -1,5 +1,5 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
-import { categoryToWire, count, messageView, rows, safeAttachmentUrl, text, threadView } from './supportContracts.js';
+import { categoryToWire, count, messageView, rows, safeAttachmentUrl, text, threadView, ticketMessage } from './supportContracts.js';
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const signedIn = (api) => api.getState().auth.account ? null : unavailable('Sign in to contact support.');
@@ -59,17 +59,18 @@ export const supportApi = baseApi.enhanceEndpoints({ addTagTypes: ['SupportTicke
       providesTags: (_data, _error, id) => [{ type: 'SupportTicket', id }],
     }),
     createSupportTicket: builder.mutation({
-      async queryFn({ subject, category, body, files = [] }, api, _options, baseQuery) {
+      async queryFn({ subject, category, body, details = [], files = [] }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
         if (!text(subject) || !text(body) || !categoryToWire(category)) return unavailable('Enter a subject and a message for support.');
         if (!Array.isArray(files) || files.length) return unavailable('The ticket creation API does not support attachments. Remove the files before sending.');
         const account = api.getState().auth.account;
-        const result = await baseQuery({ url: '/support/threads', method: 'POST', body: { subject: subject.trim(), category: categoryToWire(category), message: body.trim() } });
+        const content = ticketMessage(body, details);
+        const result = await baseQuery({ url: '/support/threads', method: 'POST', body: { subject: subject.trim(), category: categoryToWire(category), message: content } });
         if (result.error) return result;
         if (api.getState().auth.account !== account) return unavailable('Your company session changed. Check your tickets before retrying.');
         const thread = unwrapApiResponseData(result.data)?.thread;
         return text(thread?.id) && thread.subject === subject.trim() && thread.category === categoryToWire(category)
-          && rows(thread.messages)?.some((message) => message.threadId === thread.id && message.senderType === 'USER' && message.content === body.trim())
+          && rows(thread.messages)?.some((message) => message.threadId === thread.id && message.senderType === 'USER' && message.content === content)
           ? { data: threadView(thread) } : unavailable('The API did not confirm your support request. Check your tickets before retrying.');
       },
       invalidatesTags: ['SupportTickets'],

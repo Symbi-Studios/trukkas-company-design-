@@ -1,6 +1,6 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
 import { getApiErrorMessage } from '../../api/getApiErrorMessage.js';
-import { assignedFleetDriverView, count, driverView, fleetActivityView, fleetDocumentTypes, fleetDocumentView, fleetSpecificationsBody, fleetTripView, maintenanceDueView, maintenanceTypeToWire, maintenanceView, ownershipToWire, rows, safeUrl, text, truckView, vehicleClassToWire } from './fleetContracts.js';
+import { assignedFleetDriverView, count, dateLabel, driverView, fleetFuelLogsView, fleetFuelView, fleetSummaryView, fleetActivityView, fleetDocumentTypes, fleetDocumentView, fleetEditedSpecifications, fleetSpecificationsBody, fleetTripView, maintenanceDueView, maintenanceTypeToWire, maintenanceView, ownershipToWire, rows, safeUrl, text, truckView, vehicleClassToWire } from './fleetContracts.js';
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const signedIn = (api) => api.getState().auth.account ? null : unavailable('Sign in to manage your fleet.');
@@ -62,11 +62,9 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
         const ownership = ownershipToWire(draft.ownership);
         if (!ownership) return unavailable('Choose a supported ownership type.');
         if (draft.purchaseDate && (!validDate(draft.purchaseDate) || draft.purchaseDate > new Date().toISOString().slice(0, 10))) return unavailable('Enter a valid purchase date that is not in the future.');
-        // A typed current location is not the vehicle's base location. Manual
-        // odometer entries are also explicitly unsupported by the fleet API.
-        const unsupported = [['Current Location', draft.location], ['Odometer Reading', draft.odometer]]
-          .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '');
-        if (unsupported.length) return unavailable(`The vehicle API cannot save these fields yet: ${unsupported.map(([label]) => label).join(', ')}. Clear these entries or restore the original selections before submitting.`);
+        if ((text(draft.location)?.length ?? 0) > 200) return unavailable('Enter a current location of up to 200 characters.');
+        const odometerKm = draft.odometer === '' || draft.odometer == null ? null : maintenanceCost(draft.odometer);
+        if (odometerKm !== null && (!Number.isFinite(odometerKm) || odometerKm < 0)) return unavailable('Enter a valid odometer reading of zero or more kilometres.');
         const specifications = fleetSpecificationsBody(draft);
         const docs = Object.entries(draft.docs ?? {}).filter(([, doc]) => doc.files?.length).map(([type, doc]) => ({ type, file: doc.files[0]?.file, expiryDate: doc.expiry, name: doc.files[0]?.name }));
         const unsupportedDoc = docs.find((doc) => !fleetDocumentTypes[doc.type]);
@@ -120,6 +118,18 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
           && Object.entries(specifications).every(([key, value]) => savedSettings.specifications?.[key] === value)
           && (!text(draft.notes) || savedSettings.notes === draft.notes.trim());
         if (!settingsConfirmed) return partial(unavailable('The API did not confirm the vehicle details and specifications.'));
+        if (text(draft.location)) {
+          const result = await baseQuery({ url: '/company/fleet/' + encodeURIComponent(createdTruckId) + '/location', method: 'PATCH', body: { location: draft.location.trim() } });
+          if (api.getState().auth.account !== account) return changedSession();
+          if (result.error) return partial(result);
+          if (unwrapApiResponseData(result.data)?.currentLocationNote?.location !== draft.location.trim()) return partial(unavailable('The API did not confirm the current location.'));
+        }
+        if (odometerKm !== null) {
+          const result = await baseQuery({ url: '/company/fleet/' + encodeURIComponent(createdTruckId) + '/odometer', method: 'PATCH', body: { odometerKm } });
+          if (api.getState().auth.account !== account) return changedSession();
+          if (result.error) return partial(result);
+          if (unwrapApiResponseData(result.data)?.odometer?.manualKm !== odometerKm) return partial(unavailable('The API did not confirm the odometer reading.'));
+        }
         for (const doc of docs) {
           const result = await uploadDocument(baseQuery, createdTruckId, doc);
           if (api.getState().auth.account !== account) return changedSession();
@@ -151,6 +161,110 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
         })) };
       },
       providesTags: ['CompanyFleet'],
+    }),
+    getFleetSummary: builder.query({
+      async queryFn(_arg, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        const result = await baseQuery({ url: '/company/fleet', params: { page: 1, limit: 1 } });
+        return result.error ? result : { data: fleetSummaryView(unwrapApiResponseData(result.data)?.summary) };
+      },
+      providesTags: ['CompanyFleet'],
+    }),
+    editFleetVehicle: builder.mutation({
+      async queryFn({ id, draft, original }, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        if (!text(id) || !draft || !original) return unavailable('Reload the vehicle before editing it.');
+        const account = api.getState().auth.account;
+        const body = {};
+        for (const [key, wire, max] of [['plate', 'plateNumber', 100], ['make', 'make', 60], ['model', 'model', 60], ['color', 'color', 30], ['vin', 'vin', 30], ['engineNumber', 'engineNumber', 40], ['notes', 'notes', 2000]]) {
+          if (typeof draft[key] !== 'string' || draft[key].trim().length > max) return unavailable('Check the vehicle details and field lengths.');
+          if (draft[key] !== original[key]) body[wire] = key === 'plate' ? draft[key].trim().toUpperCase() : draft[key].trim();
+        }
+        if (!text(draft.plate) || !/^\d{4}$/.test(draft.year)) return unavailable('Enter a registration number and four-digit year.');
+        if (draft.year !== original.year) body.year = draft.year;
+        if (draft.vehicleClass !== original.vehicleClass) { body.vehicleClass = vehicleClassToWire(draft.vehicleClass); if (!body.vehicleClass) return unavailable('Choose a vehicle class.'); }
+        if (draft.ownership !== original.ownership) { body.ownership = ownershipToWire(draft.ownership); if (!body.ownership) return unavailable('Choose an ownership type.'); }
+        if (draft.purchaseDate !== original.purchaseDate) { if (!validDate(draft.purchaseDate) || draft.purchaseDate > new Date().toISOString().slice(0, 10)) return unavailable('Enter a valid purchase date that is not in the future.'); body.purchaseDate = draft.purchaseDate; }
+        const locationChanged = draft.location !== original.location, odometerChanged = draft.odometer !== original.odometer;
+        if (locationChanged && (!text(draft.location) || draft.location.trim().length > 200)) return unavailable('Enter a current location of up to 200 characters.');
+        const odometerKm = maintenanceCost(draft.odometer);
+        if (odometerChanged && (odometerKm === null || !Number.isFinite(odometerKm) || odometerKm < 0)) return unavailable('Enter an odometer reading of zero or more kilometres.');
+        if (odometerChanged && original.odometer !== '' && odometerKm < Number(original.odometer)) return unavailable('An odometer reading cannot go backwards.');
+        const changedSpecs = Object.keys(draft.specs ?? {}).filter((key) => draft.specs[key] !== original.specs?.[key]);
+        if (changedSpecs.some((key) => typeof draft.specs[key] !== 'string')) return unavailable('Check the specification values.');
+        if (changedSpecs.length) {
+          const current = await baseQuery('/company/fleet/' + encodeURIComponent(id));
+          if (api.getState().auth.account !== account) return changedSession();
+          if (current.error) return current;
+          const truck = unwrapApiResponseData(current.data)?.truck;
+          if (truck?.id !== id) return unavailable('The API did not identify the vehicle.');
+          body.specifications = fleetEditedSpecifications(truck.specifications, draft, original);
+          if (Object.keys(body.specifications).length > 30) return unavailable('The API accepts up to 30 specifications.');
+          if (changedSpecs.includes('fuelType')) body.fuelType = draft.specs.fuelType.trim().toUpperCase();
+        }
+        const url = '/company/fleet/' + encodeURIComponent(id);
+        if (Object.keys(body).length) {
+          const result = await baseQuery({ url: '/dashboard/trucks/' + encodeURIComponent(id), method: 'PATCH', body });
+          if (api.getState().auth.account !== account) return changedSession();
+          if (result.error) return result;
+        }
+        if (locationChanged) {
+          const result = await baseQuery({ url: url + '/location', method: 'PATCH', body: { location: draft.location.trim() } });
+          if (api.getState().auth.account !== account) return changedSession();
+          if (result.error) return unavailable('Some vehicle details may have saved. ' + getApiErrorMessage(result.error) + ' Reload before retrying.');
+        }
+        if (odometerChanged) {
+          const result = await baseQuery({ url: url + '/odometer', method: 'PATCH', body: { odometerKm } });
+          if (api.getState().auth.account !== account) return changedSession();
+          if (result.error) return unavailable('Some vehicle details may have saved. ' + getApiErrorMessage(result.error) + ' Reload before retrying.');
+        }
+        const result = await baseQuery(url);
+        if (api.getState().auth.account !== account) return changedSession();
+        if (result.error) return unavailable('The save could not be confirmed. Reload the vehicle before retrying.');
+        const saved = unwrapApiResponseData(result.data)?.truck;
+        const confirmed = saved?.id === id && Object.entries(body).every(([key, value]) => key === 'specifications'
+          ? Object.entries(value).every(([name, entry]) => saved.specifications?.[name] === entry)
+          : key === 'purchaseDate' ? saved.purchaseDate?.slice(0, 10) === value
+          : key === 'notes' && value === '' ? saved.notes === '' || saved.notes === null : saved[key] === value)
+          && (!locationChanged || saved.currentLocationNote?.location === draft.location.trim())
+          && (!odometerChanged || saved.odometer?.manualKm === odometerKm)
+          && changedSpecs.every((key) => {
+            const value = truckView(saved, true)?.editDraft.specs[key], expected = draft.specs[key].trim();
+            return key === 'fuelType' ? value?.toUpperCase() === expected.toUpperCase() : value === expected;
+          });
+        return confirmed ? { data: { id } } : unavailable('The API did not confirm all changes. Reload the vehicle before retrying.');
+      },
+      invalidatesTags: changedTags,
+    }),
+    getFleetFuelLogs: builder.query({
+      async queryFn(id, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        if (!text(id)) return unavailable('This vehicle has no API ID.');
+        const result = await baseQuery('/company/fleet/' + encodeURIComponent(id) + '/fuel-logs');
+        if (result.error) return result;
+        const data = fleetFuelLogsView(unwrapApiResponseData(result.data));
+        return data ? { data } : unavailable('The API did not return valid fuel logs.');
+      },
+      providesTags: ['CompanyFleet'],
+    }),
+    addFleetFuelLog: builder.mutation({
+      async queryFn({ truckId, draft }, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        if (!text(truckId)) return unavailable('This vehicle has no API ID.');
+        const litres = maintenanceCost(draft?.litres), amount = maintenanceCost(draft?.amount), odometerKm = maintenanceCost(draft?.odometer);
+        if (!Number.isFinite(litres) || litres <= 0 || amount === null || !Number.isFinite(amount) || amount < 0) return unavailable('Enter litres above zero and a total cost of zero or more.');
+        if (draft.date && (!validDate(draft.date) || draft.date > new Date().toISOString().slice(0, 10))) return unavailable('Enter a valid fuel purchase date that is not in the future.');
+        if (odometerKm !== null && (!Number.isFinite(odometerKm) || odometerKm < 0)) return unavailable('Enter a valid odometer reading.');
+        const body = { litres, amount, ...(draft.date ? { date: draft.date } : {}), ...(odometerKm !== null ? { odometerKm } : {}), ...(text(draft.station) ? { station: draft.station.trim() } : {}), ...(text(draft.fuelType) ? { fuelType: draft.fuelType.toUpperCase() } : {}) };
+        const account = api.getState().auth.account;
+        const result = await baseQuery({ url: '/company/fleet/' + encodeURIComponent(truckId) + '/fuel-logs', method: 'POST', body });
+        if (api.getState().auth.account !== account) return changedSession();
+        if (result.error) return result;
+        const saved = unwrapApiResponseData(result.data)?.fuelLog;
+        return text(saved?.id) && Object.entries(body).every(([key, value]) => key === 'date' ? dateLabel(saved.date) === dateLabel(value) : saved[key] === value)
+          ? { data: fleetFuelView(saved) } : unavailable('The API did not confirm the fuel purchase. Reload the fuel log before retrying.');
+      },
+      invalidatesTags: changedTags,
     }),
     getFleetVehicle: builder.query({
       async queryFn(id, api, _options, baseQuery) {
@@ -375,4 +489,4 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
   }),
 });
 
-export const { useAddFleetVehicleMutation, useGetFleetQuery, useGetFleetVehicleQuery, useGetFleetDocumentsQuery, useUploadFleetDocumentMutation, useUpdateFleetVehicleMutation, useLazyExportFleetVehicleQuery, useGetFleetDriversQuery, useGetFleetAssignedDriverQuery, useAssignFleetDriverMutation, useGetFleetMaintenanceQuery, useRequestFleetMaintenanceMutation, useCompleteFleetMaintenanceMutation, useUpdateFleetMaintenanceMutation, useGetFleetTripsQuery, useLazyExportFleetTripsQuery } = fleetApi;
+export const { useAddFleetVehicleMutation, useGetFleetQuery, useGetFleetSummaryQuery, useEditFleetVehicleMutation, useGetFleetFuelLogsQuery, useAddFleetFuelLogMutation, useGetFleetVehicleQuery, useGetFleetDocumentsQuery, useUploadFleetDocumentMutation, useUpdateFleetVehicleMutation, useLazyExportFleetVehicleQuery, useGetFleetDriversQuery, useGetFleetAssignedDriverQuery, useAssignFleetDriverMutation, useGetFleetMaintenanceQuery, useRequestFleetMaintenanceMutation, useCompleteFleetMaintenanceMutation, useUpdateFleetMaintenanceMutation, useGetFleetTripsQuery, useLazyExportFleetTripsQuery } = fleetApi;

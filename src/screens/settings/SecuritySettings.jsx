@@ -2,18 +2,17 @@ import { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Badge, Banner, Button, ChoiceCard, EmptyState, Icon, Modal, SectionCard, SkeletonRow, Switch, TextField } from '../../ds.js';
 import { useGetOnboardingSecurityQuery } from '../../store/features/auth/onboardingApi.js';
-import { useChangeSettingsPasswordMutation, useGetSettingsSessionsQuery } from '../../store/features/settings/settingsApi.js';
+import {
+  useChangeSettingsPasswordMutation, useGetSettingsSessionsQuery, useSetupSettingsTwoFactorMutation,
+  useEnableSettingsTwoFactorMutation, useDisableSettingsTwoFactorMutation, useRegenerateSettingsBackupCodesMutation,
+  useUpdateSettingsSignInAlertsMutation, useRevokeSettingsSessionMutation,
+} from '../../store/features/settings/settingsApi.js';
 import { useGetMyProfileAccessQuery } from '../../store/features/profile/profileApi.js';
 import { getApiErrorMessage } from '../../store/api/getApiErrorMessage.js';
 import { useNavigate } from '../../router.js';
-import { formatSecret, maskPhone, otpauthUri, passwordStrength } from '../../domain/security.js';
+import { formatSecret, maskPhone, passwordStrength } from '../../domain/security.js';
 import { CodeInput, PasswordStrength } from '../../components/SecurityInputs.jsx';
 import styles from './Settings.module.css';
-
-const unavailableAction = async () => { throw new Error('This security action is not supported by the company API.'); };
-const beginTwoFactorSetup = unavailableAction, confirmTwoFactorSetup = unavailableAction, disableTwoFactor = unavailableAction,
-  regenerateBackupCodes = unavailableAction, revokeOtherSessions = unavailableAction, revokeSession = unavailableAction,
-  sendVerificationCode = unavailableAction, setLoginAlerts = unavailableAction;
 
 function downloadText(filename, text) {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
@@ -76,29 +75,38 @@ function PasswordCard({ email, updatedOn, onToast, canEdit }) {
   );
 }
 
-function TwoFactorSetupModal({ open, onClose, email, phone, onEnabled }) {
-  const [method, setMethod] = useState('app');
+function TwoFactorSetupModal({ open, onClose, email, onEnabled, canEdit }) {
   const [stage, setStage] = useState('choose');
   const [secret, setSecret] = useState('');
+  const [otpauthUrl, setOtpauthUrl] = useState('');
   const [code, setCode] = useState('');
-  const [demoCode, setDemoCode] = useState('');
   const [codes, setCodes] = useState([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [beginSetup, { reset: resetSetup }] = useSetupSettingsTwoFactorMutation();
+  const [enableTwoFactor, { reset: resetEnable }] = useEnableSettingsTwoFactorMutation();
 
-  function reset() { setStage('choose'); setSecret(''); setCode(''); setDemoCode(''); setCodes([]); setError(''); }
-  async function next() {
-    setError('');
-    if (method === 'app') { const r = await beginTwoFactorSetup(); setSecret(r.secret); }
-    else { const r = await sendVerificationCode('sms', phone); setDemoCode(r.demoCode); }
-    setStage('verify');
+  function reset() {
+    setStage('choose'); setSecret(''); setOtpauthUrl(''); setCode(''); setCodes([]); setError('');
+    resetSetup(); resetEnable();
   }
-  async function verify(value = code) {
+  async function next() {
+    if (busy || !canEdit) return;
     setBusy(true); setError('');
     try {
-      const r = await confirmTwoFactorSetup(method, value, phone);
-      setCodes(r.backupCodes); setStage('codes');
-    } catch (err) { setError(err.message); setCode(''); } finally { setBusy(false); }
+      const result = await beginSetup().unwrap();
+      setSecret(result.secret); setOtpauthUrl(result.otpauthUrl); setStage('verify');
+    } catch (err) { setError(getApiErrorMessage(err)); }
+    finally { resetSetup(); setBusy(false); }
+  }
+  async function verify(value = code) {
+    if (busy || !/^\d{6}$/.test(value)) return;
+    setBusy(true); setError('');
+    try {
+      const result = await enableTwoFactor({ code: value }).unwrap();
+      setCodes(result.backupCodes); setStage('codes');
+    } catch (err) { setError(getApiErrorMessage(err)); setCode(''); }
+    finally { resetEnable(); setBusy(false); }
   }
   const close = () => { if (stage === 'codes') onEnabled(); reset(); onClose(); };
 
@@ -106,17 +114,17 @@ function TwoFactorSetupModal({ open, onClose, email, phone, onEnabled }) {
     <Modal open={open} onClose={close} width={540} title="Set Up Two-Factor Authentication"
       description={stage === 'codes' ? 'Save these backup codes somewhere safe.' : 'Add a second step when you sign in.'}
       footer={
-        stage === 'choose' ? <><Button variant="outline" onClick={close}>Cancel</Button><Button iconRight="arrow-right" onClick={next} disabled={method === 'sms' && !phone}>Continue</Button></>
-          : stage === 'verify' ? <><Button variant="outline" onClick={() => setStage('choose')}>Back</Button><Button disabled={busy || code.length < 6} onClick={() => verify()}>{busy ? 'Verifying…' : 'Verify & Enable'}</Button></>
+        stage === 'choose' ? <><Button variant="outline" onClick={close}>Cancel</Button><Button iconRight="arrow-right" onClick={next} disabled={!canEdit || busy}>Continue</Button></>
+          : stage === 'verify' ? <><Button variant="outline" onClick={() => setStage('choose')} disabled={busy}>Back</Button><Button disabled={busy || code.length !== 6} onClick={() => verify()}>{busy ? 'Verifying…' : 'Verify & Enable'}</Button></>
             : <Button onClick={close}>I’ve saved my codes</Button>
       }>
       {stage === 'choose' && (
         <div style={{ display: 'grid', gap: 10 }}>
-          <ChoiceCard icon="smartphone" title="Authenticator app (recommended)" description="Google Authenticator, Microsoft Authenticator, 1Password or Authy generate a new code every 30 seconds." selected={method === 'app'} onSelect={() => setMethod('app')} />
-          <ChoiceCard icon="message-square" title="Text message (SMS)" description={phone ? `We’ll text a code to ${maskPhone(phone)} each time you sign in.` : 'Add and verify a phone number on your profile first.'} selected={method === 'sms'} onSelect={() => setMethod('sms')} />
+          <ChoiceCard icon="smartphone" title="Authenticator app (recommended)" description="Google Authenticator, Microsoft Authenticator, 1Password or Authy generate a new code every 30 seconds." selected onSelect={() => {}} disabled={!canEdit} />
+          <ChoiceCard icon="message-square" title="Text message (SMS)" description="SMS-based two-factor authentication is not supported for company accounts." disabled />
         </div>
       )}
-      {stage === 'verify' && method === 'app' && (
+      {stage === 'verify' && (
         <div style={{ display: 'grid', gap: 14 }}>
           <ol className={styles.steps}>
             <li>Open your authenticator app and choose <strong>Add account → Enter a setup key</strong>.</li>
@@ -127,67 +135,96 @@ function TwoFactorSetupModal({ open, onClose, email, phone, onEnabled }) {
             <span>{formatSecret(secret)}</span>
             <Button size="sm" variant="outline" icon="copy" onClick={() => navigator.clipboard?.writeText(secret)}>Copy</Button>
           </div>
-          <a href={otpauthUri(secret, email)} style={{ color: 'var(--tk-blue)', font: '600 13px/18px var(--tk-font-sans)' }}>Open in authenticator app</a>
-          <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => verify(v)} error={error} disabled={busy} />
-        </div>
-      )}
-      {stage === 'verify' && method === 'sms' && (
-        <div style={{ display: 'grid', gap: 14, justifyItems: 'center' }}>
-          <span className="tk-meta">Enter the code sent to {maskPhone(phone)}.</span>
-          {demoCode && <Badge tone="info">Demo code: {demoCode}</Badge>}
+          <a href={otpauthUrl} style={{ color: 'var(--tk-blue)', font: '600 13px/18px var(--tk-font-sans)' }}>Open in authenticator app</a>
           <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => verify(v)} error={error} disabled={busy} />
         </div>
       )}
       {stage === 'codes' && (
         <div style={{ display: 'grid', gap: 12 }}>
-          <Banner tone="success" title="Two-factor authentication is on">Use a backup code if you lose access to your {method === 'app' ? 'authenticator app' : 'phone'}. Each code works once.</Banner>
+          <Banner tone="success" title="Two-factor authentication is on">Use a backup code if you lose access to your authenticator app. Each code works once.</Banner>
           <BackupCodes codes={codes} email={email} />
         </div>
       )}
+      {error && stage !== 'verify' && <p className={styles.error}>{error}</p>}
     </Modal>
   );
 }
 
-function TwoFactorCard({ security, email, phone, onToast }) {
+function TwoFactorCard({ security, email, canEdit, onToast }) {
   const tf = security.twoFactor;
   const [setupOpen, setSetupOpen] = useState(false);
-  const [disableOpen, setDisableOpen] = useState(false);
+  const [proofOpen, setProofOpen] = useState(false);
+  const [proofAction, setProofAction] = useState('disable');
   const [codesOpen, setCodesOpen] = useState(false);
   const [password, setPassword] = useState('');
+  const [proof, setProof] = useState('');
+  const [newCodes, setNewCodes] = useState([]);
   const [error, setError] = useState('');
-  const remaining = tf.backupCodes?.filter((c) => !c.used).length ?? '—';
+  const [disableTwoFactor, { isLoading: disabling }] = useDisableSettingsTwoFactorMutation();
+  const [regenerateCodes, { isLoading: regenerating, reset: resetRegenerate }] = useRegenerateSettingsBackupCodesMutation();
+  const remaining = tf.backupCodesRemaining ?? '—';
+  const busy = disabling || regenerating;
+  const validProof = /^\d{6}$/.test(proof) || /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i.test(proof.trim());
+
+  function openProof(action) {
+    setProofAction(action); setPassword(''); setProof(''); setError(''); setProofOpen(true);
+  }
+  function closeProof() {
+    setProofOpen(false); setPassword(''); setProof(''); setError(''); resetRegenerate();
+  }
+  async function confirmProof() {
+    if (busy || !canEdit || !password || !validProof) return;
+    setError('');
+    const values = /^\d{6}$/.test(proof) ? { code: proof } : { backupCode: proof.trim().toUpperCase() };
+    try {
+      if (proofAction === 'disable') {
+        await disableTwoFactor({ currentPassword: password, ...values }).unwrap();
+        closeProof(); onToast('Two-factor authentication turned off.');
+      } else {
+        const result = await regenerateCodes({ currentPassword: password, ...values }).unwrap();
+        setNewCodes(result.backupCodes); setCodesOpen(true); closeProof();
+        onToast('New backup codes generated. Old codes no longer work.');
+      }
+    } catch (err) { setError(getApiErrorMessage(err)); }
+  }
+  function closeCodes() { setCodesOpen(false); setNewCodes([]); }
 
   return (
     <SectionCard title="Two-Factor Authentication (2FA)" description="Require a one-time code in addition to your password."
-      action={<Badge tone={tf.enabled ? 'success' : 'warning'} dot>{tf.enabled === null ? '—' : tf.enabled ? 'On' : 'Off'}</Badge>}>
-      {tf.enabled ? (
+      action={<Badge tone={tf.enabled === true ? 'success' : 'warning'} dot>{tf.enabled === null ? '—' : tf.enabled ? 'On' : 'Off'}</Badge>}>
+      {tf.enabled === true ? (
         <div>
           <div className={styles.row}>
             <span className={styles.iconTile} data-tone="green"><Icon name={tf.method === 'app' ? 'smartphone' : 'message-square'} size={18} /></span>
-            <span className={styles.rowMain}><strong>{tf.method === 'app' ? 'Authenticator app' : `SMS to ${maskPhone(tf.phone)}`}</strong><small>Enabled {tf.enabledOn}</small></span>
-            <Button variant="danger" size="sm" disabled onClick={() => { setPassword(''); setError(''); setDisableOpen(true); }}>Turn Off</Button>
+            <span className={styles.rowMain}><strong>{tf.method === 'app' ? 'Authenticator app' : '—'}</strong><small>Enabled {tf.enabledOn}</small></span>
+            <Button variant="danger" size="sm" disabled={!canEdit || tf.available !== true} onClick={() => openProof('disable')}>Turn Off</Button>
           </div>
           <div className={styles.row}>
             <span className={styles.iconTile} data-tone="neutral"><Icon name="life-buoy" size={18} /></span>
-            <span className={styles.rowMain}><strong>Backup codes</strong><small>{remaining} of {tf.backupCodes?.length ?? '—'} unused</small></span>
-            <Button variant="outline" size="sm" disabled onClick={() => setCodesOpen(true)}>View</Button>
-            <Button variant="outline" size="sm" icon="refresh-cw" disabled onClick={async () => { await regenerateBackupCodes(); setCodesOpen(true); onToast('New backup codes generated. Old codes no longer work.'); }}>Regenerate</Button>
+            <span className={styles.rowMain}><strong>Backup codes</strong><small>{remaining} remaining</small></span>
+            <Button variant="outline" size="sm" disabled>View</Button>
+            <Button variant="outline" size="sm" icon="refresh-cw" disabled={!canEdit || tf.available !== true} onClick={() => openProof('regenerate')}>Regenerate</Button>
           </div>
         </div>
       ) : (
         <div className={styles.row}>
           <span className={styles.iconTile} data-tone="amber"><Icon name="shield-alert" size={18} /></span>
           <span className={styles.rowMain}><strong>Protect your account</strong><small>Your account controls payouts and company data. 2FA stops someone with your password from signing in.</small></span>
-          <Button icon="shield-check" disabled onClick={() => setSetupOpen(true)}>Enable 2FA</Button>
+          <Button icon="shield-check" disabled={!canEdit || tf.available !== true || tf.enabled !== false} onClick={() => setSetupOpen(true)}>Enable 2FA</Button>
         </div>
       )}
-      <TwoFactorSetupModal open={setupOpen} onClose={() => setSetupOpen(false)} email={email} phone={phone} onEnabled={() => onToast('Two-factor authentication enabled.')} />
-      <Modal open={disableOpen} onClose={() => setDisableOpen(false)} width={420} title="Turn off 2FA?" description="Confirm with your password. Your account will be less secure."
-        footer={<><Button variant="outline" onClick={() => setDisableOpen(false)}>Cancel</Button><Button variant="danger" onClick={async () => { try { await disableTwoFactor(password, email); setDisableOpen(false); onToast('Two-factor authentication turned off.'); } catch (err) { setError(err.message); } }}>Turn Off 2FA</Button></>}>
-        <TextField label="Password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} error={error || undefined} />
+      <TwoFactorSetupModal open={setupOpen} onClose={() => setSetupOpen(false)} email={email} canEdit={canEdit} onEnabled={() => onToast('Two-factor authentication enabled.')} />
+      <Modal open={proofOpen} onClose={() => { if (!busy) closeProof(); }} width={420}
+        title={proofAction === 'disable' ? 'Turn off 2FA?' : 'Regenerate backup codes'}
+        description={proofAction === 'disable' ? 'Confirm with your password and an authenticator or backup code.' : 'Confirm with your password and an authenticator or backup code. Old backup codes will stop working.'}
+        footer={<><Button variant="outline" disabled={busy} onClick={closeProof}>Cancel</Button><Button variant={proofAction === 'disable' ? 'danger' : 'primary'} disabled={!canEdit || busy || !password || !validProof} onClick={confirmProof}>{busy ? 'Saving…' : proofAction === 'disable' ? 'Turn Off 2FA' : 'Regenerate Codes'}</Button></>}>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <TextField label="Password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          <TextField label="6-digit code or backup code" autoComplete="off" value={proof} onChange={(event) => setProof(event.target.value.toUpperCase())} error={error || undefined} />
+        </div>
       </Modal>
-      <Modal open={codesOpen} onClose={() => setCodesOpen(false)} width={460} title="Backup Codes" description="Each code can be used once if you can’t access your second factor." footer={<Button onClick={() => setCodesOpen(false)}>Done</Button>}>
-        <BackupCodes codes={tf.backupCodes ?? []} email={email} />
+      <Modal open={codesOpen} onClose={closeCodes} width={460} title="Backup Codes" description="Each code can be used once if you can’t access your second factor." footer={<Button onClick={closeCodes}>Done</Button>}>
+        <BackupCodes codes={newCodes} email={email} />
       </Modal>
     </SectionCard>
   );
@@ -198,8 +235,30 @@ export function SecuritySettings({ onToast }) {
   const { currentData: data, error, isLoading } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
   const { currentData: sessions, error: sessionsError, isLoading: sessionsLoading } = useGetSettingsSessionsQuery(undefined, { refetchOnMountOrArgChange: true });
   const { currentData: access, error: accessError } = useGetMyProfileAccessQuery();
-  const security = { passwordUpdatedOn: !error ? data?.passwordUpdatedOn ?? '—' : '—', twoFactor: { enabled: !error ? data?.twoFactor?.enabled ?? null : null, method: !error ? data?.twoFactor?.method ?? '—' : '—', backupCodes: null, enabledOn: '—' }, loginAlerts: null, sessions: !sessionsError ? sessions ?? [] : [] };
+  const [updateSignInAlerts, { isLoading: updatingAlerts }] = useUpdateSettingsSignInAlertsMutation();
+  const [revokeSession, { isLoading: revokingSession }] = useRevokeSettingsSessionMutation();
+  const canEdit = !accessError && access?.canEdit === true;
+  const security = {
+    passwordUpdatedOn: !error ? data?.passwordUpdatedOn ?? '—' : '—',
+    twoFactor: {
+      available: !error ? data?.twoFactor?.available ?? null : null,
+      enabled: !error ? data?.twoFactor?.enabled ?? null : null,
+      method: !error ? data?.twoFactor?.method ?? null : null,
+      backupCodesRemaining: !error ? data?.twoFactor?.backupCodesRemaining ?? null : null,
+      enabledOn: !error ? data?.twoFactor?.enabledOn ?? '—' : '—',
+    },
+    loginAlerts: !error ? data?.loginAlerts ?? null : null,
+    sessions: !sessionsError ? sessions ?? [] : [],
+  };
   const others = security.sessions.filter((s) => s.current === false);
+  async function changeSignInAlerts(enabled) {
+    try { await updateSignInAlerts({ enabled }).unwrap(); onToast(enabled ? 'Sign-in alerts on.' : 'Sign-in alerts off.'); }
+    catch (err) { onToast(getApiErrorMessage(err)); }
+  }
+  async function endSession(id) {
+    try { await revokeSession({ id }).unwrap(); onToast('Session signed out.'); }
+    catch (err) { onToast(getApiErrorMessage(err)); }
+  }
 
   if (isLoading) return <>
     <SectionCard title="Password"><SkeletonRow variant="security" /></SectionCard>
@@ -212,18 +271,18 @@ export function SecuritySettings({ onToast }) {
     <>
       {error && <EmptyState icon="shield-check" title={getApiErrorMessage(error)} />}
       <PasswordCard email={account?.email} updatedOn={security.passwordUpdatedOn} canEdit={!accessError && access?.canEdit === true} onToast={onToast} />
-      <TwoFactorCard security={security} email={account?.email} phone={account?.phoneVerified ? account.phone : null} onToast={onToast} />
+      <TwoFactorCard security={security} email={account?.email} canEdit={canEdit} onToast={onToast} />
       <SectionCard title="Sign-in Alerts">
-        <Switch label="Email me about new sign-ins" hint="Get an alert when your account is used from a new device or location." checked={security.loginAlerts} disabled onChange={async (v) => { await setLoginAlerts(v); onToast(v ? 'Sign-in alerts on.' : 'Sign-in alerts off.'); }} />
+        <Switch label="Email me about new sign-ins" hint="Get an alert when your account is used from a new device or location." checked={security.loginAlerts} disabled={!canEdit || updatingAlerts || security.loginAlerts === null} onChange={changeSignInAlerts} />
       </SectionCard>
       <SectionCard title="Active Sessions" description="Devices currently signed in to your account."
-        action={others.length > 0 && <Button variant="outline" icon="log-out" disabled onClick={async () => { await revokeOtherSessions(); onToast('Signed out of all other devices.'); }}>Sign Out Others</Button>}>
+        action={others.length > 0 && <Button variant="outline" icon="log-out" disabled>Sign Out Others</Button>}>
         {sessionsLoading ? <SkeletonRow variant="list" rows={1} /> : sessionsError ? <EmptyState icon="monitor" title={getApiErrorMessage(sessionsError)} /> : sessions == null && <span className="tk-meta">—</span>}
         {!sessionsLoading && security.sessions.map((s) => (
           <div key={s.id} className={styles.row}>
             <span className={styles.iconTile} data-tone="neutral"><Icon name={/iphone|ios|android/i.test(s.device) ? 'smartphone' : 'monitor'} size={18} /></span>
             <span className={styles.rowMain}><strong>{s.device}{s.current && <Badge tone="success" style={{ marginLeft: 8 }}>This device</Badge>}</strong><small>{s.location} · {s.ip} · {s.lastActive}</small></span>
-            {!s.current && <Button size="sm" variant="outline" disabled onClick={async () => { await revokeSession(s.id); onToast('Session signed out.'); }}>Sign Out</Button>}
+            {!s.current && <Button size="sm" variant="outline" disabled={revokingSession} onClick={() => endSession(s.id)}>Sign Out</Button>}
           </div>
         ))}
       </SectionCard>

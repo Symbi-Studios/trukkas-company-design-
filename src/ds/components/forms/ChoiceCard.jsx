@@ -3,10 +3,10 @@ import { Icon } from '../../assets/icons/Icon.jsx';
 
 /** Selectable tile: a radio in the corner, an icon tile, a title and a description.
  *  Selection is a blue border and a cool-blue fill — never a solid colour. */
-export function ChoiceCard({ selected, icon, title, description, onSelect, style }) {
+export function ChoiceCard({ selected, icon, title, description, onSelect, style, disabled = false }) {
   return (
-    <button type="button" onClick={onSelect}
-      style={{ textAlign: 'left', display: 'grid', gap: 8, padding: 14, cursor: 'pointer',
+    <button type="button" onClick={onSelect} disabled={disabled} aria-disabled={disabled || undefined}
+      style={{ textAlign: 'left', display: 'grid', gap: 8, padding: 14, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1,
                borderRadius: 'var(--tk-r-lg)',
                border: '1px solid ' + (selected ? 'var(--tk-blue)' : 'var(--tk-line-strong)'),
                background: selected ? 'var(--tk-surface-cool)' : '#fff',

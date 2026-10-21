@@ -3,15 +3,38 @@ import { count, object, safeUrl, text, timestampLabel, tripCollectionView, tripC
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const numberIs = (value, expected) => typeof value === 'number' && Number.isFinite(value) && value === expected;
-const signedIn = (api) => api.getState().auth.account ? null : unavailable('Sign in to manage company trips.');
+const signedIn = (api) => {
+  const account = api.getState().auth.account;
+  return account?.apiRole === 'TRUCKER' && account?.truckerType === 'COMPANY'
+    ? null : unavailable('Sign in with your trucking-company account to manage trips.');
+};
+function companyQuery(api, baseQuery) {
+  const identity = () => {
+    const { account, activeCompanyId } = api.getState().auth;
+    return JSON.stringify([account?.id, account?.actualUserId, activeCompanyId]);
+  };
+  const company = identity();
+  return async (args) => {
+    if (api.signal.aborted) return unavailable('The trip request was cancelled.');
+    if (identity() !== company) return unavailable('Your company session changed. Reload Trips before continuing.');
+    const result = await baseQuery(args);
+    return identity() === company ? result : unavailable('Your company session changed. Reload Trips before continuing.');
+  };
+}
+function loadedTrip(api, id, writing = false) {
+  const result = tripsApi.endpoints.getCompanyTrip.select(id)(api.getState());
+  return !result.isError && !(writing && result.status === 'pending') && result.data?.id === id ? result.data : null;
+}
 const tripTags = ['CompanyTrips', 'AuthOnboardingSecurity'];
 
-export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips', 'CompanyTrip', 'CompanyTripMessages', 'CompanyJobs', 'CompanyFleet', 'CompanyDashboard'] }).injectEndpoints({
+export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips', 'CompanyTrip', 'CompanyTripMessages', 'CompanyJobs', 'CompanyFleet', 'CompanyDashboard', 'CompanyWallet', 'CompanyWalletTransactions', 'CompanyPayouts', 'SupportTickets'] }).injectEndpoints({
+  overrideExisting: process.env.NODE_ENV === 'development',
   endpoints: (builder) => ({
     getCompanyTrips: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api);
         if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         // The existing tabs, search and filters operate on the whole collection.
         // Read every documented page so page-local rows never become fake totals.
         const collection = [];
@@ -28,7 +51,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
             return unavailable('The API did not return a valid company trip collection and pagination.');
           }
           if (page === 1) { total = pagination.total; pages = pagination.totalPages; }
-          if (pagination.total !== total || pagination.totalPages !== pages) return unavailable('The trip list changed while loading. Please reload it.');
+          if ((total > 0 && pages === 0) || pagination.total !== total || pagination.totalPages !== pages) return unavailable('The trip list changed while loading. Please reload it.');
           collection.push(...trips);
           if (collection.length > total || (page < pages && !trips.length)) return unavailable('The API returned incomplete trip pagination.');
         }
@@ -41,12 +64,13 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
       async queryFn(id, api, _options, baseQuery) {
         const blocked = signedIn(api);
         if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         if (!text(id)) return unavailable('This trip has no API ID.');
         const result = await baseQuery(`/company/trips/${encodeURIComponent(id)}`);
         if (result.error) return result;
         const data = unwrapApiResponseData(result.data);
         const source = object(data?.trip);
-        if (!source || source.id !== id) return unavailable('The API did not identify the requested company trip.');
+        if (!source || source.id !== id || (source.jobId !== undefined && source.jobId !== id)) return unavailable('The API did not identify the requested company trip.');
         const jobId = text(source.jobId) ?? id;
         const jobResult = await baseQuery(`/jobs/${encodeURIComponent(jobId)}`);
         if (jobResult.error) return jobResult;
@@ -61,8 +85,9 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
       async queryFn(id, api, _options, baseQuery) {
         const blocked = signedIn(api);
         if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         if (!text(id)) return unavailable('This trip has no API ID.');
-        const trip = tripsApi.endpoints.getCompanyTrip.select(id)(api.getState()).data;
+        const trip = loadedTrip(api, id);
         if (!trip) return unavailable('Load the company trip before loading its messages.');
         const messages = [];
         let total = null;
@@ -78,7 +103,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
             return unavailable('The API did not return valid trip messages and pagination.');
           }
           if (page === 1) { total = pagination.total; pages = pagination.totalPages; }
-          if (pagination.total !== total || pagination.totalPages !== pages) return unavailable('The trip conversation changed while loading. Please reload it.');
+          if ((total > 0 && pages === 0) || pagination.total !== total || pagination.totalPages !== pages) return unavailable('The trip conversation changed while loading. Please reload it.');
           messages.push(...collection);
           if (messages.length > total || (page < pages && !collection.length)) return unavailable('The API returned incomplete trip message pagination.');
         }
@@ -92,8 +117,9 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
       async queryFn({ tripId, type, details }, api, _options, baseQuery) {
         const blocked = signedIn(api);
         if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         const types = { Delay: 'DELAY', Breakdown: 'BREAKDOWN', Accident: 'OTHER', 'Cargo Damage': 'OTHER', 'Checkpoint / Security': 'OTHER', Documentation: 'OTHER', Other: 'OTHER' };
-        const trip = tripsApi.endpoints.getCompanyTrip.select(tripId)(api.getState()).data;
+        const trip = loadedTrip(api, tripId, true);
         if (!trip) return unavailable('Load the company trip before reporting an issue.');
         if (!Object.hasOwn(types, type) || !text(details) || details.length > 500) return unavailable('Choose an issue type and enter up to 500 characters.');
         const body = new FormData();
@@ -110,7 +136,8 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
       async queryFn({ tripId, body }, api, _options, baseQuery) {
         const blocked = signedIn(api);
         if (blocked) return blocked;
-        const trip = tripsApi.endpoints.getCompanyTrip.select(tripId)(api.getState()).data;
+        baseQuery = companyQuery(api, baseQuery);
+        const trip = loadedTrip(api, tripId, true);
         const noteBody = text(body);
         if (!trip || !noteBody || noteBody.length > 2000) return unavailable('Enter a trip note of 2,000 characters or fewer.');
         const result = await baseQuery({ url: `/company/trips/${encodeURIComponent(tripId)}/notes`, method: 'POST', body: { body: noteBody } });
@@ -124,7 +151,8 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
       async queryFn({ tripId, category, amount, description }, api, _options, baseQuery) {
         const blocked = signedIn(api);
         if (blocked) return blocked;
-        const trip = tripsApi.endpoints.getCompanyTrip.select(tripId)(api.getState()).data;
+        baseQuery = companyQuery(api, baseQuery);
+        const trip = loadedTrip(api, tripId, true);
         const wireCategory = tripCostCategoryToWire(category);
         if (!trip || !wireCategory || typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) return unavailable('Choose a trip cost category and enter an amount greater than zero.');
         const body = { category: wireCategory, amount, currency: 'NGN' };
@@ -142,7 +170,8 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
       async queryFn({ tripId, file, name }, api, _options, baseQuery) {
         const blocked = signedIn(api);
         if (blocked) return blocked;
-        const trip = tripsApi.endpoints.getCompanyTrip.select(tripId)(api.getState()).data;
+        baseQuery = companyQuery(api, baseQuery);
+        const trip = loadedTrip(api, tripId, true);
         const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
         if (!trip || typeof File === 'undefined' || !(file instanceof File) || !allowedTypes.has(file.type) || file.size <= 0 || file.size > 10 * 1024 * 1024) {
           return unavailable('Choose a PDF, JPEG, PNG or WebP file up to 10 MB.');
@@ -163,7 +192,8 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
       async queryFn({ tripId, location }, api, _options, baseQuery) {
         const blocked = signedIn(api);
         if (blocked) return blocked;
-        const trip = tripsApi.endpoints.getCompanyTrip.select(tripId)(api.getState()).data;
+        baseQuery = companyQuery(api, baseQuery);
+        const trip = loadedTrip(api, tripId, true);
         const place = text(location);
         if (trip?.phase !== 'Active' || !place || place.length > 200) return unavailable('Enter a place name of 200 characters or fewer for an active trip.');
         const result = await baseQuery({ url: `/company/trips/${encodeURIComponent(tripId)}/location`, method: 'PATCH', body: { location: place } });
@@ -179,9 +209,11 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
       async queryFn({ tripId, reason }, api, _options, baseQuery) {
         const blocked = signedIn(api);
         if (blocked) return blocked;
-        const trip = tripsApi.endpoints.getCompanyTrip.select(tripId)(api.getState()).data;
+        baseQuery = companyQuery(api, baseQuery);
+        const trip = loadedTrip(api, tripId, true);
         const cancellationReason = text(reason);
         if (!trip?.open || !cancellationReason) return unavailable('Enter a reason for requesting trip cancellation.');
+        if (trip.cancellationRequested === true) return unavailable('A cancellation request has already been sent to support.');
         const result = await baseQuery({ url: `/company/trips/${encodeURIComponent(tripId)}/cancel`, method: 'POST', body: { reason: cancellationReason } });
         if (result.error) return result;
         const saved = unwrapApiResponseData(result.data);
@@ -197,7 +229,8 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
       async queryFn({ tripId, content }, api, _options, baseQuery) {
         const blocked = signedIn(api);
         if (blocked) return blocked;
-        const trip = tripsApi.endpoints.getCompanyTrip.select(tripId)(api.getState()).data;
+        baseQuery = companyQuery(api, baseQuery);
+        const trip = loadedTrip(api, tripId, true);
         const message = text(content);
         if (!trip || !message || message.length > 500) return unavailable('Enter a message of 500 characters or fewer.');
         if (trip.driverAssigned !== true || !trip.driverId) return unavailable('Assign a driver before messaging about this trip.');
@@ -210,39 +243,92 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
       },
       invalidatesTags: (_data, _error, { tripId }) => [{ type: 'CompanyTripMessages', id: tripId }],
     }),
+    submitCompanyTripPod: builder.mutation({
+      async queryFn({ tripId, photo, receiverName, receiverPhone }, api, _options, baseQuery) {
+        const blocked = signedIn(api);
+        if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
+        const trip = loadedTrip(api, tripId, true);
+        const name = text(receiverName), phone = text(receiverPhone);
+        if (!trip?.actions?.pod) return unavailable('Proof of delivery can be submitted after cargo arrives, or resubmitted if rejected. Reload the trip before continuing.');
+        if (!name || typeof File === 'undefined' || !(photo instanceof File) || !photo.type.startsWith('image/') || photo.size <= 0) {
+          return unavailable('Enter the receiver’s name and choose a proof-of-delivery photo.');
+        }
+        const body = new FormData();
+        body.append('receiverName', name);
+        if (phone) body.append('receiverPhone', phone);
+        body.append('files', photo);
+        const result = await baseQuery({ url: `/jobs/${encodeURIComponent(trip.jobId)}/pod`, method: 'POST', body });
+        if (result.error) return result;
+        const job = unwrapApiResponseData(result.data)?.job;
+        return job?.id === trip.jobId && text(job.receiverName) === name && safeUrl(job.podPhotoUrl) && timestampLabel(job.podSubmittedAt) !== '—'
+          ? { data: { id: job.id } }
+          : unavailable('The API did not confirm the delivery proof. Check the trip documents before uploading again.');
+      },
+      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, 'CompanyJobs', 'CompanyDashboard', 'CompanyWallet', 'CompanyWalletTransactions', 'CompanyPayouts', { type: 'CompanyTrip', id: tripId }],
+    }),
+    unlockCompanyTripOffloading: builder.mutation({
+      async queryFn({ tripId, code }, api, _options, baseQuery) {
+        const blocked = signedIn(api);
+        if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
+        const trip = loadedTrip(api, tripId, true);
+        if (!trip?.actions?.unlock) return unavailable('Offloading can start after cargo arrival with the forwarder’s unlock code.');
+        if (typeof code !== 'string' || !/^[A-Z0-9]{6}$/.test(code)) return unavailable('Enter the 6-character unlock code shared by the forwarder.');
+        const result = await baseQuery({ url: `/jobs/${encodeURIComponent(trip.jobId)}/unlock`, method: 'POST', body: { code } });
+        if (result.error) return result;
+        const job = unwrapApiResponseData(result.data)?.job;
+        return job?.id === trip.jobId && job.status === 'OFFLOADING'
+          ? { data: { status: 'Offloading' } }
+          : unavailable('The API did not confirm that offloading started. Reload the trip before trying again.');
+      },
+      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, 'CompanyJobs', 'CompanyDashboard', { type: 'CompanyTrip', id: tripId }],
+    }),
     updateCompanyTripStatus: builder.mutation({
       async queryFn({ tripId, status }, api, _options, baseQuery) {
         const blocked = signedIn(api);
         if (blocked) return blocked;
-        const trip = tripsApi.endpoints.getCompanyTrip.select(tripId)(api.getState()).data;
+        baseQuery = companyQuery(api, baseQuery);
+        const trip = loadedTrip(api, tripId, true);
         if (!trip) return unavailable('Load the company trip before updating its status.');
         if (status === 'Cancelled') return unavailable('Request trip cancellation with a reason so support can review it.');
         let path;
         let body;
         let expected;
-        if (['Picked Up', 'In Transit'].includes(status) && trip.wireStatus === 'DRIVER_ARRIVED') {
+        if (status === 'Arrived at Pickup' && trip.wireStatus === 'DRIVER_EN_ROUTE') {
+          path = 'driver-arrived'; body = new FormData(); expected = 'DRIVER_ARRIVED';
+          if (trip.liveCoordinates) {
+            body.append('latitude', String(trip.liveCoordinates[0]));
+            body.append('longitude', String(trip.liveCoordinates[1]));
+          }
+        } else if (['Picked Up', 'In Transit'].includes(status) && trip.wireStatus === 'DRIVER_ARRIVED') {
           path = 'in-transit'; body = new FormData(); expected = 'IN_TRANSIT';
         } else if (status === 'At Destination' && trip.wireStatus === 'IN_TRANSIT') {
           if (!trip.liveCoordinates) return unavailable('A current GPS position from the truck is required to confirm arrival.');
           path = 'cargo-arrived'; body = { latitude: trip.liveCoordinates[0], longitude: trip.liveCoordinates[1] }; expected = 'CARGO_ARRIVED';
+        } else if (status === 'Offloading Complete' && trip.actions?.offloadComplete) {
+          path = 'offload-complete'; body = new FormData(); expected = 'OFFLOAD_COMPLETED';
+        } else if (status === 'Container Returned' && trip.actions?.containerReturned) {
+          path = 'container-returned'; body = {}; expected = 'CONTAINER_RETURNED';
         } else if (status === 'Completed' && ['DRIVER_EN_ROUTE', 'DRIVER_ARRIVED', 'PICKUP_COMPLETED', 'IN_TRANSIT'].includes(trip.wireStatus)) {
           path = 'complete'; expected = 'COMPLETED';
         } else if (status === 'Completed' && ['CARGO_ARRIVED', 'DEMURRAGE_IN_PROGRESS', 'OFFLOADING', 'OFFLOAD_COMPLETED', 'CONTAINER_RETURNED'].includes(trip.wireStatus)) {
-          return unavailable('After arrival, the driver must submit proof of delivery, finish offloading and return the container. The forwarder then confirms completion.');
+          return unavailable('After arrival, submit proof of delivery, start and finish offloading, then mark the container returned. The forwarder or backend confirms completion.');
         } else return unavailable('The API does not support that status change from this trip’s current stage.');
         const result = await baseQuery({ url: `/jobs/${encodeURIComponent(trip.jobId)}/${path}`, method: 'POST', ...(body ? { body } : {}) });
         if (result.error) return result;
         const job = unwrapApiResponseData(result.data)?.job;
-        return job?.id === trip.jobId && job.status === expected ? { data: { status: tripStatusLabel(expected) } } : unavailable('The API did not confirm the trip status change. Reload the trip before trying again.');
+        return job?.id === trip.jobId && job.status === expected ? { data: { status: ['DRIVER_ARRIVED', 'OFFLOAD_COMPLETED', 'CONTAINER_RETURNED'].includes(expected) ? status : tripStatusLabel(expected) } } : unavailable('The API did not confirm the trip status change. Reload the trip before trying again.');
       },
       // A status write can move funds. Never retry it automatically or infer success.
-      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, 'CompanyJobs', 'CompanyFleet', 'CompanyDashboard', { type: 'CompanyTrip', id: tripId }],
+      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, 'CompanyJobs', 'CompanyFleet', 'CompanyDashboard', 'CompanyWallet', 'CompanyWalletTransactions', 'CompanyPayouts', { type: 'CompanyTrip', id: tripId }],
     }),
     contactCompanyTripSupport: builder.mutation({
       async queryFn({ tripId, message }, api, _options, baseQuery) {
         const blocked = signedIn(api);
         if (blocked) return blocked;
-        const trip = tripsApi.endpoints.getCompanyTrip.select(tripId)(api.getState()).data;
+        baseQuery = companyQuery(api, baseQuery);
+        const trip = loadedTrip(api, tripId, true);
         if (!trip || !text(message) || message.length > 500) return unavailable('Enter a support message of 500 characters or fewer.');
         const result = await baseQuery({ url: '/support/threads', method: 'POST', body: {
           subject: `Trip ${trip.number === '—' ? trip.id : trip.number}`, category: 'GENERAL', message: `Trip ID: ${trip.id}\nJob ID: ${trip.jobId}\n\n${message.trim()}`,
@@ -251,6 +337,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         const thread = unwrapApiResponseData(result.data)?.thread;
         return text(thread?.id) ? { data: { id: thread.id } } : unavailable('The API did not confirm the support request. Check your support threads before trying again.');
       },
+      invalidatesTags: ['SupportTickets'],
     }),
   }),
 });
@@ -259,5 +346,5 @@ export const {
   useGetCompanyTripsQuery, useGetCompanyTripQuery, useGetCompanyTripMessagesQuery, useReportCompanyTripIssueMutation,
   useAddCompanyTripNoteMutation, useAddCompanyTripCostMutation, useUploadCompanyTripDocumentMutation,
   useUpdateCompanyTripLocationMutation, useRequestCompanyTripCancellationMutation, useSendCompanyTripMessageMutation,
-  useUpdateCompanyTripStatusMutation, useContactCompanyTripSupportMutation,
+  useUpdateCompanyTripStatusMutation, useContactCompanyTripSupportMutation, useSubmitCompanyTripPodMutation, useUnlockCompanyTripOffloadingMutation,
 } = tripsApi;

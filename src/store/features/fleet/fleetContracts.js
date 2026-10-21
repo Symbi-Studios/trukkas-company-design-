@@ -44,6 +44,17 @@ export function fleetSpecificationsBody(draft) {
   return Object.fromEntries(fields.filter(([key]) => text(draft.specs?.[key])).map(([key, label]) => [label, draft.specs[key].trim()]));
 }
 
+export function fleetEditedSpecifications(source, draft, original) {
+  const specifications = Object.fromEntries(Object.entries(object(source) ?? {}).filter(([, value]) => typeof value === 'string'));
+  for (const [key, label] of Object.entries(specificationFields)) {
+    if (draft.specs?.[key] === original.specs?.[key]) continue;
+    delete specifications[key];
+    delete specifications[label];
+    if (text(draft.specs?.[key])) specifications[label] = draft.specs[key].trim();
+  }
+  return specifications;
+}
+
 export function fleetActivityView(entry) {
   return {
     id: text(entry.id) ?? text(entry.refId), title: text(entry.label) ?? '—', detail: '—',
@@ -85,6 +96,15 @@ export function truckView(source, detail = false) {
   const status = source.availability === 'ON_TRIP' && source.status === 'ACTIVE' ? 'On Trip'
     : ({ PENDING_REVIEW: 'Pending Review', ACTIVE: 'Active', INACTIVE: 'Inactive', MAINTENANCE: 'In Maintenance', REJECTED: 'Rejected', APPROVED: 'Approved' })[source.status] ?? '—';
   return {
+    editDraft: detail ? {
+      plate: text(source.plateNumber) ?? '', make: text(source.make) ?? '', model: text(source.model) ?? '',
+      year: text(source.year) ?? '', color: text(source.color) ?? '', vin: text(source.vin) ?? '', engineNumber: text(source.engineNumber) ?? '',
+      vehicleClass: classes[source.vehicleClass] ?? '', ownership: ownershipLabels[source.ownership] ?? '',
+      purchaseDate: dateLabel(source.purchaseDate) === '—' ? '' : source.purchaseDate.slice(0, 10),
+      location: text(source.currentLocationNote?.location) ?? '', odometer: number(source.odometerKm) === null ? '' : String(source.odometerKm),
+      notes: text(source.notes) ?? '',
+      specs: Object.fromEntries(Object.entries(specificationFields).map(([key, label]) => [key, key === 'fuelType' ? (fuelLabel(source.fuelType ?? specs?.[label] ?? specs?.[key]) === '—' ? '' : fuelLabel(source.fuelType ?? specs?.[label] ?? specs?.[key])) : text(specs?.[label]) ?? text(specs?.[key]) ?? ''])),
+    } : null,
     apiBacked: true, id: source.id, plate: text(source.plateNumber) ?? '—',
     status, wireStatus: text(source.status), onTrip: source.availability === 'ON_TRIP' || !!text(source.currentJob?.id),
     vehicleClass, type: [text(source.containerSize?.name ?? specs?.containerSize?.name), text(source.containerType?.name ?? specs?.containerType?.name)].filter(Boolean).join(' ') || text(source.truckType?.name ?? specs?.truckType?.name) || vehicleClass,
@@ -92,8 +112,8 @@ export function truckView(source, detail = false) {
     year: text(source.year) ?? '—', vin: detail ? text(source.vin) ?? '—' : '—', engineNumber: detail ? text(source.engineNumber) ?? '—' : '—',
     purchaseDate: detail ? dateLabel(source.purchaseDate) : '—', color: text(source.color) ?? '—', ownership: detail ? ownershipLabels[source.ownership] ?? '—' : '—',
     insuranceExpiry: dateLabel(detail ? source.insuranceExpiry : source.insurance?.expiresAt), roadWorthinessExpiry: dateLabel(roadWorthiness?.expiryDate),
-    odometer: number(detail ? source.odometerKm : source.mileageKm), odometerUpdated: timestamp(detail ? source.lastActivityAt : source.location?.updatedAt),
-    location: '—', notes: detail ? text(source.notes) : null,
+    odometer: number(detail ? source.odometerKm : source.mileageKm), odometerUpdated: detail ? timestamp(source.lastActivityAt) : '—',
+    location: detail ? text(source.currentLocationNote?.location) ?? '—' : '—', notes: detail ? text(source.notes) : null,
     activityLog: activity?.map(fleetActivityView) ?? null,
     remindersEnabled: detail ? boolean(source.remindersEnabled) : null,
     driverId: text(driver?.id), driver: driver ? text(driver.name) ?? '—' : source.driver === null ? null : '—',
@@ -189,4 +209,35 @@ export function fleetEarningsSeries(trips) {
   const keys = months.map(monthKey);
   const payments = trips.flatMap((trip) => trip.payments);
   return { labels: months.map((date) => new Intl.DateTimeFormat('en-NG', { month: 'short', timeZone: 'Africa/Lagos' }).format(date)), points: keys.map((key) => payments.filter((payment) => monthKey(new Date(payment.paidAt)) === key).reduce((sum, payment) => sum + payment.amount, 0)) };
+}
+
+export function fleetSummaryView(source) {
+  const total = count(source?.total), active = count(source?.active), onTrip = count(source?.onTrip);
+  const maintenance = count(source?.inMaintenance), inactive = count(source?.inactive);
+  const available = active !== null && onTrip !== null && onTrip <= active ? active - onTrip : null;
+  const categories = [
+    { label: 'Active', value: available, color: 'var(--tk-success)' },
+    { label: 'On Trip', value: onTrip, color: 'var(--tk-blue)' },
+    { label: 'In Maintenance', value: maintenance, color: 'var(--tk-warning)' },
+    { label: 'Inactive', value: inactive, color: 'var(--tk-danger)' },
+  ];
+  categories.forEach((item) => { item.display = item.value ?? '—'; item.percent = item.value !== null && total > 0 ? item.value / total * 100 : null; });
+  return { total, active, maintenance, inactive, categories,
+    chart: total !== null && categories.every((item) => item.value !== null) && categories.reduce((sum, item) => sum + item.value, 0) === total ? categories : [],
+  };
+}
+
+export function fleetFuelView(source) {
+  if (!text(source?.id)) return null;
+  return { id: source.id, date: dateLabel(source.date), litres: number(source.litres), amount: number(source.amount),
+    pricePerLitre: number(source.pricePerLitre), odometer: number(source.odometerKm), station: text(source.station) ?? '—', fuelType: fuelLabel(source.fuelType) };
+}
+export function fleetFuelLogsView(source) {
+  const logs = rows(source?.fuelLogs)?.map(fleetFuelView);
+  if (!logs || logs.some((row) => !row) || new Set(logs.map((row) => row.id)).size !== logs.length) return null;
+  const summary = source.summary;
+  return { logs, entries: count(summary?.entries), totalLitres: number(summary?.totalLitres),
+    totalAmount: summary?.currency === 'NGN' ? number(summary.totalAmount) : null,
+    averagePricePerLitre: summary?.currency === 'NGN' ? number(summary.averagePricePerLitre) : null,
+    monthLitres: number(summary?.thisMonth?.litres), monthAmount: summary?.currency === 'NGN' ? number(summary.thisMonth?.amount) : null };
 }

@@ -7,7 +7,7 @@ const baseUrl = configuredBaseUrl.replace(/\/+$/, '');
 const apiLoggingDisabled = String(process.env.NEXT_PUBLIC_API_LOGGING ?? '').trim().toLowerCase() === 'false';
 const apiLoggingEnabled = process.env.NODE_ENV !== 'production' && !apiLoggingDisabled;
 const publicEndpoints = new Set([
-  'loginAccount', 'signUpAccount', 'refreshAccount', 'forgotAccountPassword', 'resetAccountPassword',
+  'loginAccount', 'verifyTwoFactorLogin', 'addCompanyAccount', 'signUpAccount', 'refreshAccount', 'forgotAccountPassword', 'resetAccountPassword',
   'checkAccountEmail', 'startAccountRegistration', 'resendAccountCode', 'verifyAccountPhone',
 ]);
 const reauthExcludedPaths = new Set([
@@ -33,10 +33,15 @@ let activeRefresh = null;
 
 let requestSequence = 0;
 
-const privateLogField = /authorization|cookie|token|password|secret|credential|otp|^code$|pin|email|phone|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment|^body$|reason|comment|^reply$|instruction|notes?|documentnumber|^url$/i;
-function bodyForLog(body) {
-  
-  return body;
+const privateLogField = /authorization|cookie|token|password|secret|credential|identifier|challenge|backupcode|otp|^code$|pin|email|phone|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment|^body$|reason|comment|^reply$|instruction|notes?|documentnumber|^url$/i;
+function bodyForLog(body, seen = new WeakSet()) {
+  if (body === null || typeof body !== 'object') return body;
+  if (seen.has(body)) return '[Circular]';
+  seen.add(body);
+  if (typeof File !== 'undefined' && body instanceof File) return { type: body.type, size: body.size };
+  if (typeof FormData !== 'undefined' && body instanceof FormData) return Object.fromEntries([...body.entries()].map(([key, value]) => [key, privateLogField.test(key) ? '[REDACTED]' : bodyForLog(value, seen)]));
+  if (Array.isArray(body)) return body.map((value) => bodyForLog(value, seen));
+  return Object.fromEntries(Object.entries(body).map(([key, value]) => [key, privateLogField.test(key) || /search|station|plate|^vin$|engineNumber|specifications/i.test(key) ? '[REDACTED]' : bodyForLog(value, seen)]));
 }
 
 function requestUrlForLog(args) {
@@ -50,7 +55,11 @@ function requestUrlForLog(args) {
       : new URLSearchParams(Object.fromEntries(Object.entries(config.params).filter(([, value]) => value !== undefined)));
     url += (url.includes('?') ? '&' : '?') + params.toString();
   }
-  return url;
+  try {
+    const parsed = new URL(url);
+    for (const key of [...parsed.searchParams.keys()]) if (privateLogField.test(key) || /search|plate/i.test(key)) parsed.searchParams.set(key, '[REDACTED]');
+    return parsed.href;
+  } catch { return url; }
 }
 
 async function runLoggedBaseQuery(query, args, api, extraOptions, label = api.endpoint) {
@@ -66,7 +75,7 @@ async function runLoggedBaseQuery(query, args, api, extraOptions, label = api.en
     operation: api.type,
     method: (config.method || 'GET').toUpperCase(),
     url: requestUrlForLog(args),
-    params: config.params,
+    params: bodyForLog(config.params),
     configuredHeaders: bodyForLog(Object.fromEntries(new Headers(config.headers).entries())),
     body: bodyForLog(config.body),
     startedAt: new Date(startedAt).toISOString(),
@@ -94,7 +103,7 @@ async function runLoggedBaseQuery(query, args, api, extraOptions, label = api.en
     ?? (result.error?.status === 'PARSING_ERROR' ? result.error.originalStatus
       : typeof result.error?.status === 'number' ? result.error.status : null);
   const method = request?.method || details.method;
-  const url = request?.url || details.url;
+  const url = requestUrlForLog(request?.url || details.url);
   const durationMs = Date.now() - startedAt;
   const responseBody = result.error ? result.error.data : result.data;
 
@@ -238,6 +247,6 @@ async function baseQueryWithReauth(args, api, extraOptions) {
 export const baseApi = createApi({
   reducerPath: 'baseApi',
   baseQuery: baseQueryWithReauth,
-  tagTypes: ['Notifications', 'AuthOnboardingDocuments', 'AuthOnboardingTrucks', 'AuthOnboardingBank', 'AuthOnboardingSecurity'],
+  tagTypes: ['Notifications', 'AuthOnboardingDocuments', 'AuthOnboardingTrucks', 'AuthOnboardingBank', 'AuthOnboardingSecurity', 'AuthOnboardingStatus', 'AuthDirectorVerification', 'CompanyDashboard'],
   endpoints: () => ({}),
 });

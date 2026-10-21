@@ -105,6 +105,10 @@ export function tripView(source, isDetail = false, jobDetails = null) {
   const tripDocuments = extraDocuments === null ? null : [...(podDocument ? [podDocument] : []), ...extraDocuments];
   const listedForwarderDocuments = isDetail ? forwarderDocuments(source.documents) : null;
   const jobForwarderDocuments = isDetail ? rows(jobDetails?.documents)?.map(documentView) ?? null : null;
+  const pod = isDetail ? object(source.pod) : null;
+  const podSubmitted = pod && safeUrl(pod.photoUrl) && instant(pod.submittedAt) && !text(pod.rejectedAt) ? true
+    : isDetail && (source.pod === null || pod && (text(pod.rejectedAt) || pod.photoUrl === null && pod.submittedAt === null)) ? false : null;
+  const afterArrival = ['CARGO_ARRIVED', 'DEMURRAGE_IN_PROGRESS', 'OFFLOADING', 'OFFLOAD_COMPLETED', 'CONTAINER_RETURNED'].includes(source.status);
   const notes = isDetail ? rows(source.notes) : null;
   const costsPayload = isDetail ? object(source.costs) : null;
   const costs = rows(costsPayload?.items)?.map((item) => ({
@@ -172,6 +176,14 @@ export function tripView(source, isDetail = false, jobDetails = null) {
     costs, costTotal: costsPayload?.currency === 'NGN' ? number(costsPayload.total) : null,
     messages: null, revenue,
     cancellationRequested: boolean(source.cancellationRequested),
+    podSubmitted,
+    actions: {
+      arrival: source.status === 'DRIVER_EN_ROUTE',
+      pod: afterArrival && podSubmitted !== true,
+      unlock: ['CARGO_ARRIVED', 'DEMURRAGE_IN_PROGRESS'].includes(source.status),
+      offloadComplete: source.status === 'OFFLOADING',
+      containerReturned: source.status === 'OFFLOAD_COMPLETED',
+    },
   };
 }
 

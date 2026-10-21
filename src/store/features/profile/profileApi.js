@@ -276,11 +276,11 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
         }
         const data = unwrapApiResponseData(result.data);
         if (typeof data?.emailVerified !== 'boolean') return unavailable('The API did not confirm whether an email verification code was sent.');
-        return { data: {
-          verified: data.emailVerified,
-          expiresAt: verificationTime(data.expiresAt),
-          resendAt: verificationTime(data.resendAvailableAt),
-        } };
+        const expiresAt = verificationTime(data.expiresAt), resendAt = verificationTime(data.resendAvailableAt);
+        if (data.emailVerified === false && (expiresAt === null || resendAt === null || expiresAt <= Date.now() || resendAt > expiresAt)) {
+          return unavailable('The API did not return valid email verification expiry and resend details.');
+        }
+        return { data: { verified: data.emailVerified, expiresAt, resendAt } };
       },
       invalidatesTags: (data, error) => !error && data?.verified === true ? ['Profile', 'AuthOnboardingSecurity'] : [],
     }),

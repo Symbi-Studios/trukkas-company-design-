@@ -6,11 +6,12 @@ import {
   ActivityFeed, Badge, Button, Card, DataTable, DonutChart, DropdownMenu, EmptyState, Icon, LegendList,
   PageHeader, SearchField, SkeletonRow, StatCard,
 } from '../ds.js';
-import { useGetFleetQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
-import { EMPTY_DASHBOARD, useGetCompanyDashboardQuery } from '../store/features/dashboard/dashboardApi.js';
+import { useGetFleetQuery, useGetFleetSummaryQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
+import { fleetSummaryView } from '../store/features/fleet/fleetContracts.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { fleetDetailHref } from '../domain/fleetLinks.js';
 import { Toast, useToast } from '../components/Toast.jsx';
+import { MaintenanceModal } from '../components/MaintenanceModal.jsx';
 import { syncTopBarSearch } from '../pageSearch.js';
 import { VEHICLE_CLASSES, vehicleStatusTone } from '../domain/vehicles.js';
 
@@ -24,9 +25,11 @@ function typeGroup(vehicleClass) {
 
 export function Fleet() {
   const navigate = useNavigate();
-  const { data: fleet, error, isLoading } = useGetFleetQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData, error, isLoading } = useGetFleetQuery(undefined, { refetchOnMountOrArgChange: true });
+  const fleet = error ? undefined : currentData;
   const trucks = fleet ?? [];
-  const { data: dashboard = EMPTY_DASHBOARD } = useGetCompanyDashboardQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: summaryData, error: summaryError } = useGetFleetSummaryQuery(undefined, { refetchOnMountOrArgChange: true });
+  const summary = summaryError ? fleetSummaryView(null) : summaryData ?? fleetSummaryView(null);
   const [toast, showToast] = useToast();
   const [updateVehicle, { isLoading: updating }] = useUpdateFleetVehicleMutation();
   const mutating = useRef(false);
@@ -37,12 +40,8 @@ export function Fleet() {
     catch (err) { showToast(getApiErrorMessage(err)); }
     finally { mutating.current = false; }
   }
-  const statusCount = (statuses) => {
-    const values = statuses.map((status) => dashboard.fleetStatus.find((item) => item.label === status)?.value);
-    return values.some((value) => typeof value !== 'number') ? null : values.reduce((sum, value) => sum + value, 0);
-  };
   const typeCount = (group) => !fleet || trucks.some((truck) => !typeGroup(truck.vehicleClass)) ? '—' : trucks.filter((truck) => typeGroup(truck.vehicleClass) === group).length;
-  const unavailableAction = () => showToast('This fleet action is currently unavailable from the API.');
+  const [maintenanceTruck, setMaintenanceTruck] = useState(null);
   const [tab, setTab] = useState('All Vehicles');
   const [query, setQuery] = useState('');
   const [rowMenu, setRowMenu] = useState(null);
@@ -58,7 +57,7 @@ export function Fleet() {
     .filter((t) => !query || [t.plate, t.makeModel, t.driver].some((v) => String(v || '').toLowerCase().includes(query.toLowerCase()))),
   [trucks, tab, query]);
 
-  const statusBreakdown = dashboard.fleetStatus;
+  const statusBreakdown = summary.categories;
   const recentActivity = useMemo(() => trucks
     .flatMap((t) => (t.activityLog || []).map((a) => ({ ...a, plate: t.plate })))
     .sort((a, b) => (b.occurredAt ?? -Infinity) - (a.occurredAt ?? -Infinity))
@@ -74,10 +73,10 @@ export function Fleet() {
         actions={<Button icon="plus" onClick={() => navigate('/fleet/new')}>Add Vehicle</Button>}
       />
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 16 }}>
-        <StatCard icon="truck" label="Total Vehicles" value={dashboard.totalTrucks ?? (fleet ? trucks.length : '—')} />
-        <StatCard icon="circle-check" tint="green" label="Active" value={statusCount(['Active', 'On Trip']) ?? '—'} />
-        <StatCard icon="wrench" tint="amber" label="In Maintenance" value={statusCount(['In Maintenance']) ?? '—'} />
-        <StatCard icon="circle-off" tint="red" label="Inactive" value={statusCount(['Inactive']) ?? '—'} />
+        <StatCard icon="truck" label="Total Vehicles" value={summary.total ?? (fleet ? trucks.length : '—')} />
+        <StatCard icon="circle-check" tint="green" label="Active" value={summary.active ?? '—'} />
+        <StatCard icon="wrench" tint="amber" label="In Maintenance" value={summary.maintenance ?? '—'} />
+        <StatCard icon="circle-off" tint="red" label="Inactive" value={summary.inactive ?? '—'} />
       </section>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 'var(--tk-grid-gap)', alignItems: 'start' }}>
@@ -132,7 +131,7 @@ export function Fleet() {
                           <DropdownMenu width={200} items={[
                             { label: 'View Details', icon: 'eye', onClick: () => { setRowMenu(null); navigate(fleetDetailHref(t.id)); } },
                             { label: 'View Documents', icon: 'file-text', onClick: () => { setRowMenu(null); navigate(fleetDetailHref(t.id, 'documents')); } },
-                            { label: 'Mark for Maintenance', icon: 'wrench', onClick: () => { setRowMenu(null); unavailableAction(); } },
+                            { label: 'Mark for Maintenance', icon: 'wrench', onClick: () => { setRowMenu(null); setMaintenanceTruck(t); } },
                             { divider: true },
                             { label: t.status === 'Inactive' ? 'Activate Truck' : 'Deactivate Truck', icon: 'power', tone: 'danger', onClick: () => changeStatus(t) },
                           ]} />
@@ -150,7 +149,7 @@ export function Fleet() {
           <Card style={{ display: 'grid', gap: 12 }}>
             <h3 className="tk-title" style={{ margin: 0 }}>Fleet Overview</h3>
             <div style={{ display: 'grid', justifyItems: 'center', gap: 12 }}>
-              <DonutChart size={150} thickness={20} data={dashboard.fleetChartData} centerValue={dashboard.totalTrucks ?? (fleet ? trucks.length : '—')} centerLabel="Vehicles" />
+              <DonutChart size={150} thickness={20} data={summary.chart} centerValue={summary.total ?? (fleet ? trucks.length : '—')} centerLabel="Vehicles" />
               <LegendList style={{ width: '100%' }} items={statusBreakdown} />
             </div>
           </Card>
@@ -184,6 +183,7 @@ export function Fleet() {
         </div>
       </div>
       <Toast message={toast} />
+      <MaintenanceModal key={maintenanceTruck?.id ?? 'closed'} open={!!maintenanceTruck} onClose={() => setMaintenanceTruck(null)} truckId={maintenanceTruck?.id} />
     </div>
   );
 }

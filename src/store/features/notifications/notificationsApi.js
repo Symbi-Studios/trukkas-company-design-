@@ -4,6 +4,18 @@ import { jobDetailHref } from '../../../domain/jobLinks.js';
 const text = (value) => typeof value === 'string' && value.trim() ? value : null;
 const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
 const invalid = (message) => ({ error: { status: 'CUSTOM_ERROR', error: message } });
+function companyQuery(api, baseQuery) {
+  const identity = () => JSON.stringify([api.getState().auth.account?.id, api.getState().auth.account?.actualUserId, api.getState().auth.activeCompanyId]);
+  const company = identity();
+  return async (args) => {
+    if (!api.getState().auth.account?.id) return invalid('Sign in to load your notifications.');
+    if (api.signal.aborted) return invalid('The notification request was cancelled.');
+    if (identity() !== company) return invalid('Your company session changed. Reload notifications.');
+    const result = await baseQuery(args);
+    return identity() === company ? result : invalid('Your company session changed. Reload notifications.');
+  };
+}
+
 const kinds = {
   JOB: { type: 'job', icon: 'briefcase' },
   BID: { type: 'job', icon: 'gavel' },
@@ -33,11 +45,13 @@ function notificationView(notification) {
 }
 
 export const notificationsApi = baseApi.injectEndpoints({
+  overrideExisting: process.env.NODE_ENV === 'development',
   endpoints: (builder) => ({
     getNotifications: builder.query({
       // The existing screen has no pagination controls. Read every documented
       // page so its All/Unread filters and search cover the entire collection.
       async queryFn(_arg, api, _options, baseQuery) {
+        baseQuery = companyQuery(api, baseQuery);
         const notifications = [];
         const seen = new Set();
         let unreadCount = null;
@@ -60,7 +74,8 @@ export const notificationsApi = baseApi.injectEndpoints({
           for (const item of data.notifications) {
             if (!item || typeof item !== 'object' || Array.isArray(item)) return invalid('The API returned an invalid notification.');
             const notification = notificationView(item);
-            if (!notification.id || !seen.has(notification.id)) {
+            if (!notification.id) return invalid('The API did not identify a notification.');
+            if (!seen.has(notification.id)) {
               notifications.push(notification);
               if (notification.id) seen.add(notification.id);
             }
@@ -72,19 +87,24 @@ export const notificationsApi = baseApi.injectEndpoints({
       providesTags: ['Notifications'],
     }),
     getNotificationUnreadCount: builder.query({
-      query: () => '/notifications/unread-count',
-      transformResponse: (response) => count(unwrapApiResponseData(response)?.count),
+      async queryFn(_arg, api, _options, baseQuery) {
+        const result = await companyQuery(api, baseQuery)('/notifications/unread-count');
+        return result.error ? result : { data: count(unwrapApiResponseData(result.data)?.count) };
+      },
       providesTags: ['Notifications'],
     }),
     markNotificationRead: builder.mutation({
-      queryFn(id, _api, _options, baseQuery) {
+      queryFn(id, api, _options, baseQuery) {
+        baseQuery = companyQuery(api, baseQuery);
         if (!text(id)) return invalid('This notification has no API ID and cannot be marked as read.');
         return baseQuery({ url: `/notifications/${encodeURIComponent(id)}/read`, method: 'PATCH' });
       },
       invalidatesTags: (_data, error) => error ? [] : ['Notifications'],
     }),
     markAllNotificationsRead: builder.mutation({
-      query: () => ({ url: '/notifications/read-all', method: 'PATCH' }),
+      queryFn(_arg, api, _options, baseQuery) {
+        return companyQuery(api, baseQuery)({ url: '/notifications/read-all', method: 'PATCH' });
+      },
       invalidatesTags: (_data, error) => error ? [] : ['Notifications'],
     }),
   }),

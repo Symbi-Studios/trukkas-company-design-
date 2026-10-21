@@ -13,6 +13,7 @@ import { formatNaira } from '../mock/format.js';
 import { VehicleDetailFrame } from './VehicleDetailFrame.jsx';
 import { FleetAssignDriverModal as AssignDriverModal, FleetRemoveDriverModal as RemoveDriverModal } from '../components/FleetAssignModals.jsx';
 import { Toast, useToast } from '../components/Toast.jsx';
+import { MaintenanceModal } from '../components/MaintenanceModal.jsx';
 
 function specRows(specs) {
   return [
@@ -28,17 +29,19 @@ function specRows(specs) {
 export function VehicleDetail() {
   const navigate = useNavigate();
   const { truck } = useFleetVehicle();
-  const { data: trips } = useGetFleetTripsQuery(truck?.id, { skip: !truck });
-  const { currentData: assignedDriver } = useGetFleetAssignedDriverQuery(truck?.driverId, { skip: !truck?.driverId, refetchOnMountOrArgChange: true });
+  const { currentData: tripData, error: tripsError } = useGetFleetTripsQuery(truck?.id, { skip: !truck });
+  const { currentData: assignedDriverData, error: assignedDriverError } = useGetFleetAssignedDriverQuery(truck?.driverId, { skip: !truck?.driverId, refetchOnMountOrArgChange: true });
   const [notesOpen, setNotesOpen] = useState(false);
   const [notesDraft, setNotesDraft] = useState('');
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [toast, showToast] = useToast();
   const [update, { isLoading: saving }] = useUpdateFleetVehicleMutation();
   const updating = useRef(false);
-  const driver = truck?.assignedDriver ? { ...truck.assignedDriver, ...assignedDriver } : null;
+  const driver = truck?.assignedDriver ? { ...truck.assignedDriver, ...(assignedDriverError ? undefined : assignedDriverData) } : null;
+  const trips = tripsError ? undefined : tripData;
   const onTrip = truck?.onTrip || trips?.some((trip) => !['Completed', 'Cancelled', 'Disputed', '—'].includes(trip.status));
   const changesLocked = !trips || onTrip || !truck?.driverKnown;
   const totalEarnings = total(trips, 'budget');
@@ -107,13 +110,13 @@ export function VehicleDetail() {
               {statusMenuOpen && (
                 <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 6px)', zIndex: 20, background: '#fff', border: '1px solid var(--tk-line)', borderRadius: 'var(--tk-r-lg)', boxShadow: 'var(--tk-shadow-menu)', padding: 6 }}>
                   {['Active', 'In Maintenance', 'Inactive'].map((s) => (
-                    <button key={s} type="button" disabled={saving} onClick={() => { setStatusMenuOpen(false); saveSetting({ status: s }); }}
+                    <button key={s} type="button" disabled={saving} onClick={() => { setStatusMenuOpen(false); if (s === 'In Maintenance') setMaintenanceOpen(true); else saveSetting({ status: s }); }}
                       style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 10px', border: 0, background: 'transparent', cursor: 'pointer', borderRadius: 'var(--tk-r-sm)', font: '500 13px/18px var(--tk-font-sans)' }}>{s}</button>
                   ))}
                 </div>
               )}
             </div>
-            <Button fullWidth variant="outline" icon="wrench" disabled={saving} onClick={() => saveSetting({ status: 'In Maintenance' })}>Mark for Maintenance</Button>
+            <Button fullWidth variant="outline" icon="wrench" disabled={saving} onClick={() => setMaintenanceOpen(true)}>Mark for Maintenance</Button>
             <Button fullWidth variant="outline" icon="file-text" onClick={() => navigate(fleetDetailHref(truck.id, 'documents'))}>View Documents</Button>
             <Button fullWidth variant="danger" icon="power" disabled={saving} onClick={() => saveSetting({ status: truck.status === 'Inactive' ? 'Active' : 'Inactive' })}>{truck.status === 'Inactive' ? 'Activate Truck' : 'Deactivate Truck'}</Button>
           </Card>
@@ -184,6 +187,7 @@ export function VehicleDetail() {
       <AssignDriverModal truck={truck} open={assignOpen} onClose={() => setAssignOpen(false)} onDone={(d) => { setAssignOpen(false); showToast(`${d?.name || 'Driver'} assigned to ${truck.plate}.`); }} />
       <RemoveDriverModal truck={truck} open={removeOpen} onClose={() => setRemoveOpen(false)} onDone={() => { setRemoveOpen(false); showToast(`Driver removed from ${truck.plate}.`); }} />
       <Toast message={toast} />
+      <MaintenanceModal key={truck.id + String(maintenanceOpen)} open={maintenanceOpen} onClose={() => setMaintenanceOpen(false)} truckId={truck.id} />
       <Modal open={notesOpen} onClose={() => setNotesOpen(false)} title="Edit Notes" width={440}
         footer={<><Button variant="outline" disabled={saving} onClick={() => setNotesOpen(false)}>Cancel</Button><Button disabled={saving} onClick={saveNotes}>Save</Button></>}>
         <TextField label="Additional Notes" value={notesDraft} onChange={(e) => setNotesDraft(e.target.value)} />

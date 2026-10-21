@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useDispatch, useSelector } from 'react-redux';
 import { Button, Card, Logo, TextField } from '../ds.js';
 import {
+  authFailureCode,
   useForgotAccountPasswordMutation,
   useLoginAccountMutation,
   useResetAccountPasswordMutation,
@@ -16,6 +17,7 @@ import { baseApi } from '../store/api/baseApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { maskPhone } from '../domain/security.js';
 import { CodeInput } from '../components/SecurityInputs.jsx';
+import { CompanyAccountModal } from '../components/CompanyAccountModal.jsx';
 import styles from './AuthScreens.module.css';
 
 function AuthFrame({ eyebrow, title, description, children }) {
@@ -68,9 +70,21 @@ export function LoginScreen() {
   const [error, setError] = React.useState('');
   const [notice, setNotice] = React.useState('');
   const [challenge, setChallenge] = React.useState(null);
+  const [challengeExpired, setChallengeExpired] = React.useState(false);
+  const [companyOffer, setCompanyOffer] = React.useState(null);
+  const verifyingCode = React.useRef(false);
   const [code, setCode] = React.useState('');
   const [useBackup, setUseBackup] = React.useState(false);
   const [verifyTwoFactorLogin, { isLoading: verifying }] = useVerifyTwoFactorLoginMutation();
+
+  React.useEffect(() => {
+    if (!challenge) return undefined;
+    const expiry = Date.parse(challenge.expiresAt);
+    const expire = () => { setChallengeExpired(true); setCode(''); setError('This sign-in code expired. Sign in again to request a new one.'); };
+    if (!Number.isFinite(expiry) || expiry <= Date.now()) { expire(); return undefined; }
+    const timer = setTimeout(expire, expiry - Date.now());
+    return () => clearTimeout(timer);
+  }, [challenge]);
 
   React.useEffect(() => {
     if (account) {
@@ -85,7 +99,7 @@ export function LoginScreen() {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || companyOffer) return;
     setError('');
     if (!email.trim() || !password) {
       setError('Enter your email and password.');
@@ -93,10 +107,13 @@ export function LoginScreen() {
     }
     try {
       const result = await loginAccount({ email: email.trim(), password }).unwrap();
-      if (result.twoFactorRequired) {
+      if (result.companyAccountRequired) {
+        setCompanyOffer({ email: email.trim(), availableRoles: result.availableRoles });
+      } else if (result.twoFactorRequired) {
         setChallenge(result.challenge);
+        setChallengeExpired(false);
         setCode('');
-      }
+      } else setPassword('');
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
     }
@@ -104,13 +121,21 @@ export function LoginScreen() {
 
   async function handleVerify(event, value = code) {
     event?.preventDefault();
+    if (verifyingCode.current || !challenge) return;
+    if (challengeExpired || Date.parse(challenge.expiresAt) <= Date.now()) {
+      setChallengeExpired(true); setCode(''); setError('This sign-in code expired. Sign in again to request a new one.');
+      return;
+    }
+    verifyingCode.current = true;
     setError('');
     try {
-      await verifyTwoFactorLogin({ email: email.trim(), password, code: value }).unwrap();
+      await verifyTwoFactorLogin({ challengeId: challenge.id, ...(useBackup ? { backupCode: value } : { code: value }) }).unwrap();
+      setPassword('');
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
       setCode('');
-    }
+      if (authFailureCode(requestError) === 'TWO_FACTOR_CHALLENGE_EXPIRED') setChallenge(null);
+    } finally { verifyingCode.current = false; }
   }
 
   if (challenge) {
@@ -127,13 +152,13 @@ export function LoginScreen() {
           {useBackup ? (
             <TextField label="Backup code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="XXXX-XXXX" autoFocus autoComplete="one-time-code" />
           ) : (
-            <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => handleVerify(null, v)} disabled={verifying} />
+            <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => handleVerify(null, v)} disabled={verifying || challengeExpired} />
           )}
-          <Button type="submit" fullWidth disabled={verifying || code.length < 6}>{verifying ? 'Verifying…' : 'Verify & Sign in'}</Button>
+          <Button type="submit" fullWidth disabled={verifying || challengeExpired || code.length < 6}>{verifying ? 'Verifying…' : 'Verify & Sign in'}</Button>
         </form>
         <div className={styles.bottomLinks}>
           <a href="#" onClick={(e) => { e.preventDefault(); setUseBackup((v) => !v); setCode(''); }}>{useBackup ? 'Use verification code' : 'Use a backup code'}</a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setChallenge(null); setPassword(''); setError(''); }}>Back to sign in</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); setChallenge(null); setChallengeExpired(false); setPassword(''); setError(''); }}>Back to sign in</a>
         </div>
       </AuthFrame>
     );
@@ -181,6 +206,8 @@ export function LoginScreen() {
         </Button>
       </form>
       <p className={styles.signupPrompt}>New to Trukkas? <Link href="/signup">Create a company account</Link></p>
+      {companyOffer && <CompanyAccountModal {...companyOffer} initialPassword={password}
+        onClose={() => setCompanyOffer(null)} onComplete={() => { setPassword(''); setCompanyOffer(null); }} />}
     </AuthFrame>
   );
 }

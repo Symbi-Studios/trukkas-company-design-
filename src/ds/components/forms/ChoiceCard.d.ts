@@ -6,5 +6,6 @@ export interface ChoiceCardProps {
   description?: React.ReactNode;
   onSelect?: () => void;
   style?: React.CSSProperties;
+  disabled?: boolean;
 }
 export declare function ChoiceCard(props: ChoiceCardProps): JSX.Element;

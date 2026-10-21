@@ -25,7 +25,7 @@ import { vehicleStatusTone } from '../domain/vehicles.js';
 import { formatNaira } from '../mock/format.js';
 import { MessageModal } from '../components/MessageModal.jsx';
 import { RouteMap } from '../components/RouteMap.jsx';
-import { ReportIssueModal, UpdateLocationModal } from '../components/TripModals.jsx';
+import { ReportIssueModal, UpdateLocationModal, TripPodModal, TripOffloadingModal } from '../components/TripModals.jsx';
 import { TripStepper } from '../components/TripStepper.jsx';
 import { Toast, copyLink, useToast } from '../components/Toast.jsx';
 import styles from './TripDetail.module.css';
@@ -350,6 +350,8 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }) {
   const [locationOpen, setLocationOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [podOpen, setPodOpen] = useState(false);
+  const [offloadingOpen, setOffloadingOpen] = useState(false);
   const [toast, showToast] = useToast();
 
   if (isFetching && !trip) return (
@@ -375,8 +377,10 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }) {
   const scrollToMap = () => document.getElementById('trip-map')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
   async function setStatus(status) {
-    if (statusSubmitting.current || updatingStatus) return;
+    if (statusSubmitting.current || updatingStatus || isFetching) return;
     setStatusMenu(false);
+    if (status === 'Submit Proof of Delivery') { setPodOpen(true); return; }
+    if (status === 'Start Offloading') { setOffloadingOpen(true); return; }
     statusSubmitting.current = true;
     try {
       const result = await updateStatus({ tripId: trip.id, status }).unwrap();
@@ -459,12 +463,19 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }) {
                   onToggle={() => setStatusMenu((v) => !v)}
                   style={{ minWidth: 220 }}
                 >
-                  {next ? `Mark as ${next}` : 'Update Status'}
+                  {next ? ['Submit Proof of Delivery', 'Start Offloading'].includes(next) ? next : `Mark as ${next}` : 'Update Status'}
                 </SplitButton>
                 {statusMenu && (
                   <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30 }}>
                     <DropdownMenu width={230} items={[
                       { section: 'Update Status' },
+                      ...[
+                        ['arrival', 'Arrived at Pickup', 'map-pin'],
+                        ['pod', 'Submit Proof of Delivery', 'upload'],
+                        ['unlock', 'Start Offloading', 'key-round'],
+                        ['offloadComplete', 'Offloading Complete', 'circle-check'],
+                        ['containerReturned', 'Container Returned', 'truck'],
+                      ].filter(([action]) => trip.actions?.[action]).map(([, label, icon]) => ({ label, icon, onClick: () => setStatus(label) })),
                       ...TRIP_STAGES.slice(TRIP_STAGES.indexOf(trip.status) + 1).map((stage) => ({
                         label: stage, icon: stage === 'Completed' ? 'circle-check' : 'arrow-right', onClick: () => setStatus(stage),
                       })),
@@ -576,6 +587,8 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }) {
         {rail}
       </div>
 
+      <TripPodModal trip={trip} open={podOpen} onClose={() => setPodOpen(false)} onDone={(message) => { setPodOpen(false); showToast(message); }} />
+      <TripOffloadingModal trip={trip} open={offloadingOpen} onClose={() => setOffloadingOpen(false)} onDone={(message) => { setOffloadingOpen(false); showToast(message); }} />
       <ReportIssueModal trip={trip} open={reportOpen} onClose={() => setReportOpen(false)} onDone={(msg) => { setReportOpen(false); showToast(msg); }} />
       <UpdateLocationModal trip={trip} open={locationOpen} onClose={() => setLocationOpen(false)} onDone={(msg) => { setLocationOpen(false); showToast(msg); }} />
       <MessageModal

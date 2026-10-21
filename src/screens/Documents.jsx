@@ -18,6 +18,7 @@ import {
 } from '../domain/documents.js';
 import { VEHICLE_CLASSES } from '../domain/vehicles.js';
 import { ComplianceChecklist, UploadDocumentModal } from '../components/DocumentCompliance.jsx';
+import { DirectorVerificationFields } from '../components/DirectorVerificationPanel.jsx';
 import { Toast, useToast } from '../components/Toast.jsx';
 import styles from './Documents.module.css';
 
@@ -123,20 +124,19 @@ export function Documents() {
                 <LabelValue label="RC Number" value={company?.rcNumber} />
                 <LabelValue label="Verification" value={<Badge tone={company?.verification === 'Verified' ? 'success' : 'warning'}>{company?.verification}</Badge>} />
               </SectionCard>
-              {company?.director && (
-                <SectionCard title="Director" description="The director whose NIN, BVN and ID are on file.">
+              {company && (
+                <SectionCard title="Director" description="Director identity details reviewed by Trukkas.">
                   <div className={styles.person}>
-                    <Avatar name={company.director.name} size={40} />
-                    <span><strong>{company.director.name}</strong><small>{company.director.role}</small></span>
+                    <Avatar name={company.director?.name ?? '—'} size={40} />
+                    <span><strong>{company.director?.name ?? '—'}</strong><small>{company.director?.role ?? '—'}</small></span>
                   </div>
-                  <LabelValue label="Date of Birth" value={company.director.dob} />
-                  <LabelValue label="NIN" value="—" />
-                  <LabelValue label="BVN" value="—" />
+                  <LabelValue label="Date of Birth" value={company.director?.dob ?? '—'} />
+                  <DirectorVerificationFields showDirector={false} />
                 </SectionCard>
               )}
               <Card tone="cool" className={styles.note}>
                 <Icon name="lock" size={16} color="var(--tk-blue)" />
-                <span className="tk-meta">NIN and BVN are verified with NIMC and NIBSS. Only the last 4 digits are kept on file.</span>
+                <span className="tk-meta">Director NIN and BVN are encrypted for manual review. Only masked values are shown here.</span>
               </Card>
             </div>
           </div>

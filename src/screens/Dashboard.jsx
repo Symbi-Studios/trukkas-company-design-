@@ -9,10 +9,9 @@ import {
 } from '../ds.js';
 import {
   EMPTY_DASHBOARD, EMPTY_EARNINGS, useGetCompanyDashboardQuery, useGetDashboardPendingJobsQuery, useGetDashboardActiveTripsQuery,
-  useGetDashboardEarningsQuery, useGetDashboardRatingQuery,
+  useGetDashboardEarningsQuery, useGetDashboardRatingQuery, useGetDashboardBankSetupQuery,
 } from '../store/features/dashboard/dashboardApi.js';
 import { useGetNotificationsQuery, useGetNotificationUnreadCountQuery, useMarkNotificationReadMutation } from '../store/features/notifications/notificationsApi.js';
-import { useGetOnboardingBankQuery } from '../store/features/auth/onboardingApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { jobDetailHref } from '../domain/jobLinks.js';
 import { tripDetailHref } from '../domain/tripLinks.js';
@@ -73,21 +72,28 @@ function SetupChecklist({ items, onGo }) {
 
 export function Dashboard() {
   const router = useRouter();
-  const companyName = useSelector((state) => state.auth.account?.companyName);
-  const { data: overview = EMPTY_DASHBOARD, error: overviewError, isLoading: overviewLoading } = useGetCompanyDashboardQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: pendingJobData, error: pendingJobsError, isLoading: pendingJobsLoading } = useGetDashboardPendingJobsQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: tripData, error: tripsError, isLoading: tripsLoading } = useGetDashboardActiveTripsQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: earnings = EMPTY_EARNINGS, error: earningsError, isLoading: earningsLoading } = useGetDashboardEarningsQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: reviewSummary, error: ratingError, isLoading: ratingLoading } = useGetDashboardRatingQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: notificationData, error: notificationsError, isLoading: notificationsLoading } = useGetNotificationsQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: unreadCount } = useGetNotificationUnreadCountQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: bank } = useGetOnboardingBankQuery(undefined, { refetchOnMountOrArgChange: true });
+  const account = useSelector((state) => state.auth.account);
+  const companyName = account?.companyName;
+  const { currentData: overviewResult = EMPTY_DASHBOARD, error: overviewError, isLoading: overviewLoading } = useGetCompanyDashboardQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: pendingJobResult, error: pendingJobsError, isLoading: pendingJobsLoading } = useGetDashboardPendingJobsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: tripResult, error: tripsError, isLoading: tripsLoading } = useGetDashboardActiveTripsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: earningsResult = EMPTY_EARNINGS, error: earningsError, isLoading: earningsLoading } = useGetDashboardEarningsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: reviewSummary, error: ratingError, isLoading: ratingLoading } = useGetDashboardRatingQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: notificationResult, error: notificationsError, isLoading: notificationsLoading } = useGetNotificationsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: unreadResult, error: unreadError } = useGetNotificationUnreadCountQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: bankResult, error: bankError } = useGetDashboardBankSetupQuery(undefined, { refetchOnMountOrArgChange: true });
   const [markNotificationRead, { isLoading: markingRead }] = useMarkNotificationReadMutation();
   const [actionError, setActionError] = useState(null);
-  const bankConfigured = bank === null ? false : bank && [bank.bankName, bank.last4, bank.accountName].every((value) => value && value !== '—') ? true : null;
+  const overview = overviewError ? EMPTY_DASHBOARD : overviewResult;
+  const pendingJobData = pendingJobsError ? undefined : pendingJobResult;
+  const tripData = tripsError ? undefined : tripResult;
+  const earnings = earningsError ? EMPTY_EARNINGS : earningsResult;
+  const notificationData = notificationsError ? undefined : notificationResult;
+  const unreadCount = unreadError ? undefined : unreadResult;
+  const bankConfigured = bankError ? null : bankResult ?? null;
   const setupItems = [
     { label: 'Verify email & phone', hint: 'Confirm your contact details', icon: 'badge-check', done: overview.setup.contact, to: '/profile?verify=email' },
-    { label: 'Company documents', hint: overview.setup.documentHint, icon: 'file-check', done: overview.setup.documents, to: '/documents' },
+    { label: account?.kycStatus === 'REJECTED' ? 'Retry company verification' : 'Company documents', hint: account?.kycStatus === 'REJECTED' ? account.kycRejectionReason || 'Update your company details and resubmit for review.' : overview.setup.documentHint, icon: 'file-check', done: account?.kycStatus === 'REJECTED' ? false : overview.setup.documents, to: account?.kycStatus === 'REJECTED' ? '/signup' : '/documents' },
     { label: 'Add your first truck', hint: 'Papers, photos and specs', icon: 'truck', done: overview.setup.truck, to: '/fleet/new' },
     { label: 'Onboard a driver', hint: 'Licence and ID', icon: 'user-round', done: overview.setup.driver, to: '/drivers' },
     { label: 'Payout bank account', hint: 'Where we send your money', icon: 'landmark', done: bankConfigured, to: '/company-settings?tab=payout' },
@@ -106,7 +112,8 @@ export function Dashboard() {
     setActionError(null);
     try {
       if (notification.read !== true) await markNotificationRead(notification.id).unwrap();
-      if (notification.link) router.push(notification.link);
+      const destination = notification.link ?? (notification.type === 'payout' ? '/earnings-wallet' : null);
+      if (destination) router.push(destination);
     } catch (error) { setActionError(error); }
   }
 
@@ -123,7 +130,7 @@ export function Dashboard() {
         <StatCard icon="truck" label="Available Trucks" value={metric(overview.availableTrucks)} caption={`of ${overview.totalTrucks ?? '—'} total`} />
         <StatCard icon="route" tint="green" label="Trucks on Trip" value={metric(overview.trucksOnTrip)} caption="On the road" />
         <StatCard icon="wrench" tint="amber" label="Maintenance Due" value={metric(overview.maintenanceDue)} caption="Due soon or overdue" />
-        <StatCard icon="user-round" tint="purple" label="Active Drivers" value={metric(overview.activeDrivers)} caption="On duty" />
+        <StatCard icon="user-round" tint="purple" label="Active Drivers" value={metric(overview.driversOnDuty)} caption="On duty" />
         <StatCard icon="briefcase" tint="red" label="Pending Job Requests" value={metric(overview.pendingJobRequests)} caption="Require your action" />
         <StatCard icon="circle-check" label="Active Jobs" value={metric(overview.activeJobs)} caption="In progress" />
         <StatCard icon="wallet" tint="teal" label="Wallet Balance" value={metric(overview.walletBalance)} caption="Available balance" />
@@ -133,8 +140,8 @@ export function Dashboard() {
       <section className={styles.financeGrid}>
         <SectionCard
           title="Jobs Requiring Your Action"
-          count={overview.pendingJobRequests ?? '—'}
-          action={<button className={styles.linkButton} onClick={() => router.push('/jobs')}>View all</button>}
+          count={pendingJobData?.total ?? '—'}
+          action={<button className={styles.linkButton} onClick={() => router.push('/my-jobs')}>View all</button>}
           pad="none"
         >
           <div className={styles.compactTable}>

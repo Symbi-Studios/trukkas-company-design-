@@ -18,6 +18,24 @@ const failure = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : '—';
 const displayDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}(?:T|$)/.test(value) && Number.isFinite(Date.parse(value))
   ? new Date(value).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+const directorStatuses = new Set(['NOT_STARTED', 'PENDING_REVIEW', 'VERIFIED', 'REJECTED']);
+const safeMaskedId = (value) => typeof value === 'string' && /^\*+\d{4}$/.test(value) ? value : '—';
+
+export function directorVerificationView(response) {
+  const data = unwrapApiResponseData(response);
+  if (!data?.director || typeof data.director !== 'object' || Array.isArray(data.director)) {
+    return failure('The API did not return director verification details.');
+  }
+  const status = (value) => directorStatuses.has(value) ? value : '—';
+  return { data: {
+    director: { name: text(data.director.name), dateOfBirth: displayDate(data.director.dateOfBirth), role: text(data.director.role) },
+    nin: { status: status(data.nin?.status), masked: safeMaskedId(data.nin?.masked) },
+    bvn: { status: status(data.bvn?.status), masked: safeMaskedId(data.bvn?.masked) },
+    submittedAt: displayDate(data.submittedAt), reviewedAt: displayDate(data.reviewedAt),
+    rejectionReason: typeof data.rejectionReason === 'string' && data.rejectionReason.trim() ? data.rejectionReason.trim() : '—',
+    reviewMode: data.reviewMode === 'MANUAL' ? 'MANUAL' : '—',
+  } };
+}
 const bankView = (bank) => bank ? {
   bankName: text(bank.bankName), bankCode: text(bank.bankCode), accountName: text(bank.accountName),
   last4: typeof bank.accountNo === 'string' && /^\d{10}$/.test(bank.accountNo) ? bank.accountNo.slice(-4) : '—', updatedOn: displayDate(bank.updatedAt),
@@ -173,6 +191,32 @@ export const onboardingApi = baseApi.injectEndpoints({
       onQueryStarted: syncOnboardingBank,
       invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingBank'],
     }),
+    getDirectorVerification: builder.query({
+      async queryFn(_arg, api, _options, baseQuery) {
+        const account = api.getState().auth.account;
+        if (!account || account.apiRole !== 'TRUCKER' || account.truckerType !== 'COMPANY') return failure('Sign in with your company account to load director verification.');
+        const result = await baseQuery('/company/director/verification');
+        if (result.error) return result;
+        if (api.getState().auth.account !== account) return failure('Your company session changed. Reload before continuing.');
+        return directorVerificationView(result.data);
+      },
+      providesTags: ['AuthDirectorVerification'],
+    }),
+    submitDirectorVerification: builder.mutation({
+      async queryFn({ nin, bvn }, api, _options, baseQuery) {
+        const account = api.getState().auth.account;
+        if (!account || account.apiRole !== 'TRUCKER' || account.truckerType !== 'COMPANY') return failure('Sign in with your company account to submit director verification.');
+        const body = {};
+        if (nin !== undefined && nin !== '') { if (typeof nin !== 'string' || !/^\d{11}$/.test(nin)) return failure('Enter the director’s 11-digit NIN.'); body.nin = nin; }
+        if (bvn !== undefined && bvn !== '') { if (typeof bvn !== 'string' || !/^\d{11}$/.test(bvn)) return failure('Enter the director’s 11-digit BVN.'); body.bvn = bvn; }
+        if (!Object.keys(body).length) return failure('Enter a director NIN, BVN, or both.');
+        const result = await baseQuery({ url: '/company/director/verification', method: 'POST', body });
+        if (result.error) return result;
+        if (api.getState().auth.account !== account) return failure('Your company session changed. Reload before continuing.');
+        return directorVerificationView(result.data);
+      },
+      invalidatesTags: (_data, error) => error ? [] : ['AuthDirectorVerification'],
+    }),
     getOnboardingSecurity: builder.query({
       query: () => '/profile/security-settings',
       transformResponse: (response) => {
@@ -186,8 +230,11 @@ export const onboardingApi = baseApi.injectEndpoints({
           twoFactor: {
             available: typeof data?.twoFactor?.available === 'boolean' ? data.twoFactor.available : null,
             enabled: typeof data?.twoFactor?.enabled === 'boolean' ? data.twoFactor.enabled : null,
-            method: data?.twoFactor?.method === 'app' ? 'Authenticator app' : data?.twoFactor?.method === 'sms' ? 'SMS' : '—',
+            method: data?.twoFactor?.method === 'TOTP' || data?.twoFactor?.method === 'app' ? 'app' : data?.twoFactor?.method === 'sms' ? 'sms' : null,
+            enabledOn: displayDate(data?.twoFactor?.enabledAt),
+            backupCodesRemaining: Number.isSafeInteger(data?.twoFactor?.backupCodesRemaining) && data.twoFactor.backupCodesRemaining >= 0 ? data.twoFactor.backupCodesRemaining : null,
           },
+          loginAlerts: typeof data?.signInAlerts?.enabled === 'boolean' ? data.signInAlerts.enabled : null,
         };
       },
       providesTags: ['AuthOnboardingSecurity'],
@@ -228,4 +275,5 @@ export const {
   useAddOnboardingTruckMutation,
   useGetOnboardingBanksQuery, useResolveOnboardingBankMutation, useGetOnboardingBankQuery,
   useSaveOnboardingBankMutation, useGetOnboardingSecurityQuery, useSaveOnboardingPinMutation,
+  useGetDirectorVerificationQuery, useSubmitDirectorVerificationMutation,
 } = onboardingApi;

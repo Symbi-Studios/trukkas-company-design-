@@ -9,6 +9,7 @@ import { useLazyExportFleetVehicleQuery, useUpdateFleetVehicleMutation } from '.
 import { fleetDetailHref } from '../domain/fleetLinks.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { Toast, useToast } from '../components/Toast.jsx';
+import { EditFleetVehicleModal } from '../components/FleetVehicleModals.jsx';
 
 const TABS = [
   { value: 'overview', label: 'Overview', href: '' },
@@ -25,6 +26,7 @@ export function VehicleDetailFrame({ tab, title, description, primaryAction, chi
   const navigate = useNavigate();
   const { truck, error, isLoading } = useFleetVehicle();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [toast, showToast] = useToast();
   const [updateVehicle, { isLoading: updating }] = useUpdateFleetVehicleMutation();
   const [exportVehicle, { isFetching: exporting }] = useLazyExportFleetVehicleQuery();
@@ -48,7 +50,7 @@ export function VehicleDetailFrame({ tab, title, description, primaryAction, chi
     } catch (err) { showToast(getApiErrorMessage(err)); }
     finally { mutating.current = false; }
   }
-  const unavailableAction = () => { setMoreOpen(false); showToast('This fleet action is currently unavailable from the API.'); };
+
 
   if (isLoading) return <SkeletonRow variant="detail" />;
   if (!truck) {
@@ -87,7 +89,7 @@ export function VehicleDetailFrame({ tab, title, description, primaryAction, chi
               {moreOpen && (
                 <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30 }}>
                   <DropdownMenu width={220} items={[
-                    { label: 'Edit Truck', icon: 'pencil', onClick: unavailableAction },
+                    { label: 'Edit Truck', icon: 'pencil', onClick: () => { setMoreOpen(false); setEditOpen(true); } },
                     { label: 'Export Data', icon: 'download', onClick: download },
                     { divider: true },
                     {
@@ -148,6 +150,7 @@ export function VehicleDetailFrame({ tab, title, description, primaryAction, chi
         </div>
       </div>
       <Toast message={toast} />
+      {editOpen && <EditFleetVehicleModal key={truck.id} truck={truck} onClose={() => setEditOpen(false)} />}
     </div>
   );
 }

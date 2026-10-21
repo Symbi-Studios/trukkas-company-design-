@@ -5,12 +5,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSelector } from 'react-redux';
 import {
-  Badge, Banner, Button, Card, Checkbox, Icon, Logo, Select, TextField,
+  Badge, Banner, Button, Card, Checkbox, Icon, Logo, SectionCard, Select, TextField,
 } from '../ds.js';
 import {
   useCheckAccountEmailMutation, useStartAccountRegistrationMutation, useResendAccountCodeMutation,
   useVerifyAccountPhoneMutation, useSignUpAccountMutation, useSaveOnboardingCompanyMutation, useFinishCompanyOnboardingMutation,
-  useLazyGetOnboardingStatusQuery,
+  useLazyGetOnboardingStatusQuery, useRetryCompanyVerificationMutation, authFailureCode,
 } from '../store/features/auth/authApi.js';
 import {
   useGetOnboardingDocumentsQuery, useUploadOnboardingDocumentMutation, useGetOnboardingTrucksQuery,
@@ -24,6 +24,8 @@ import { complianceFor, documentsFor } from '../domain/documents.js';
 import { VEHICLE_CLASSES } from '../domain/vehicles.js';
 import { maskEmail, maskPhone, passwordStrength } from '../domain/security.js';
 import { CodeInput, PasswordStrength } from '../components/SecurityInputs.jsx';
+import { CompanyAccountModal } from '../components/CompanyAccountModal.jsx';
+import { DirectorVerificationFields } from '../components/DirectorVerificationPanel.jsx';
 import { ComplianceChecklist, UploadDocumentModal } from '../components/DocumentCompliance.jsx';
 import { BankAccountForm } from './settings/PayoutAccountSettings.jsx';
 import { PinForm } from './settings/PinSettings.jsx';
@@ -49,66 +51,73 @@ const STATES = [
 ];
 const REGIONS = ['South West', 'South South', 'South East', 'North Central', 'North West', 'North East', 'Cross-border (ECOWAS)'];
 const FLEET_SIZES = ['1–5 trucks', '6–20 trucks', '21–50 trucks', '51–100 trucks', '100+ trucks'];
-const RESEND_SECONDS = 30;
-const OTP_LIFETIME_MS = 10 * 60 * 1000;
-
-function useCountdown() {
-  const [left, setLeft] = useState(0);
-  useEffect(() => {
-    if (left <= 0) return undefined;
-    const t = setTimeout(() => setLeft((n) => n - 1), 1000);
-    return () => clearTimeout(t);
-  }, [left]);
-  return [left, () => setLeft(RESEND_SECONDS)];
+function secondsUntil(timestamp, now = Date.now()) {
+  return Number.isFinite(timestamp) ? Math.max(0, Math.ceil((timestamp - now) / 1000)) : null;
 }
 
-/** "Send code → enter 6 digits" block for email and phone verification. */
-function VerifyStep({ channel, target, sessionToken, otpExpiresAt, onVerified, onChangeTarget, onBusyChange }) {
+function otpExpiryCopy(expiresAt, now) {
+  const seconds = secondsUntil(expiresAt, now);
+  if (seconds === null) return '—';
+  if (seconds < 60) return seconds ? 'less than a minute' : 'expired';
+  const minutes = Math.ceil(seconds / 60);
+  return 'about ' + minutes + ' minute' + (minutes === 1 ? '' : 's');
+}
+
+/** Enter the server-issued code and follow the expiry and resend window returned by the API. */
+function VerifyStep({ channel, target, sessionToken, otp, onVerified, onChangeTarget, onBusyChange }) {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [left, restart] = useCountdown();
   const [resendCode, { isLoading: resending }] = useResendAccountCodeMutation();
   const [verifyPhone] = useVerifyAccountPhoneMutation();
   const verifying = useRef(false);
   const verified = useRef(false);
-  const [expiresAt, setExpiresAt] = useState(otpExpiresAt);
-  const [expired, setExpired] = useState(() => Date.now() >= otpExpiresAt);
+  const [otpLength, setOtpLength] = useState(otp.length);
+  const [expiresAt, setExpiresAt] = useState(otp.expiresAt);
+  const [resendAt, setResendAt] = useState(otp.resendAvailableAt);
+  const [remainingResends, setRemainingResends] = useState(otp.remainingResends);
+  const [remainingAttempts, setRemainingAttempts] = useState(otp.remainingAttempts);
+  const [clock, setClock] = useState(() => Date.now());
 
   useEffect(() => {
     onBusyChange(busy || resending);
     return () => onBusyChange(false);
   }, [busy, resending, onBusyChange]);
-
   useEffect(() => {
-    const checkExpiry = () => {
-      const ended = Date.now() >= expiresAt;
-      setExpired(ended);
-      if (ended && !verified.current) setError('This code has expired. Request a new code.');
-    };
-    checkExpiry();
-    const timer = setInterval(checkExpiry, 1000);
+    const timer = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [expiresAt]);
+  }, []);
+
+  const effectiveExpiry = Math.min(expiresAt, otp.sessionExpiresAt);
+  const expired = clock >= effectiveExpiry || remainingAttempts === 0;
+  const left = secondsUntil(resendAt, clock) ?? 0;
+  const codePattern = new RegExp('^\\d{' + otpLength + '}$');
+  useEffect(() => {
+    if (expired && !verified.current) {
+      setError(remainingAttempts === 0 ? 'No verification attempts remain. Request a new code.'
+        : clock >= otp.sessionExpiresAt ? 'This verification session has expired. Start phone verification again.'
+          : 'This code has expired. Request a new code.');
+    }
+  }, [expired, remainingAttempts, clock, otp.sessionExpiresAt]);
 
   async function send() {
-    if (left > 0 || resending || verifying.current || verified.current) return;
+    if (left > 0 || remainingResends <= 0 || resending || verifying.current || verified.current || clock >= otp.sessionExpiresAt) return;
     setError('');
     try {
-      await resendCode({ sessionToken }).unwrap();
+      const result = await resendCode({ sessionToken }).unwrap();
       setCode('');
-      setExpiresAt(Date.now() + OTP_LIFETIME_MS);
-      setExpired(false);
-      restart();
+      setOtpLength(result.otp.length);
+      setExpiresAt(result.otp.expiresAt);
+      setResendAt(result.otp.resendAvailableAt);
+      setRemainingResends(result.otp.remainingResends);
+      setRemainingAttempts(result.otp.remainingAttempts);
     } catch (err) { setError(getApiErrorMessage(err)); }
   }
-  useEffect(() => { restart(); }, []); // The phone form already sent the first code.
 
   async function verify(value = code) {
-    if (verifying.current || resending || !/^\d{6}$/.test(value)) return;
-    if (!verified.current && Date.now() >= expiresAt) {
-      setExpired(true);
-      setError('This code has expired. Request a new code.');
+    if (verifying.current || resending || !codePattern.test(value)) return;
+    if (!verified.current && (clock >= effectiveExpiry || remainingAttempts === 0)) {
+      setError(remainingAttempts === 0 ? 'No verification attempts remain. Request a new code.' : 'This code has expired. Request a new code.');
       return;
     }
     verifying.current = true;
@@ -119,20 +128,25 @@ function VerifyStep({ channel, target, sessionToken, otpExpiresAt, onVerified, o
         verified.current = true;
       }
       await onVerified();
-    } catch (err) { setError(getApiErrorMessage(err)); }
-    finally { verifying.current = false; setBusy(false); }
+    } catch (err) {
+      const failureData = err?.data?.data && typeof err.data.data === 'object' ? err.data.data : err?.data;
+      if (Number.isSafeInteger(failureData?.remainingAttempts) && failureData.remainingAttempts >= 0) setRemainingAttempts(failureData.remainingAttempts);
+      setError(getApiErrorMessage(err));
+    } finally { verifying.current = false; setBusy(false); }
   }
 
   return (
     <div className={styles.verify}>
       <span className={styles.verifyIcon}><Icon name={channel === 'email' ? 'mail' : 'message-square'} size={26} /></span>
-      <p className={styles.lead}>We sent a 6-digit code to <strong>{channel === 'email' ? maskEmail(target) : maskPhone(target)}</strong>. It expires in 10 minutes.</p>
-      <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => verify(v)} error={error} disabled={busy || resending || (expired && !verified.current)} />
+      <p className={styles.lead}>We sent a {otpLength}-digit code to <strong>{channel === 'email' ? maskEmail(target) : maskPhone(target)}</strong>. It expires in {otpExpiryCopy(effectiveExpiry, clock)}.</p>
+      <CodeInput length={otpLength} autoFocus value={code} onChange={setCode} onComplete={(v) => verify(v)} error={error} disabled={busy || resending || (expired && !verified.current)} />
       <div className={styles.verifyActions}>
-        <Button variant="ghost" disabled={left > 0 || resending || busy || verified.current} onClick={send}>{left > 0 ? `Resend in ${left}s` : 'Resend code'}</Button>
+        <Button variant="ghost" disabled={left > 0 || remainingResends <= 0 || resending || busy || verified.current || clock >= otp.sessionExpiresAt} onClick={send}>
+          {remainingResends <= 0 ? 'No resends left' : left > 0 ? 'Resend in ' + left + 's' : 'Resend code'}
+        </Button>
         <Button variant="ghost" disabled={busy || resending || verified.current} onClick={onChangeTarget}>{channel === 'email' ? 'Change email' : 'Change number'}</Button>
       </div>
-      <Button fullWidth disabled={busy || resending || !/^\d{6}$/.test(code) || (expired && !verified.current)} onClick={() => verify()}>{busy ? 'Verifying…' : 'Verify'}</Button>
+      <Button fullWidth disabled={busy || resending || !codePattern.test(code) || (expired && !verified.current)} onClick={() => verify()}>{busy ? 'Verifying…' : 'Verify'}</Button>
     </div>
   );
 }
@@ -146,6 +160,7 @@ export function Onboarding() {
   const [saveCompany] = useSaveOnboardingCompanyMutation();
   const [finishOnboarding] = useFinishCompanyOnboardingMutation();
   const [loadOnboardingStatus] = useLazyGetOnboardingStatusQuery();
+  const [retryCompanyVerification, { isLoading: retryingCompany }] = useRetryCompanyVerificationMutation();
   const [addTruck] = useAddOnboardingTruckMutation();
   const [uploadDocument] = useUploadOnboardingDocumentMutation();
   const [resolveBank] = useResolveOnboardingBankMutation();
@@ -162,12 +177,13 @@ export function Onboarding() {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', terms: false, phone: '+234 ', dateOfBirth: '' });
   const [sessionToken, setSessionToken] = useState(null);
-  const [otpExpiresAt, setOtpExpiresAt] = useState(null);
+  const [otp, setOtp] = useState(null);
   const [biz, setBiz] = useState({ name: '', rcNumber: '', entity: 'Limited Liability Company', founded: '', email: '', phone: '', address: '', state: 'Lagos', fleetSize: '', regions: [], operatingStates: null, role: 'Director', directorName: '', directorDob: '' });
   const [truck, setTruck] = useState({ plate: '', vehicleClass: 'Head', make: '', model: '', year: '' });
   const [uploadType, setUploadType] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [companyOffer, setCompanyOffer] = useState(null);
 
   const resolveAccount = useCallback(async (bankCode, accountNumber) => {
     try {
@@ -212,14 +228,17 @@ export function Onboarding() {
     if (!account) return;
     let cancelled = false;
     const resumeStep = (progress) => {
-      if (progress.onboardingComplete === true || ['AWAITING_REVIEW', 'APPLICATION_REJECTED'].includes(progress.onboardingStep)) {
+      if (progress.onboardingComplete === true || progress.onboardingStep === 'AWAITING_REVIEW'
+        || (progress.onboardingStep === 'APPLICATION_REJECTED' && progress.kycStatus !== 'REJECTED')) {
         router.replace('/dashboard');
         return;
       }
-      setStep(({ ADD_TRUCKS: 5, SUBMIT_FOR_REVIEW: 7 })[progress.onboardingStep] ?? 3);
+      setStep(progress.kycStatus === 'REJECTED' || progress.onboardingStep === 'APPLICATION_REJECTED' ? 4
+        : ({ ADD_TRUCKS: 5, SUBMIT_FOR_REVIEW: 7 })[progress.onboardingStep] ?? 3);
       setBiz((value) => ({ ...value, ...(progress.onboardingCompany || {}) }));
     };
-    setStep(({ ADD_TRUCKS: 5, SUBMIT_FOR_REVIEW: 7 })[account.onboardingStep] ?? 3);
+    setStep(account.kycStatus === 'REJECTED' || account.onboardingStep === 'APPLICATION_REJECTED' ? 4
+      : ({ ADD_TRUCKS: 5, SUBMIT_FOR_REVIEW: 7 })[account.onboardingStep] ?? 3);
     setBiz((value) => ({ ...value, ...(account.onboardingCompany || {}) }));
     setBusy(true);
     loadOnboardingStatus().unwrap().then((progress) => {
@@ -259,18 +278,43 @@ export function Onboarding() {
     setBusy(true);
     try {
       const availability = await checkEmail({ email: form.email }).unwrap();
-      if (availability.available === false) { setError('An account with this email already exists. Sign in instead.'); return; }
+      if (availability.available === false) { setCompanyOffer({ email: form.email.trim() }); return; }
       if (availability.available !== true) { setError('Email availability could not be confirmed. Try again.'); return; }
       go(1);
-    } catch (err) { setError(getApiErrorMessage(err)); }
+    } catch (err) {
+      if (authFailureCode(err) === 'EMAIL_ALREADY_REGISTERED') setCompanyOffer({ email: form.email.trim() });
+      else setError(getApiErrorMessage(err));
+    }
     finally { setBusy(false); }
+  }
+
+  function continueCompanySetup(result) {
+    setCompanyOffer(null);
+    setSessionToken(null);
+    setForm((value) => ({ ...value, password: '', confirm: '', phoneEntered: false }));
+    const company = result.account;
+    if (company.onboardingComplete === true || company.onboardingStep === 'AWAITING_REVIEW') {
+      router.replace('/dashboard');
+      return;
+    }
+    if (company.kycStatus === 'REJECTED' || company.onboardingStep === 'APPLICATION_REJECTED') {
+      setBiz((value) => ({ ...value, ...(company.onboardingCompany || {}) }));
+      setStep(4);
+      return;
+    }
+    const saved = company.onboardingCompany;
+    setBiz((value) => ({ ...value, ...saved,
+      email: saved?.email || company.email, phone: saved?.phone || company.phone,
+      directorName: saved?.directorName || '',
+      directorDob: saved?.directorDob || '',
+    }));
+    go(({ ADD_TRUCKS: 5, SUBMIT_FOR_REVIEW: 7 })[company.onboardingStep] ?? 3);
   }
 
   async function createAccount() {
     const result = await signUpAccount({ name: form.name, email: form.email, password: form.password, dateOfBirth: form.dateOfBirth, sessionToken, acceptedTerms: form.terms }).unwrap();
-    setForm((f) => ({ ...f, password: '', confirm: '' }));
-    setBiz((b) => ({ ...b, email: result.account.email, phone: result.account.phone, directorName: result.account.name, directorDob: form.dateOfBirth }));
-    go(3);
+    if (result.companyAccountRequired) { setCompanyOffer({ email: form.email.trim() }); return; }
+    continueCompanySetup(result);
   }
 
   async function sendPhoneCode(event) {
@@ -280,12 +324,20 @@ export function Onboarding() {
     setBusy(true); setError('');
     try {
       const result = await startRegistration({ phone: form.phone }).unwrap();
+      if (result.companyAccountRequired) { setCompanyOffer({ email: form.email.trim() }); return; }
       if (typeof result.sessionToken !== 'string' || !result.sessionToken.trim()) throw new Error('The API did not return a phone verification session.');
       setSessionToken(result.sessionToken);
-      setOtpExpiresAt(Date.now() + OTP_LIFETIME_MS);
+      setOtp({ ...result.otp, sessionExpiresAt: result.sessionExpiresAt });
       setForm((value) => ({ ...value, phoneEntered: true }));
     } catch (err) { setError(err instanceof Error ? err.message : getApiErrorMessage(err)); }
     finally { setBusy(false); }
+  }
+
+  async function retryRejectedCompany() {
+    if (retryingCompany) return;
+    setError('');
+    try { await retryCompanyVerification().unwrap(); router.replace('/dashboard'); }
+    catch (err) { setError(getApiErrorMessage(err)); }
   }
 
   async function submitCompany(event) {
@@ -395,7 +447,7 @@ export function Onboarding() {
           {current.key === 'phone' && (
             form.phoneEntered ? (
               <VerifyStep
-                key={sessionToken} channel="sms" target={form.phone.trim()} sessionToken={sessionToken} otpExpiresAt={otpExpiresAt}
+                key={sessionToken} channel="sms" target={form.phone.trim()} sessionToken={sessionToken} otp={otp}
                 onVerified={createAccount} onBusyChange={setBusy}
                 onChangeTarget={() => setForm({ ...form, phoneEntered: false })}
               />
@@ -427,7 +479,7 @@ export function Onboarding() {
               </div>
               <div>
                 <span className={styles.label}>Director details</span>
-                <p className={styles.lead} style={{ marginBottom: 12 }}>The director operating this account. Their NIN, BVN and government ID are verified in the next step.</p>
+                <p className={styles.lead} style={{ marginBottom: 12 }}>The director operating this account. Their NIN or BVN is submitted for manual review. Upload the director’s government ID below.</p>
                 <div className={styles.two}>
                   <TextField label="Director’s Full Name" required value={biz.directorName} onChange={(e) => setBiz({ ...biz, directorName: e.target.value })} placeholder="As on their government ID" />
                   <TextField label="Date of Birth" type="date" required value={biz.directorDob} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setBiz({ ...biz, directorDob: e.target.value })} />
@@ -455,6 +507,18 @@ export function Onboarding() {
           {current.key === 'documents' && (
             <div className={styles.form}>
               <p className={styles.lead}>Trukkas verifies every company before it can bid on jobs or receive payouts. Upload what you have now — you can finish from <strong>Documents</strong> later.</p>
+              {account?.kycStatus === 'REJECTED' && (
+                <Banner tone="warning" title="Company verification was rejected">
+                  <p>{account.kycRejectionReason || 'Review the company details, then retry verification.'}</p>
+                  <div className={styles.footer}>
+                    <Button variant="outline" disabled={retryingCompany} onClick={() => go(3)}>Review company details</Button>
+                    <Button disabled={retryingCompany} onClick={retryRejectedCompany}>{retryingCompany ? 'Resubmitting…' : 'Retry verification'}</Button>
+                  </div>
+                </Banner>
+              )}
+              <SectionCard title="Director identity verification" description="Submit the director’s NIN, BVN, or both for manual review by Trukkas.">
+                <DirectorVerificationFields />
+              </SectionCard>
               <ComplianceChecklist title="Business Documents" requirements={ONBOARDING_REQUIREMENTS} docs={companyDocs} unavailable={!companyComplianceAvailable} unavailableTypes={UNSUPPORTED_ONBOARDING_DOCUMENTS} onUpload={(req) => setUploadType(req.type)} style={{ boxShadow: 'none' }} />
               <div className={styles.footer}>
                 <Button variant="outline" onClick={() => go(5)}>Skip for now</Button>
@@ -532,6 +596,7 @@ export function Onboarding() {
         {step > 3 && step < 7 && <button type="button" className={styles.back} disabled={busy} onClick={() => go(step - 1)}><Icon name="arrow-left" size={14} /> Back</button>}
       </section>
 
+      {companyOffer && <CompanyAccountModal {...companyOffer} onClose={() => setCompanyOffer(null)} onComplete={continueCompanySetup} />}
       <UploadDocumentModal
         open={!!uploadType} onClose={() => setUploadType(null)} ownerType="company" ownerId={account?.id} ownerLabel={account?.companyName}
         requirements={ONBOARDING_REQUIREMENTS} initialType={uploadType} submitDocument={submitDocument} onDone={() => setUploadType(null)}

@@ -180,6 +180,84 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
       },
       invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingSecurity'],
     }),
+    setupSettingsTwoFactor: builder.mutation({
+      async queryFn(_arg, api, _options, baseQuery) {
+        const blocked = settingsAccess(api); if (blocked) return blocked;
+        const result = await settingsCompanyQuery(api, baseQuery)({ url: '/profile/two-factor/setup', method: 'POST', body: { method: 'TOTP' } });
+        if (result.error) return result;
+        const data = unwrapApiResponseData(result.data);
+        return data?.method === 'TOTP' && text(data.secret) && typeof data.otpauthUrl === 'string' && data.otpauthUrl.startsWith('otpauth://totp/')
+          ? { data: { secret: data.secret, otpauthUrl: data.otpauthUrl } }
+          : settingsUnavailable('The API did not return a valid authenticator setup key.');
+      },
+    }),
+    enableSettingsTwoFactor: builder.mutation({
+      async queryFn({ code }, api, _options, baseQuery) {
+        const blocked = settingsAccess(api); if (blocked) return blocked;
+        if (typeof code !== 'string' || !/^\d{6}$/.test(code)) return settingsUnavailable('Enter the six-digit authenticator code.');
+        const result = await settingsCompanyQuery(api, baseQuery)({ url: '/profile/two-factor/enable', method: 'POST', body: { code } });
+        if (result.error) return result;
+        const data = unwrapApiResponseData(result.data);
+        const codes = data?.backupCodes;
+        if (data?.twoFactor?.enabled !== true || data.twoFactor.method !== 'TOTP' || !Array.isArray(codes)
+          || !codes.length || codes.some((value) => typeof value !== 'string' || !/^[A-Z0-9]{4}-[A-Z0-9]{4}$/i.test(value))) {
+          return settingsUnavailable('Two-factor setup was not confirmed with backup codes. Reload security settings before retrying.');
+        }
+        return { data: { backupCodes: codes } };
+      },
+      invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingSecurity'],
+    }),
+    disableSettingsTwoFactor: builder.mutation({
+      async queryFn({ currentPassword, code, backupCode }, api, _options, baseQuery) {
+        const blocked = settingsAccess(api); if (blocked) return blocked;
+        const proof = typeof code === 'string' && /^\d{6}$/.test(code) ? { code }
+          : typeof backupCode === 'string' && /^[A-Z0-9]{4}-[A-Z0-9]{4}$/i.test(backupCode.trim()) ? { backupCode: backupCode.trim().toUpperCase() } : null;
+        if (!text(currentPassword) || !proof) return settingsUnavailable('Enter your current password and a six-digit authenticator code or backup code.');
+        const result = await settingsCompanyQuery(api, baseQuery)({ url: '/profile/two-factor/disable', method: 'POST', body: { currentPassword, ...proof } });
+        if (result.error) return result;
+        return unwrapApiResponseData(result.data)?.twoFactor?.enabled === false
+          ? { data: { disabled: true } } : settingsUnavailable('The API did not confirm two-factor was turned off.');
+      },
+      invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingSecurity'],
+    }),
+    regenerateSettingsBackupCodes: builder.mutation({
+      async queryFn({ currentPassword, code, backupCode }, api, _options, baseQuery) {
+        const blocked = settingsAccess(api); if (blocked) return blocked;
+        const proof = typeof code === 'string' && /^\d{6}$/.test(code) ? { code }
+          : typeof backupCode === 'string' && /^[A-Z0-9]{4}-[A-Z0-9]{4}$/i.test(backupCode.trim()) ? { backupCode: backupCode.trim().toUpperCase() } : null;
+        if (!text(currentPassword) || !proof) return settingsUnavailable('Enter your current password and a six-digit authenticator code or backup code.');
+        const result = await settingsCompanyQuery(api, baseQuery)({ url: '/profile/two-factor/backup-codes', method: 'POST', body: { currentPassword, ...proof } });
+        if (result.error) return result;
+        const data = unwrapApiResponseData(result.data);
+        const codes = data?.backupCodes;
+        return Array.isArray(codes) && codes.length && codes.every((value) => typeof value === 'string' && /^[A-Z0-9]{4}-[A-Z0-9]{4}$/i.test(value))
+          ? { data: { backupCodes: codes } } : settingsUnavailable('The API did not return replacement backup codes. Reload security settings before retrying.');
+      },
+      invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingSecurity'],
+    }),
+    updateSettingsSignInAlerts: builder.mutation({
+      async queryFn({ enabled }, api, _options, baseQuery) {
+        const blocked = settingsAccess(api); if (blocked) return blocked;
+        if (typeof enabled !== 'boolean') return settingsUnavailable('Choose whether to receive sign-in alert emails.');
+        const result = await settingsCompanyQuery(api, baseQuery)({ url: '/profile/security-settings/sign-in-alerts', method: 'PATCH', body: { enabled } });
+        if (result.error) return result;
+        return unwrapApiResponseData(result.data)?.signInAlerts?.enabled === enabled
+          ? { data: { enabled } } : settingsUnavailable('The API did not confirm the sign-in alert preference.');
+      },
+      invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingSecurity'],
+    }),
+    revokeSettingsSession: builder.mutation({
+      async queryFn({ id }, api, _options, baseQuery) {
+        const blocked = settingsAccess(api); if (blocked) return blocked;
+        if (typeof id !== 'string' || !id.trim()) return settingsUnavailable('The session ID is missing.');
+        const result = await settingsCompanyQuery(api, baseQuery)({ url: '/profile/sessions/' + encodeURIComponent(id), method: 'DELETE' });
+        if (result.error) return result;
+        const data = unwrapApiResponseData(result.data);
+        return data?.id === id && data.status === 'ENDED' ? { data: { ended: true } }
+          : settingsUnavailable('The API did not confirm the session was ended.');
+      },
+      invalidatesTags: (_data, error) => error ? [] : ['SettingsSessions'],
+    }),
     getSettingsSessions: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const result = await settingsCompanyQuery(api, baseQuery)('/profile/sessions');
@@ -222,4 +300,4 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
   }),
 });
 
-export const { useUpdateSettingsBankMutation, useGetCompanySettingsQuery, useUpdateCompanySettingsMutation, useChangeSettingsPasswordMutation, useRequestSettingsPinResetMutation, useResetSettingsPinMutation, useGetSettingsSessionsQuery, useGetSettingsNotificationsQuery, useUpdateSettingsNotificationsMutation } = settingsApi;
+export const { useUpdateSettingsBankMutation, useGetCompanySettingsQuery, useUpdateCompanySettingsMutation, useChangeSettingsPasswordMutation, useRequestSettingsPinResetMutation, useResetSettingsPinMutation, useGetSettingsSessionsQuery, useGetSettingsNotificationsQuery, useUpdateSettingsNotificationsMutation, useSetupSettingsTwoFactorMutation, useEnableSettingsTwoFactorMutation, useDisableSettingsTwoFactorMutation, useRegenerateSettingsBackupCodesMutation, useUpdateSettingsSignInAlertsMutation, useRevokeSettingsSessionMutation } = settingsApi;

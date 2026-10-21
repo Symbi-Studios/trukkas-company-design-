@@ -70,7 +70,14 @@ export function tripStatusTone(status) {
 }
 
 export function nextTripStage(trip) {
-  if (trip.apiBacked) return ({ DRIVER_ARRIVED: 'In Transit', IN_TRANSIT: 'At Destination' })[trip.wireStatus] ?? null;
+  if (trip.apiBacked) {
+    if (trip.actions?.arrival) return 'Arrived at Pickup';
+    if (trip.actions?.pod) return 'Submit Proof of Delivery';
+    if (trip.actions?.unlock) return 'Start Offloading';
+    if (trip.actions?.offloadComplete) return 'Offloading Complete';
+    if (trip.actions?.containerReturned) return 'Container Returned';
+    return ({ DRIVER_ARRIVED: 'In Transit', IN_TRANSIT: 'At Destination' })[trip.wireStatus] ?? null;
+  }
   const index = TRIP_STAGES.indexOf(trip.status);
   if (index < 0 || index >= TRIP_STAGES.length - 1) return null;
   return TRIP_STAGES[index + 1];

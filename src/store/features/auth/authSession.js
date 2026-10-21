@@ -33,6 +33,8 @@ export function companySession(session, profile, access) {
     title: text(profile.title) ?? '—',
     emailVerified: typeof profile.emailVerified === 'boolean' ? profile.emailVerified : null,
     phoneVerified: typeof profile.phoneVerified === 'boolean' ? profile.phoneVerified : null,
+    kycStatus: text(profile.kycStatus),
+    kycRejectionReason: text(profile.kyc?.rejectionReason),
     registrationTermsConsent: registrationTermsConsent(profile),
     onboardingComplete: typeof profile.onboarding?.complete === 'boolean' ? profile.onboarding.complete : null,
     onboardingStep: text(profile.onboarding?.nextStep),

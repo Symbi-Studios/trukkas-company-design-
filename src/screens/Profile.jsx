@@ -35,12 +35,14 @@ function ChangeContactModal({ channel, open, onClose, onDone, verifyCurrent = fa
   const [error, setError] = useState('');
   const [expiresAt, setExpiresAt] = useState(null);
   const [resendAt, setResendAt] = useState(null);
-  useEffect(() => { if (open) { setValue(verifyCurrent ? currentValue : ''); setCode(''); setSent(false); setError(''); setExpiresAt(null); } }, [open, channel, verifyCurrent, currentValue]);
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => { if (open) { setValue(verifyCurrent ? currentValue : ''); setCode(''); setSent(false); setError(''); setExpiresAt(null); setResendAt(null); } }, [open, channel, verifyCurrent, currentValue]);
   useEffect(() => {
-    if (!resendAt) return;
-    const timer = setTimeout(() => setResendAt(null), Math.max(0, resendAt - Date.now()));
-    return () => clearTimeout(timer);
-  }, [resendAt]);
+    if (!open || !verifyCurrent) return undefined;
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [open, verifyCurrent]);
+  const resendLeft = resendAt ? Math.max(0, Math.ceil((resendAt - clock) / 1000)) : null;
   useEffect(() => {
     if (!open || !verifyCurrent || !sent || !expiresAt) return;
     const timer = setTimeout(() => { setSent(false); setCode(''); setError('This code has expired. Send a new code.'); }, Math.max(0, expiresAt - Date.now()));
@@ -62,7 +64,7 @@ function ChangeContactModal({ channel, open, onClose, onDone, verifyCurrent = fa
         setExpiresAt(receipt.expiresAt);
         setResendAt(receipt.resendAt);
       } else await requestChange({ channel, value }).unwrap();
-      setSent(true);
+      setSent(true); setCode('');
     } catch (err) { setError(getApiErrorMessage(err)); if (verifyCurrent && err.retryAt) setResendAt(err.retryAt); }
     finally { submitting.current = false; }
   }
@@ -83,7 +85,10 @@ function ChangeContactModal({ channel, open, onClose, onDone, verifyCurrent = fa
   return (
     <Modal open={open} onClose={() => { if (!sending && !verifying) onClose(); }} width={440} title={verifyCurrent ? 'Verify Email Address' : isEmail ? 'Change Email Address' : 'Change Phone Number'}
       description={verifyCurrent ? 'Confirm the email address on your account.' : isEmail ? 'We’ll send a code to your new email to confirm it.' : 'We’ll text a code to your new number to confirm it.'}
-      footer={<><Button variant="outline" disabled={sending || verifying} onClick={onClose}>Cancel</Button>{sent ? <Button disabled={!/^\d{6}$/.test(code) || verifying || sending} onClick={() => confirm()}>Confirm</Button> : <Button disabled={sending || !validContact || (verifyCurrent && resendAt > Date.now())} onClick={send}>Send Code</Button>}</>}>
+      footer={<><Button variant="outline" disabled={sending || verifying} onClick={onClose}>Cancel</Button>{sent ? <>
+          {verifyCurrent && <Button variant="ghost" disabled={sending || verifying || resendLeft === null || resendLeft > 0} onClick={send}>{resendLeft === null ? '—' : resendLeft > 0 ? 'Resend in ' + resendLeft + 's' : 'Resend code'}</Button>}
+          <Button disabled={!/^\d{6}$/.test(code) || verifying || sending} onClick={() => confirm()}>Confirm</Button>
+        </> : <Button disabled={sending || !validContact || (verifyCurrent && resendAt > Date.now())} onClick={send}>Send Code</Button>}</>}>
       <div style={{ display: 'grid', gap: 14, justifyItems: 'stretch' }}>
         <TextField label={verifyCurrent ? 'Email Address' : isEmail ? 'New Email' : 'New Phone Number'} type={isEmail ? 'email' : 'tel'} value={value} disabled={verifyCurrent || sent || sending} onChange={(e) => setValue(e.target.value)} placeholder={isEmail ? 'you@company.com' : '+234 800 000 0000'} />
         {sent && (

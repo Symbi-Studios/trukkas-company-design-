@@ -27,7 +27,7 @@ export function companyPayoutRecord(source) {
     id: source.id, reference: text(source.reference) ?? '—', type: source.kind, jobId, tripId: jobId,
     status: statusLabels[source.status] ?? '—', amount: amount(source.net), gross: amount(source.amount), fee: amount(source.fee), feePercent: null,
     destination: jobPayment ? 'Wallet' : 'Bank', paidTo: jobPayment ? 'Trukkas Wallet' : '—',
-    requestedOn: jobPayment ? '—' : date(source.createdAt), createdOn: date(source.createdAt), createdAt: timestamp(source.createdAt), paidOn: null,
+    requestedOn: jobPayment ? '—' : date(source.createdAt), createdOn: date(source.createdAt), createdAt: timestamp(source.createdAt), paidOn: source.status === 'COMPLETED' && timestamp(source.paidAt) ? date(source.paidAt) : null,
     items: jobId ? [{ tripId: jobId, jobId, jobNumber: text(source.job.jobNumber) ?? '—', gross: amount(source.amount) }] : [],
     tripCount: jobId ? 1 : null, failureReason: text(source.failureReason) ?? '—', description: text(source.description) ?? '—',
   };
@@ -46,7 +46,7 @@ export function payoutRecord(source) {
     status: statusLabels[source.status] ?? '—',
     amount: jobPayment ? value : amount(receipt?.netAmount), gross: jobPayment ? value : amount(receipt?.grossAmount), fee: jobPayment ? amount(source.fee) : amount(receipt?.feeAmount), feePercent: jobPayment ? null : amount(receipt?.feePercent),
     destination: jobPayment ? 'Wallet' : 'Bank', paidTo: jobPayment ? 'Trukkas Wallet' : text(source.paidTo) ?? '—',
-    requestedOn: jobPayment ? '—' : date(receipt?.requestedAt), createdOn: date(source.createdAt), createdAt: timestamp(source.createdAt), paidOn: !jobPayment && timestamp(receipt?.paidAt) ? date(receipt.paidAt) : null,
+    requestedOn: jobPayment ? '—' : date(receipt?.requestedAt), createdOn: date(source.createdAt), createdAt: timestamp(source.createdAt), paidOn: source.status === 'COMPLETED' && !jobPayment && timestamp(receipt?.paidAt) ? date(receipt.paidAt) : null,
     // One company job is one trip, per GET /company/trips/{id}.
     items: jobId ? [{ tripId: jobId, jobId, jobNumber: text(source.jobNumber) ?? '—', gross: jobPayment ? value : null }] : [],
     tripCount: jobId ? 1 : null, failureReason: text(receipt?.failureReason) ?? '—', description: text(source.description) ?? text(source.label) ?? '—',

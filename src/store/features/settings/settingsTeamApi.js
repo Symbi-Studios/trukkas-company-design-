@@ -95,7 +95,7 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
         const loadedInvites = inviteResult.error ? null : collection(unwrapApiResponseData(inviteResult.data)?.invites);
         const invites = loadedInvites && loadedInvites.every((row) => text(row.id)) && new Set(loadedInvites.map((row) => row.id)).size === loadedInvites.length ? loadedInvites : null;
         return { data: { members: [
-          ...members.map((row) => ({ id: text(row.id), kind: 'member', name: [text(row.user?.firstName), text(row.user?.lastName)].filter(Boolean).join(' ') || '—', email: text(row.user?.email) ?? '—', roleId: text(row.roleId) ?? text(row.role?.id), roleName: text(row.role?.name) ?? '—', status: ({ ACTIVE: 'Active', SUSPENDED: 'Suspended' })[row.status] ?? '—', twoFactor: null, lastActive: date(row.user?.lastLoginAt) })),
+          ...members.map((row) => ({ id: text(row.id), kind: 'member', name: [text(row.user?.firstName), text(row.user?.lastName)].filter(Boolean).join(' ') || '—', email: text(row.user?.email) ?? '—', roleId: text(row.roleId) ?? text(row.role?.id), roleName: text(row.role?.name) ?? '—', status: ({ ACTIVE: 'Active', SUSPENDED: 'Suspended' })[row.status] ?? '—', twoFactor: typeof row.user?.twoFactorEnabled === 'boolean' ? row.user.twoFactorEnabled : null, lastActive: date(row.user?.lastLoginAt) })),
           ...(invites ?? []).map((row) => ({ id: text(row.id), kind: 'invite', name: text(row.name) ?? '—', email: text(row.email) ?? '—', roleId: text(row.role?.id), roleName: text(row.role?.name) ?? '—', status: row.status === 'PENDING' ? 'Invited' : '—', twoFactor: null, lastActive: '—' })),
         ], warning: invites === null ? 'Pending invitations could not be loaded.' : null } };
       },

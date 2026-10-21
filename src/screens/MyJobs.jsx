@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from '../router.js';
 import {
-  Badge, Button, Card, DataTable, EmptyState, IconButton, Modal, PageHeader, Pagination, ProgressBar, SearchField, Select, SkeletonRow, StatCard, Tabs,
+  Badge, Button, Card, DataTable, EmptyState, IconButton, PageHeader, Pagination, ProgressBar, SearchField, Select, SkeletonRow, StatCard, Tabs,
 } from '../ds.js';
 import { useGetMyJobsQuery, useGetJobEarningsQuery, useGetMyJobLifetimeEarningsQuery, useGetJobReviewQuery } from '../store/features/jobs/jobsApi.js';
 import { receiptView } from '../store/features/jobs/jobContracts.js';
@@ -42,10 +42,10 @@ function JobReviewStars({ id }) {
 
 function JobReceipt({ job, onClose }) {
   const company = useSelector((state) => state.auth.account);
-  const { currentData: data, error, isLoading } = useGetJobEarningsQuery(job);
+  const { currentData: data, error, isFetching, refetch } = useGetJobEarningsQuery(job);
   const receipt = receiptView(job, data, company);
-  if (receipt) return <ReceiptModal receipt={receipt} open onClose={onClose} />;
-  return <Modal open onClose={onClose} width={720} title="Job Earnings Statement" description={job.number} footer={<Button variant="outline" onClick={onClose}>Close</Button>}>{isLoading ? <SkeletonRow columns={3} /> : error ? <EmptyState icon="receipt" title={getApiErrorMessage(error)} /> : <span className="tk-meta">—</span>}</Modal>;
+  return <ReceiptModal receipt={receipt} open onClose={onClose} title="Job Earnings Statement" description={job.number}
+    loading={isFetching} error={error ? getApiErrorMessage(error) : undefined} onRetry={refetch} />;
 }
 
 /**

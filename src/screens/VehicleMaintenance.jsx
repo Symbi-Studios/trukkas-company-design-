@@ -17,7 +17,7 @@ const STATUS_OPTIONS = ['All Status', 'Completed', 'Upcoming', 'In Progress', 'O
 export function VehicleMaintenance() {
   const { truck } = useFleetVehicle();
   const { currentData: maintenanceData, error, isLoading } = useGetFleetMaintenanceQuery(truck?.id, { skip: !truck, refetchOnMountOrArgChange: true });
-  const records = maintenanceData?.records;
+  const records = error ? undefined : maintenanceData?.records;
   const [completeMaintenance] = useCompleteFleetMaintenanceMutation();
   const [updateVehicle, { isLoading: savingReminders }] = useUpdateFleetVehicleMutation();
   const updatingReminders = useRef(false);
@@ -41,14 +41,14 @@ export function VehicleMaintenance() {
   const upcoming = knownStatuses ? records.filter((r) => r.status === 'Upcoming').length : null;
   const overdue = knownStatuses ? records.filter((r) => r.status === 'Overdue').length : null;
   const totalCost = knownStatuses ? total(records.filter((record) => record.status === 'Completed'), 'cost') : null;
-  const next = maintenanceData?.nextDue;
+  const next = error ? null : maintenanceData?.nextDue;
   const money = (value) => typeof value === 'number' && Number.isFinite(value) ? formatNaira(value) : '—';
   const percent = (value) => value === null ? '—' : `${records.length ? Math.round(value / records.length * 100) : 0}%`;
   async function complete(record) {
     if (completing.current) return;
     if (!record.canComplete) { setRowMenu(null); showToast('Only scheduled or in-progress maintenance can be completed.'); return; }
     completing.current = true; setBusyRecord(record.id); setRowMenu(null);
-    try { await completeMaintenance(record.id).unwrap(); }
+    try { await completeMaintenance({ id: record.id, truckId: truck.id }).unwrap(); }
     catch (err) { showToast(getApiErrorMessage(err)); }
     finally { completing.current = false; setBusyRecord(null); }
   }

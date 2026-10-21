@@ -131,6 +131,11 @@ export const walletApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyWallet
         if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 1000 || amount > Number.MAX_SAFE_INTEGER) return unavailable('Enter a withdrawal amount of at least ₦1,000.');
         if (typeof transactionPin !== 'string' || !/^\d{4}$/.test(transactionPin)) return unavailable('Enter your 4-digit transaction PIN.');
         if (typeof idempotencyKey !== 'string' || !/^[a-zA-Z0-9_-]{8,128}$/.test(idempotencyKey)) return unavailable('The withdrawal request could not be identified. Please reopen the form.');
+        const accessResult = await baseQuery('/team/me');
+        if (accessResult.error) return accessResult;
+        const access = unwrapApiResponseData(accessResult.data);
+        const permitted = access?.isOwner === true || (Array.isArray(access?.permissions) && access.permissions.includes('finance.withdraw'));
+        if (access?.companyId !== api.getState().auth.account?.id || !permitted) return unavailable('You need finance.withdraw permission to request a payout.');
         const result = await baseQuery({ url: '/wallets/withdraw', method: 'POST', headers: { 'x-idempotency-key': idempotencyKey }, body: { amount, transactionPin } });
         if (result.error) return result;
         const mapped = withdrawalResultView(unwrapApiResponseData(result.data), amount);

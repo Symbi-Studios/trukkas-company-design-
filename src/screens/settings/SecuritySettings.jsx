@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Badge, Banner, Button, ChoiceCard, EmptyState, Icon, Modal, SectionCard, SkeletonRow, Switch, TextField } from '../../ds.js';
 import { useGetOnboardingSecurityQuery } from '../../store/features/auth/onboardingApi.js';
 import {
   useChangeSettingsPasswordMutation, useGetSettingsSessionsQuery, useSetupSettingsTwoFactorMutation,
   useEnableSettingsTwoFactorMutation, useDisableSettingsTwoFactorMutation, useRegenerateSettingsBackupCodesMutation,
-  useUpdateSettingsSignInAlertsMutation, useRevokeSettingsSessionMutation,
+  useUpdateSettingsSignInAlertsMutation, useRevokeSettingsSessionMutation, useGetSettingsNotificationsQuery,
 } from '../../store/features/settings/settingsApi.js';
 import { useGetMyProfileAccessQuery } from '../../store/features/profile/profileApi.js';
 import { getApiErrorMessage } from '../../store/api/getApiErrorMessage.js';
@@ -83,6 +83,7 @@ function TwoFactorSetupModal({ open, onClose, email, onEnabled, canEdit }) {
   const [codes, setCodes] = useState([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const setupPending = useRef(false);
   const [beginSetup, { reset: resetSetup }] = useSetupSettingsTwoFactorMutation();
   const [enableTwoFactor, { reset: resetEnable }] = useEnableSettingsTwoFactorMutation();
 
@@ -91,30 +92,32 @@ function TwoFactorSetupModal({ open, onClose, email, onEnabled, canEdit }) {
     resetSetup(); resetEnable();
   }
   async function next() {
-    if (busy || !canEdit) return;
+    if (setupPending.current || !canEdit) return;
+    setupPending.current = true;
     setBusy(true); setError('');
     try {
       const result = await beginSetup().unwrap();
       setSecret(result.secret); setOtpauthUrl(result.otpauthUrl); setStage('verify');
     } catch (err) { setError(getApiErrorMessage(err)); }
-    finally { resetSetup(); setBusy(false); }
+    finally { resetSetup(); setupPending.current = false; setBusy(false); }
   }
   async function verify(value = code) {
-    if (busy || !/^\d{6}$/.test(value)) return;
+    if (setupPending.current || !canEdit || !/^\d{6}$/.test(value)) return;
+    setupPending.current = true;
     setBusy(true); setError('');
     try {
       const result = await enableTwoFactor({ code: value }).unwrap();
       setCodes(result.backupCodes); setStage('codes');
     } catch (err) { setError(getApiErrorMessage(err)); setCode(''); }
-    finally { resetEnable(); setBusy(false); }
+    finally { resetEnable(); setupPending.current = false; setBusy(false); }
   }
-  const close = () => { if (stage === 'codes') onEnabled(); reset(); onClose(); };
+  const close = () => { if (setupPending.current) return; if (stage === 'codes') onEnabled(); reset(); onClose(); };
 
   return (
     <Modal open={open} onClose={close} width={540} title="Set Up Two-Factor Authentication"
       description={stage === 'codes' ? 'Save these backup codes somewhere safe.' : 'Add a second step when you sign in.'}
       footer={
-        stage === 'choose' ? <><Button variant="outline" onClick={close}>Cancel</Button><Button iconRight="arrow-right" onClick={next} disabled={!canEdit || busy}>Continue</Button></>
+        stage === 'choose' ? <><Button variant="outline" disabled={busy} onClick={close}>Cancel</Button><Button iconRight="arrow-right" onClick={next} disabled={!canEdit || busy}>Continue</Button></>
           : stage === 'verify' ? <><Button variant="outline" onClick={() => setStage('choose')} disabled={busy}>Back</Button><Button disabled={busy || code.length !== 6} onClick={() => verify()}>{busy ? 'Verifying…' : 'Verify & Enable'}</Button></>
             : <Button onClick={close}>I’ve saved my codes</Button>
       }>
@@ -160,6 +163,7 @@ function TwoFactorCard({ security, email, canEdit, onToast }) {
   const [proof, setProof] = useState('');
   const [newCodes, setNewCodes] = useState([]);
   const [error, setError] = useState('');
+  const proofPending = useRef(false);
   const [disableTwoFactor, { isLoading: disabling }] = useDisableSettingsTwoFactorMutation();
   const [regenerateCodes, { isLoading: regenerating, reset: resetRegenerate }] = useRegenerateSettingsBackupCodesMutation();
   const remaining = tf.backupCodesRemaining ?? '—';
@@ -173,7 +177,8 @@ function TwoFactorCard({ security, email, canEdit, onToast }) {
     setProofOpen(false); setPassword(''); setProof(''); setError(''); resetRegenerate();
   }
   async function confirmProof() {
-    if (busy || !canEdit || !password || !validProof) return;
+    if (proofPending.current || !canEdit || !password || !validProof) return;
+    proofPending.current = true;
     setError('');
     const values = /^\d{6}$/.test(proof) ? { code: proof } : { backupCode: proof.trim().toUpperCase() };
     try {
@@ -186,6 +191,7 @@ function TwoFactorCard({ security, email, canEdit, onToast }) {
         onToast('New backup codes generated. Old codes no longer work.');
       }
     } catch (err) { setError(getApiErrorMessage(err)); }
+    finally { proofPending.current = false; }
   }
   function closeCodes() { setCodesOpen(false); setNewCodes([]); }
 
@@ -214,7 +220,7 @@ function TwoFactorCard({ security, email, canEdit, onToast }) {
         </div>
       )}
       <TwoFactorSetupModal open={setupOpen} onClose={() => setSetupOpen(false)} email={email} canEdit={canEdit} onEnabled={() => onToast('Two-factor authentication enabled.')} />
-      <Modal open={proofOpen} onClose={() => { if (!busy) closeProof(); }} width={420}
+      <Modal open={proofOpen} onClose={() => { if (!proofPending.current) closeProof(); }} width={420}
         title={proofAction === 'disable' ? 'Turn off 2FA?' : 'Regenerate backup codes'}
         description={proofAction === 'disable' ? 'Confirm with your password and an authenticator or backup code.' : 'Confirm with your password and an authenticator or backup code. Old backup codes will stop working.'}
         footer={<><Button variant="outline" disabled={busy} onClick={closeProof}>Cancel</Button><Button variant={proofAction === 'disable' ? 'danger' : 'primary'} disabled={!canEdit || busy || !password || !validProof} onClick={confirmProof}>{busy ? 'Saving…' : proofAction === 'disable' ? 'Turn Off 2FA' : 'Regenerate Codes'}</Button></>}>
@@ -233,10 +239,13 @@ function TwoFactorCard({ security, email, canEdit, onToast }) {
 export function SecuritySettings({ onToast }) {
   const account = useSelector((state) => state.auth.account);
   const { currentData: data, error, isLoading } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: preferences, error: preferencesError } = useGetSettingsNotificationsQuery(undefined, { refetchOnMountOrArgChange: true });
   const { currentData: sessions, error: sessionsError, isLoading: sessionsLoading } = useGetSettingsSessionsQuery(undefined, { refetchOnMountOrArgChange: true });
   const { currentData: access, error: accessError } = useGetMyProfileAccessQuery();
   const [updateSignInAlerts, { isLoading: updatingAlerts }] = useUpdateSettingsSignInAlertsMutation();
   const [revokeSession, { isLoading: revokingSession }] = useRevokeSettingsSessionMutation();
+  const alertsPending = useRef(false);
+  const sessionPending = useRef(false);
   const canEdit = !accessError && access?.canEdit === true;
   const security = {
     passwordUpdatedOn: !error ? data?.passwordUpdatedOn ?? '—' : '—',
@@ -247,17 +256,23 @@ export function SecuritySettings({ onToast }) {
       backupCodesRemaining: !error ? data?.twoFactor?.backupCodesRemaining ?? null : null,
       enabledOn: !error ? data?.twoFactor?.enabledOn ?? '—' : '—',
     },
-    loginAlerts: !error ? data?.loginAlerts ?? null : null,
+    loginAlerts: !preferencesError ? preferences?.loginAlerts ?? null : null,
     sessions: !sessionsError ? sessions ?? [] : [],
   };
   const others = security.sessions.filter((s) => s.current === false);
   async function changeSignInAlerts(enabled) {
+    if (alertsPending.current || !canEdit || security.loginAlerts === null) return;
+    alertsPending.current = true;
     try { await updateSignInAlerts({ enabled }).unwrap(); onToast(enabled ? 'Sign-in alerts on.' : 'Sign-in alerts off.'); }
     catch (err) { onToast(getApiErrorMessage(err)); }
+    finally { alertsPending.current = false; }
   }
   async function endSession(id) {
+    if (sessionPending.current || !canEdit || !security.sessions.some((session) => session.id === id && session.current === false)) return;
+    sessionPending.current = true;
     try { await revokeSession({ id }).unwrap(); onToast('Session signed out.'); }
     catch (err) { onToast(getApiErrorMessage(err)); }
+    finally { sessionPending.current = false; }
   }
 
   if (isLoading) return <>
@@ -269,9 +284,9 @@ export function SecuritySettings({ onToast }) {
 
   return (
     <>
-      {error && <EmptyState icon="shield-check" title={getApiErrorMessage(error)} />}
+      {(error || preferencesError) && <EmptyState icon="shield-check" title={getApiErrorMessage(error || preferencesError)} />}
       <PasswordCard email={account?.email} updatedOn={security.passwordUpdatedOn} canEdit={!accessError && access?.canEdit === true} onToast={onToast} />
-      <TwoFactorCard security={security} email={account?.email} canEdit={canEdit} onToast={onToast} />
+      <TwoFactorCard security={security} email={account?.email} canEdit={canEdit && access?.isOwner === true} onToast={onToast} />
       <SectionCard title="Sign-in Alerts">
         <Switch label="Email me about new sign-ins" hint="Get an alert when your account is used from a new device or location." checked={security.loginAlerts} disabled={!canEdit || updatingAlerts || security.loginAlerts === null} onChange={changeSignInAlerts} />
       </SectionCard>
@@ -282,7 +297,7 @@ export function SecuritySettings({ onToast }) {
           <div key={s.id} className={styles.row}>
             <span className={styles.iconTile} data-tone="neutral"><Icon name={/iphone|ios|android/i.test(s.device) ? 'smartphone' : 'monitor'} size={18} /></span>
             <span className={styles.rowMain}><strong>{s.device}{s.current && <Badge tone="success" style={{ marginLeft: 8 }}>This device</Badge>}</strong><small>{s.location} · {s.ip} · {s.lastActive}</small></span>
-            {!s.current && <Button size="sm" variant="outline" disabled={revokingSession} onClick={() => endSession(s.id)}>Sign Out</Button>}
+            {!s.current && <Button size="sm" variant="outline" disabled={!canEdit || revokingSession || s.current !== false} onClick={() => endSession(s.id)}>Sign Out</Button>}
           </div>
         ))}
       </SectionCard>

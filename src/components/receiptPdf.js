@@ -1,6 +1,8 @@
 // Minimal single-page PDF writer for receipts, so downloads work in the static
 // client build without adding a PDF dependency. Uses the standard Helvetica
 // fonts (WinAnsi), so text is normalised to plain ASCII: "₦" becomes "NGN".
+import { receiptLogo } from './receiptLogo.js';
+
 const PAGE_W = 595;
 const PAGE_H = 842;
 const MARGIN = 48;
@@ -60,10 +62,12 @@ export function receiptPdfBlob(receipt) {
 
   const right = PAGE_W - MARGIN;
   rect(0, PAGE_H - 110, PAGE_W, 110, '#0B1B3F');
-  text(MARGIN, PAGE_H - 58, 'TRUKKAS', { size: 22, bold: true, fill: '#FFFFFF' });
-  text(MARGIN, PAGE_H - 78, 'Move. Earn. Grow.', { size: 9, fill: '#C7D2FE' });
-  text(right, PAGE_H - 56, receipt.kind, { size: 16, bold: true, fill: '#FFFFFF', align: 'right' });
-  text(right, PAGE_H - 76, `No. ${receipt.number}`, { size: 10, fill: '#C7D2FE', align: 'right' });
+  // Clip the mark to a rounded tile, matching the on-screen lockup.
+  ops.push(`q 44 0 0 44 ${MARGIN} ${PAGE_H - 82} cm 0.22 0 m 0.78 0 l 0.902 0 1 0.098 1 0.22 c 1 0.78 l 1 0.902 0.902 1 0.78 1 c 0.22 1 l 0.098 1 0 0.902 0 0.78 c 0 0.22 l 0 0.098 0.098 0 0.22 0 c h W n /TrukkasLogo Do Q`);
+  text(MARGIN + 56, PAGE_H - 58, 'Trukkas', { size: 22, bold: true, fill: '#FFFFFF' });
+  text(MARGIN + 56, PAGE_H - 78, 'Move. Earn. Grow.', { size: 9, fill: '#C7D2FE' });
+  text(right, PAGE_H - 56, receipt.kind, { size: 16, bold: true, fill: '#FFFFFF', align: 'right', maxWidth: 250 });
+  text(right, PAGE_H - 76, `No. ${receipt.number}`, { size: 10, fill: '#C7D2FE', align: 'right', maxWidth: 250 });
 
   let y = PAGE_H - 150;
   text(MARGIN, y, 'ISSUED TO', { size: 8, bold: true, fill: '#64748B' });
@@ -107,10 +111,11 @@ export function receiptPdfBlob(receipt) {
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>`,
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> /XObject << /TrukkasLogo 7 0 R >> >> /Contents 6 0 R >>`,
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
     `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    `<< /Type /XObject /Subtype /Image /Width ${receiptLogo.width} /Height ${receiptLogo.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter [/ASCIIHexDecode /FlateDecode] /Length ${receiptLogo.hex.length} >>\nstream\n${receiptLogo.hex}\nendstream`,
   ];
   let pdf = '%PDF-1.4\n';
   const offsets = objects.map((body, i) => {

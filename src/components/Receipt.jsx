@@ -1,4 +1,4 @@
-import { Badge, Button, Modal } from '../ds.js';
+import { Badge, Button, EmptyState, Logo, Modal, SkeletonRow } from '../ds.js';
 import { formatNaira } from '../mock/format.js';
 import { downloadReceiptPdf } from './receiptPdf.js';
 import styles from './Receipt.module.css';
@@ -11,7 +11,7 @@ export function ReceiptView({ receipt }) {
   return (
     <article className={styles.sheet} aria-label={`${receipt.kind} ${receipt.number}`}>
       <header className={styles.head}>
-        <span><strong>TRUKKAS</strong><small>Move. Earn. Grow.</small></span>
+        <div className={styles.brand}><Logo size={44} onDark /></div>
         <span className={styles.kind}><strong>{receipt.kind}</strong><small>No. {receipt.number}</small></span>
       </header>
       <div className={styles.parties}>
@@ -49,14 +49,18 @@ export function ReceiptView({ receipt }) {
   );
 }
 
-export function ReceiptModal({ receipt, open, onClose }) {
-  if (!receipt) return null;
+export function ReceiptModal({ receipt, open, onClose, loading = false, error, onRetry, title = 'Receipt', description }) {
+  const ready = !loading && !error && !!receipt;
   return (
     <Modal
-      open={open} onClose={onClose} width={720} title={receipt.kind} description={receipt.number}
-      footer={<><Button variant="outline" onClick={onClose}>Close</Button><Button icon="download" onClick={() => downloadReceiptPdf(receipt)}>Download PDF</Button></>}
+      open={open} onClose={onClose} width={720} title={ready ? receipt.kind : title} description={ready ? receipt.number : description}
+      footer={<><Button variant="outline" onClick={onClose}>Close</Button><Button icon="download" disabled={!ready} onClick={() => downloadReceiptPdf(receipt)}>Download PDF</Button></>}
     >
-      <ReceiptView receipt={receipt} />
+      {loading ? <>
+        <p className="tk-meta" role="status">Loading receipt…</p>
+        <SkeletonRow variant="detail" />
+      </> : error || !receipt ? <EmptyState icon="receipt" title={error || 'This receipt is currently unavailable.'}
+        action={onRetry && <Button variant="outline" onClick={onRetry}>Try again</Button>} /> : <ReceiptView receipt={receipt} />}
     </Modal>
   );
 }

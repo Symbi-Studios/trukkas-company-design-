@@ -7,11 +7,11 @@ import { Badge, Button, Card, DataTable, EmptyState, IconButton, PageHeader, Ske
 import { jobTitle } from '../domain/jobs.js';
 import { jobDetailHref } from '../domain/jobLinks.js';
 import { ReceiptModal } from '../components/Receipt.jsx';
+import { PayoutReceiptModal } from '../components/PayoutReceiptModal.jsx';
 import { EarningsExpensesChart } from '../components/EarningsExpensesChart.jsx';
 import { useGetCompanyWalletQuery, useGetWalletEarningsQuery, useGetWalletJobsQuery, useGetWalletTransactionsQuery } from '../store/features/wallet/walletApi.js';
 import { EMPTY_WALLET, EMPTY_WALLET_EARNINGS, walletJobReceipt } from '../store/features/wallet/walletContracts.js';
 import { useGetOnboardingBankQuery } from '../store/features/auth/onboardingApi.js';
-import { useLazyGetPayoutRecordQuery } from '../store/features/payouts/payoutsApi.js';
 import { WalletWithdrawModal, useWalletWithdrawalAttempt } from '../components/WalletWithdrawModal.jsx';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { Toast, useToast } from '../components/Toast.jsx';
@@ -28,7 +28,7 @@ export function EarningsWallet() {
   const { currentData: bank, error: bankError, isLoading: bankLoading } = useGetOnboardingBankQuery(undefined, { refetchOnMountOrArgChange: true });
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [receipt, setReceipt] = useState(null);
-  const [getPayoutReceipt, { isFetching: receiptLoading }] = useLazyGetPayoutRecordQuery();
+  const [payoutReceiptId, setPayoutReceiptId] = useState(null);
   const navigate = useNavigate();
   const company = useSelector((state) => state.auth.account);
   const withdrawalAttempt = useWalletWithdrawalAttempt(company?.id, company?.actualUserId);
@@ -40,11 +40,6 @@ export function EarningsWallet() {
   const visibleJobRows = (jobData?.rows ?? []).filter(({ job }) => matches(job.id, job.number, jobTitle(job), job.poster.name));
   const visibleTransactions = (transactions ?? []).filter((t) => matches(t.id, t.reference, t.desc, t.date, t.type, t.status, t.jobNumber));
   const metric = (loading, value) => loading ? <Skeleton width={100} height={28} /> : money(value);
-  async function openPayoutReceipt(id) {
-    if (receiptLoading) return;
-    try { const result = await getPayoutReceipt(id).unwrap(); setReceipt(result.receipt); }
-    catch (err) { showToast(getApiErrorMessage(err)); }
-  }
 
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
@@ -92,12 +87,13 @@ export function EarningsWallet() {
             { key: 'amount', header: 'Amount', align: 'right', render: (t) => <strong style={{ color: t.amount !== null && t.amount >= 0 ? 'var(--tk-success)' : 'var(--tk-ink-900)' }}>{money(t.amount)}</strong> },
             { key: 'balance', header: 'Balance After', align: 'right', render: (t) => money(t.balanceAfter) },
             { key: 'status', header: 'Status', render: (t) => <Badge tone={t.status === 'Completed' ? 'success' : 'info'}>{t.status}</Badge> },
-            { key: 'receipt', header: 'Receipt', align: 'center', width: 80, render: (t) => t.receiptId ? <IconButton icon="receipt" tone="outline" size={30} disabled={receiptLoading} label={`Receipt for ${t.receiptId}`} onClick={() => openPayoutReceipt(t.receiptId)} /> : <span className="tk-meta">—</span> },
+            { key: 'receipt', header: 'Receipt', align: 'center', width: 80, render: (t) => t.receiptId ? <IconButton icon="receipt" tone="outline" size={30} label={`Receipt for ${t.receiptId}`} onClick={() => setPayoutReceiptId(t.receiptId)} /> : <span className="tk-meta">—</span> },
           ]}
         />}
         {!transactionsLoading && !transactionsError && q && visibleTransactions.length === 0 && <p className="tk-meta" style={{ margin: 0, padding: 16 }}>No transactions match your search.</p>}
       </Card>
       <ReceiptModal receipt={receipt} open={!!receipt} onClose={() => setReceipt(null)} />
+      {payoutReceiptId && <PayoutReceiptModal key={payoutReceiptId} id={payoutReceiptId} onClose={() => setPayoutReceiptId(null)} />}
       {withdrawOpen && <WalletWithdrawModal onClose={() => setWithdrawOpen(false)} onDone={(result) => { setWithdrawOpen(false); showToast(`${result.reference}: withdrawal request submitted. Awaiting approval.`); }} available={walletError ? null : wallet.available} bank={bankError ? undefined : bank} attempt={withdrawalAttempt} companyId={company?.id} />}
       <Toast message={toast} />
     </div>

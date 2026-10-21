@@ -60,7 +60,11 @@ export const payoutsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyPayou
             const source = unwrapApiResponseData(result.data)?.transaction;
             const detail = source?.id === record.id ? payoutRecord(source) : null;
             if (!detail || detail.type !== 'WITHDRAWAL') return unavailable('The API did not identify this withdrawal.');
-            return { data: { ...record, paidTo: detail.paidTo, requestedOn: detail.requestedOn, paidOn: detail.paidOn, feePercent: detail.feePercent } };
+            // Don't combine newer receipt fields with an older approval status.
+            if (detail.status !== record.status) return { data: record };
+            return { data: { ...record, paidTo: detail.paidTo,
+              requestedOn: detail.requestedOn === '—' ? record.requestedOn : detail.requestedOn,
+              paidOn: record.paidOn ?? detail.paidOn, feePercent: detail.feePercent } };
           }));
           for (let index = 0; index < loaded.length; index += 1) {
             if (loaded[index].error) return loaded[index];
@@ -83,8 +87,28 @@ export const payoutsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyPayou
         if (unwrapApiResponseData(wallet.data)?.wallet?.currency !== 'NGN') return unavailable('The API did not confirm the currency of this payout.');
         const source = unwrapApiResponseData(result.data)?.transaction;
         if (source?.id !== id) return unavailable('The API did not identify this payout.');
-        const payout = payoutRecord(source);
+        let payout = payoutRecord(source);
         if (!payout) return unavailable('This transaction is not a company job payment or withdrawal.');
+        if (payout.type !== 'WITHDRAWAL') {
+          // Company payouts documents the job release date and net amount.
+          // Match the exact transaction ID, even when references aren't unique.
+          let pages = 1, matched = null;
+          for (let page = 1; page <= pages && !matched; page += 1) {
+            if (api.signal.aborted) return unavailable('The payout request was cancelled.');
+            const result = await baseQuery({ url: '/company/payouts', params: {
+              kind: 'JOB_PAYMENT', page, limit: 100,
+              ...(text(source.reference) && source.reference.length <= 100 ? { search: source.reference } : {}),
+            } });
+            if (result.error) return result;
+            const data = unwrapApiResponseData(result.data), items = rows(data?.payouts), pagination = data?.pagination;
+            if (!items || pagination?.page !== page || !count(pagination.totalPages) || pagination.totalPages > 500) return unavailable('The API did not confirm this job payment.');
+            pages = pagination.totalPages;
+            const candidate = items.find((row) => row.id === id);
+            if (candidate) matched = companyPayoutRecord(candidate);
+          }
+          if (!matched || matched.type !== 'JOB_PAYMENT' || matched.jobId !== payout.jobId) return unavailable('The API did not identify the company job payment for this receipt.');
+          payout = matched;
+        }
         const jobId = payout.items[0]?.jobId;
         const [companyResult, tripResult] = await Promise.all([
           baseQuery('/profile'), jobId ? baseQuery(`/company/trips/${encodeURIComponent(jobId)}`) : Promise.resolve({ data: null }),

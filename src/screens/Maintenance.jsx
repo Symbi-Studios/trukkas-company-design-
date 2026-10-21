@@ -19,8 +19,9 @@ const STATUS_TONE = { Completed: 'success', Upcoming: 'info', Requested: 'info',
 export function Maintenance() {
   const navigate = useNavigate();
   const { currentData: maintenanceData, error, isLoading } = useGetFleetMaintenanceQuery(undefined, { refetchOnMountOrArgChange: true });
-  const maintenance = maintenanceData?.records;
-  const { currentData: trucks = [], error: trucksError, isLoading: trucksLoading } = useGetFleetQuery(undefined, { refetchOnMountOrArgChange: true });
+  const maintenance = error ? undefined : maintenanceData?.records;
+  const { currentData: fleet, error: trucksError, isLoading: trucksLoading } = useGetFleetQuery(undefined, { refetchOnMountOrArgChange: true });
+  const trucks = trucksError ? [] : fleet ?? [];
   const records = maintenance ?? [];
   const [completeMaintenance] = useCompleteFleetMaintenanceMutation();
   const [busyRecord, setBusyRecord] = useState(null);
@@ -31,7 +32,7 @@ export function Maintenance() {
     if (completing.current) return;
     if (!record.canComplete) { showToast('Only scheduled or in-progress maintenance can be completed.'); return; }
     completing.current = true; setBusyRecord(record.id);
-    try { await completeMaintenance(record.id).unwrap(); }
+    try { await completeMaintenance({ id: record.id, truckId: record.truckId }).unwrap(); }
     catch (err) { showToast(getApiErrorMessage(err)); }
     finally { completing.current = false; setBusyRecord(null); }
   }

@@ -5,6 +5,7 @@ import { useGetWithdrawalFeeQuery, useRequestWalletWithdrawalMutation } from '..
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { formatNaira } from '../mock/format.js';
 import { PinPrompt } from './SecurityInputs.jsx';
+import { useGetMyProfileAccessQuery } from '../store/features/profile/profileApi.js';
 
 const money = (value) => typeof value === 'number' && Number.isFinite(value) ? formatNaira(value) : '—';
 const withdrawalAttempts = new Map();
@@ -26,15 +27,18 @@ export function WalletWithdrawModal({ onClose, onDone, available, bank, attempt,
   const { currentData: security, error: securityError, isFetching: securityLoading } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
   const [savePin] = useSaveOnboardingPinMutation();
   const [requestWithdrawal] = useRequestWalletWithdrawalMutation();
+  const { currentData: access, error: accessError } = useGetMyProfileAccessQuery(undefined, { refetchOnMountOrArgChange: true });
+  const canWithdraw = !accessError && access?.companyId === companyId && access?.canWithdraw === true;
   const value = Number(amount);
   const bankKey = bank ? JSON.stringify([bank.bankCode, bank.bankName, bank.last4, bank.accountName]) : null;
   const retrying = attempt.current?.companyId === companyId && attempt.current.amount === value && attempt.current.bankKey === bankKey;
   const validAmount = Number.isFinite(value) && value >= 1000 && value <= Number.MAX_SAFE_INTEGER && (retrying || (typeof available === 'number' && value <= available));
   const { currentData: fee, error: feeError, isFetching: feeLoading } = useGetWithdrawalFeeQuery(value, { skip: step === 'amount' || !validAmount, refetchOnMountOrArgChange: true });
-  const ready = validAmount && bank && fee && !feeError && !feeLoading && !securityError && !securityLoading && typeof security?.pin?.set === 'boolean';
+  const ready = canWithdraw && validAmount && bank && fee && !feeError && !feeLoading && !securityError && !securityLoading && typeof security?.pin?.set === 'boolean';
   function submit(event) {
     event.preventDefault();
     setError('');
+    if (!canWithdraw) { setError('You need finance.withdraw permission to request a payout.'); return; }
     if (!Number.isFinite(value) || value < 1000 || value > Number.MAX_SAFE_INTEGER) { setError('Enter a withdrawal amount of at least ₦1,000.'); return; }
     if (attempt.current && !retrying) { setError('Retry the previous withdrawal amount and bank account before starting another request.'); return; }
     if (!retrying && (typeof available !== 'number' || !Number.isFinite(available))) { setError('Your available balance could not be confirmed. Please reload.'); return; }
@@ -47,6 +51,7 @@ export function WalletWithdrawModal({ onClose, onDone, available, bank, attempt,
     catch (err) { throw new Error(getApiErrorMessage(err)); }
   }
   async function withdraw(pin) {
+    if (!canWithdraw) throw new Error('You need finance.withdraw permission to request a payout.');
     if (!validAmount || !bank || !fee || feeError || feeLoading) throw new Error('Confirm the withdrawal amount, bank account and fee again.');
     if (attempt.current && !retrying) throw new Error('Retry the previous withdrawal before starting another request.');
     if (attempt.current && Date.now() - attempt.current.startedAt >= 24 * 60 * 60 * 1000) throw new Error('This request is too old to retry safely. Check its status in transaction history before starting another withdrawal.');

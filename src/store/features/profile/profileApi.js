@@ -168,6 +168,7 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
           roleDescription: text(role?.description) ?? '—',
           canEdit: me.isOwner || (permissions === null ? null : permissions.includes('settings.edit')),
           canManageBank: me.isOwner || (permissions === null ? null : permissions.includes('finance.withdraw')),
+          canWithdraw: me.isOwner || (permissions === null ? null : permissions.includes('finance.withdraw')),
           groups,
         } };
       },

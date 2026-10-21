@@ -9,6 +9,26 @@ const changedTags = ['CompanyFleet', 'CompanyJobs', 'CompanyTrips', 'CompanyTrip
 const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 const maintenanceCost = (value) => value === '' || value === undefined || value === null ? null
   : typeof value === 'number' || typeof value === 'string' && value.trim() ? Number(value) : NaN;
+const maintenanceAccess = (api) => {
+  const account = api.getState().auth.account;
+  return account?.apiRole === 'TRUCKER' && account?.truckerType === 'COMPANY'
+    ? null : unavailable('Sign in with your trucking-company account to manage maintenance.');
+};
+function maintenanceQuery(api, baseQuery) {
+  const identity = () => {
+    const { account, activeCompanyId } = api.getState().auth;
+    return JSON.stringify([account?.id, account?.actualUserId, activeCompanyId]);
+  };
+  const company = identity();
+  return async (args) => {
+    if (api.signal.aborted) return unavailable('The maintenance request was cancelled.');
+    const blocked = maintenanceAccess(api);
+    if (blocked) return blocked;
+    if (identity() !== company) return changedSession();
+    const result = await baseQuery(args);
+    return identity() === company ? result : changedSession();
+  };
+}
 const validFile = (file, photo = false) => typeof File !== 'undefined' && file instanceof File && file.size > 0 && file.size <= (photo ? 5 : 10) * 1024 * 1024 && (photo ? ['image/jpeg', 'image/png', 'image/webp'] : ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']).includes(file.type);
 
 async function uploadDocument(baseQuery, truckId, { type, file, expiryDate, name }) {
@@ -355,7 +375,9 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
     }),
     getFleetMaintenance: builder.query({
       async queryFn(truckId, api, _options, baseQuery) {
-        const blocked = signedIn(api); if (blocked) return blocked;
+        const blocked = maintenanceAccess(api); if (blocked) return blocked;
+        baseQuery = maintenanceQuery(api, baseQuery);
+        if (truckId !== undefined && !text(truckId)) return unavailable('This vehicle has no API ID.');
         let nextDue = null;
         const result = await allPages(baseQuery, api, '/maintenance', 'maintenance', text(truckId) ? { truckId } : {}, (data, page) => {
           if (page === 1) nextDue = maintenanceDueView(data.nextDue);
@@ -369,8 +391,8 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
     }),
     requestFleetMaintenance: builder.mutation({
       async queryFn({ truckId, serviceType, description, date, estimatedCost }, api, _options, baseQuery) {
-        const blocked = signedIn(api); if (blocked) return blocked;
-        const account = api.getState().auth.account;
+        const blocked = maintenanceAccess(api); if (blocked) return blocked;
+        baseQuery = maintenanceQuery(api, baseQuery);
         const type = maintenanceTypeToWire(serviceType);
         if (!text(truckId)) return unavailable('Select a vehicle.');
         if (!['PREVENTIVE', 'REPAIR', 'INSPECTION', 'BREAKDOWN'].includes(type)) return unavailable('Use PREVENTIVE, REPAIR, INSPECTION or BREAKDOWN as the service type.');
@@ -380,7 +402,6 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
         const cost = maintenanceCost(estimatedCost);
         if (cost !== null && (!Number.isFinite(cost) || cost < 0)) return unavailable('Enter a valid estimated cost.');
         const result = await baseQuery({ url: '/maintenance', method: 'POST', body: { truckId, type, description: description.trim(), dueDate: date, ...(cost === null ? {} : { estimatedCost: cost }) } });
-        if (api.getState().auth.account !== account) return changedSession();
         if (result.error) return result;
         const saved = unwrapApiResponseData(result.data)?.maintenance;
         return text(saved?.id) && saved.truck?.id === truckId && saved.status === 'REQUESTED' && saved.type === type && saved.description === description.trim() && maintenanceView(saved).dateInput === date && (cost === null || saved.currency === 'NGN' && saved.estimatedCost === cost)
@@ -389,20 +410,18 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
       invalidatesTags: changedTags,
     }),
     completeFleetMaintenance: builder.mutation({
-      async queryFn(id, api, _options, baseQuery) {
-        const blocked = signedIn(api); if (blocked) return blocked;
-        const account = api.getState().auth.account;
+      async queryFn({ id, truckId }, api, _options, baseQuery) {
+        const blocked = maintenanceAccess(api); if (blocked) return blocked;
+        baseQuery = maintenanceQuery(api, baseQuery);
         if (!text(id)) return unavailable('This maintenance record has no API ID.');
+        if (!text(truckId)) return unavailable('Reload the vehicle before updating maintenance.');
         const current = await baseQuery(`/maintenance/${encodeURIComponent(id)}`);
-        if (api.getState().auth.account !== account) return changedSession();
         if (current.error) return current;
         const record = unwrapApiResponseData(current.data);
-        if (record?.id !== id || !text(record.truck?.id) || !maintenanceView(record)?.canComplete) return unavailable('Only scheduled or in-progress maintenance can be completed. Reload the records.');
+        if (record?.id !== id || record.truck?.id !== truckId || !maintenanceView(record)?.canComplete) return unavailable('Only scheduled or in-progress maintenance can be completed. Reload the records.');
         const result = await baseQuery({ url: `/maintenance/${encodeURIComponent(id)}/complete`, method: 'POST' });
-        if (api.getState().auth.account !== account) return changedSession();
         if (result.error) return result;
         const confirmed = await baseQuery(`/maintenance/${encodeURIComponent(id)}`);
-        if (api.getState().auth.account !== account) return changedSession();
         if (confirmed.error) return unavailable('Completion could not be confirmed. Reload the records before trying again.');
         const saved = unwrapApiResponseData(confirmed.data);
         return saved?.id === id && saved.truck?.id === record.truck.id && saved.status === 'COMPLETED' ? { data: maintenanceView(saved) } : unavailable('The API did not confirm completion. Reload the records.');
@@ -410,21 +429,20 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
       invalidatesTags: changedTags,
     }),
     updateFleetMaintenance: builder.mutation({
-      async queryFn({ id, serviceType, description, date, estimatedCost }, api, _options, baseQuery) {
-        const blocked = signedIn(api); if (blocked) return blocked;
-        const account = api.getState().auth.account;
+      async queryFn({ id, truckId, serviceType, description, date, estimatedCost }, api, _options, baseQuery) {
+        const blocked = maintenanceAccess(api); if (blocked) return blocked;
+        baseQuery = maintenanceQuery(api, baseQuery);
         if (!text(id)) return unavailable('This maintenance record has no API ID.');
+        if (!text(truckId)) return unavailable('Reload the vehicle before updating maintenance.');
         const type = maintenanceTypeToWire(serviceType);
         if (!type || !text(description) || description.trim().length > 1000 || !validDate(date)) return unavailable('Choose a service type, a description of up to 1000 characters and a valid scheduled date.');
         const cost = maintenanceCost(estimatedCost);
         if (cost !== null && (!Number.isFinite(cost) || cost < 0)) return unavailable('Enter a valid estimated cost.');
         const current = await baseQuery(`/maintenance/${encodeURIComponent(id)}`);
-        if (api.getState().auth.account !== account) return changedSession();
         if (current.error) return current;
         const record = unwrapApiResponseData(current.data);
-        if (record?.id !== id || !text(record.truck?.id) || !maintenanceView(record)?.canEdit) return unavailable('Only requested or scheduled maintenance can be edited. Reload the records.');
+        if (record?.id !== id || record.truck?.id !== truckId || !maintenanceView(record)?.canEdit) return unavailable('Only requested or scheduled maintenance can be edited. Reload the records.');
         const result = await baseQuery({ url: `/maintenance/${encodeURIComponent(id)}`, method: 'PATCH', body: { type, description: description.trim(), dueDate: date, estimatedCost: cost } });
-        if (api.getState().auth.account !== account) return changedSession();
         if (result.error) return result;
         const saved = unwrapApiResponseData(result.data)?.maintenance;
         return saved?.id === id && saved.truck?.id === record.truck?.id && saved.type === type && saved.description === description.trim() && maintenanceView(saved).dateInput === date && (cost === null ? saved.estimatedCost === null : saved.currency === 'NGN' && saved.estimatedCost === cost)

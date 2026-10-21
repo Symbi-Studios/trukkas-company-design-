@@ -306,7 +306,7 @@ export function JobDetail({ apiJobId } = {}) {
   const { currentData: job, error, isFetching } = useGetJobDetailQuery(jobId, { skip: !jobId, refetchOnMountOrArgChange: true });
   const marketplaceJob = job && isMarketplaceJob(job);
   const { data: availableJobs } = useGetAvailableJobsQuery(undefined, { skip: !marketplaceJob });
-  const { data: earnings = null, error: earningsError, isLoading: earningsLoading } = useGetJobEarningsQuery(job, { skip: !job || !!marketplaceJob });
+  const { currentData: earnings = null, error: earningsError, isLoading: earningsLoading, isFetching: earningsFetching, refetch: refetchEarnings } = useGetJobEarningsQuery(job, { skip: !job || !!marketplaceJob });
   const { data: allTrips, error: tripsError, isLoading: tripsLoading } = useGetCompanyTripsQuery(undefined, { skip: !job || !!marketplaceJob });
   const [sendMessage] = useSendJobMessageMutation();
   const [setSavedJob] = useSetSavedJobMutation();
@@ -618,7 +618,9 @@ export function JobDetail({ apiJobId } = {}) {
         }}
       />
       <CompanyModal poster={poster} open={companyOpen} onClose={() => setCompanyOpen(false)} />
-      <ReceiptModal receipt={receiptOpen ? receiptView(job, earnings, company) : null} open={receiptOpen} onClose={() => setReceiptOpen(false)} />
+      <ReceiptModal receipt={receiptOpen ? receiptView(job, earnings, company) : null} open={receiptOpen} onClose={() => setReceiptOpen(false)}
+        title="Job Earnings Statement" description={job.number} loading={earningsFetching}
+        error={earningsError ? getApiErrorMessage(earningsError) : undefined} onRetry={refetchEarnings} />
       <Toast message={toast} />
     </div>
   );

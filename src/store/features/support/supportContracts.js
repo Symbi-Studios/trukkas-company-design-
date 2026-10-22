@@ -29,4 +29,22 @@ export function messageView(source, threadId) {
   };
 }
 
-export const categoryToWire = (value) => Object.entries(categories).find(([, label]) => label === value)?.[0] ?? null;
+// The Submit Ticket form uses help-centre topics (domain/support.js) as its
+// issue categories. Until the API has matching categories, map each topic to
+// the closest documented one; the topic itself is kept in the message details.
+const topicCategories = {
+  'Account & Login': 'GENERAL', 'Jobs & Bookings': 'GENERAL', 'Payments & Wallet': 'PAYMENT_ISSUE', 'Truck & Fleet': 'GENERAL',
+  'Driver Management': 'DRIVER_ISSUE', 'Documents & Compliance': 'DOCUMENT_QUERY', Technical: 'GENERAL', Other: 'GENERAL',
+};
+export const categoryToWire = (value) => Object.entries(categories).find(([, label]) => label === value)?.[0] ?? topicCategories[value] ?? null;
+
+/**
+ * The create-ticket API takes only subject, category and message. Fields it has
+ * no slot for yet (topic, priority, related job/trip, truck, driver) are
+ * appended to the message so support still sees them. `details` is
+ * [[label, value]]; empty values are skipped.
+ */
+export function ticketMessage(body, details = []) {
+  const lines = details.filter(([, value]) => text(value)).map(([label, value]) => `${label}: ${value.trim()}`);
+  return lines.length ? `${body.trim()}\n\n— Ticket details —\n${lines.join('\n')}` : body.trim();
+}

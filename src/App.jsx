@@ -82,7 +82,8 @@ export function CompanyShell({ children }) {
   const activeId = wonJob ? "my-jobs" : section || "dashboard";
   // List screens filter as you type and name what they search; everywhere the
   // dropdown offers matches from across the workspace.
-  const searchPlaceholder = (!detailId && SEARCH_PLACEHOLDER[activeId]) || "Search jobs, trips, trucks, drivers...";
+  const searchKey = pathname === "/support/guides" ? "support-guides" : !detailId && activeId;
+  const searchPlaceholder = SEARCH_PLACEHOLDER[searchKey] || "Search jobs, trips, trucks, drivers...";
   const searchResults = React.useMemo(
     () => searchWorkspace(globalSearch, { jobs, trips, trucks, drivers, payouts }),
     [globalSearch, jobs, trips, trucks, drivers, payouts],

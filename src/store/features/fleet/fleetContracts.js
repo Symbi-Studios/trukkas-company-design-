@@ -18,7 +18,6 @@ export function dateLabel(value) {
   }
   return date ? new Intl.DateTimeFormat('en-NG', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Africa/Lagos' }).format(date) : '—';
 }
-const personName = (user) => [text(user?.firstName), text(user?.lastName)].filter(Boolean).join(' ') || '—';
 const boolean = (value) => typeof value === 'boolean' ? value : null;
 const classes = { HEAD: 'Head', TRAILER: 'Trailer', TANKER: 'Tanker', SPECIALIZED: 'Specialized', OTHER: 'Other' };
 export const vehicleClassToWire = (value) => Object.keys(classes).find((key) => classes[key] === value) ?? null;
@@ -120,8 +119,8 @@ export function truckView(source, detail = false) {
     year: text(source.year) ?? '—', vin: detail ? text(source.vin) ?? '—' : '—', engineNumber: detail ? text(source.engineNumber) ?? '—' : '—',
     purchaseDate: detail ? dateLabel(source.purchaseDate) : '—', color: text(source.color) ?? '—', ownership: detail ? ownershipLabels[source.ownership] ?? '—' : '—',
     insuranceExpiry: dateLabel(detail ? source.insuranceExpiry : source.insurance?.expiresAt), roadWorthinessExpiry: dateLabel(roadWorthiness?.expiryDate),
-    odometer: number(detail ? source.odometerKm : source.mileageKm), odometerUpdated: detail ? timestamp(source.lastActivityAt) : '—',
-    location: detail ? text(source.currentLocationNote?.location) ?? '—' : '—', notes: detail ? text(source.notes) : null,
+    odometer: number(detail ? source.odometerKm : source.mileageKm), odometerUpdated: detail ? timestamp(source.odometer?.updatedAt) : '—',
+    location: detail ? text(source.currentLocationNote?.location) ?? '—' : '—', notes: detail ? text(source.notes) : null, notesUpdated: '—',
     activityLog: activity?.map(fleetActivityView) ?? null,
     remindersEnabled: detail ? boolean(source.remindersEnabled) : null,
     driverId: text(driver?.id), driver: driver ? text(driver.name) ?? '—' : source.driver === null ? null : '—',
@@ -139,7 +138,7 @@ export function assignedFleetDriverView(source) {
   const rating = number(source.rating?.average);
   return {
     id: source.id, name: text(source.name) ?? '—', phone: text(source.phone) ?? '—', photo: safeUrl(source.avatarUrl),
-    rating: rating !== null && rating >= 1 && rating <= 5 ? rating : null,
+    rating: rating !== null && rating <= 5 ? rating : null,
     tripsCompleted: count(source.stats?.completedTrips) ?? '—',
     licenseClass: text(source.license?.class) ?? '—', licenseNumber: text(source.license?.number) ?? '—',
     licenseExpiry: dateLabel(source.license?.expiresAt),
@@ -148,12 +147,17 @@ export function assignedFleetDriverView(source) {
 }
 
 export function driverView(source) {
-  if (!text(source?.userId)) return null;
+  if (!text(source?.id)) return null;
+  const rating = number(source.rating?.average);
   return {
-    id: source.userId, active: source.status === 'ACTIVE', name: personName(source.user),
-    phone: text(source.user?.phone) ?? '—', photo: safeUrl(source.user?.avatarUrl),
-    kyc: source.user?.kycStatus === 'VERIFIED' ? 'Verified' : text(source.user?.kycStatus) ? 'KYC Pending' : '—',
-    licenseClass: '—', licenseNumber: '—', licenseExpiry: '—', rating: null, tripsCompleted: '—', status: '—',
+    id: source.id, active: source.status === 'ACTIVE', name: text(source.name) ?? '—',
+    phone: text(source.phone) ?? '—', photo: safeUrl(source.avatarUrl),
+    kyc: source.kycStatus === 'VERIFIED' ? 'Verified' : text(source.kycStatus) ? 'KYC Pending' : '—',
+    licenseClass: text(source.license?.class) ?? '—', licenseNumber: text(source.license?.number) ?? '—', licenseExpiry: dateLabel(source.license?.expiresAt),
+    rating: rating !== null && rating <= 5 ? rating : null,
+    tripsCompleted: count(source.completedTrips) ?? '—',
+    status: ({ ACTIVE: 'Active', SUSPENDED: 'Suspended', INVITED: 'Invited', UNLINKED: 'Unlinked' })[source.status] ?? '—',
+    onTrip: source.availability === 'ON_TRIP' || !!text(source.currentJob?.id),
     truckId: text(source.truck?.id), truckPlate: text(source.truck?.plateNumber),
   };
 }
@@ -182,6 +186,7 @@ export function maintenanceView(source) {
     wireStatus: text(source.status), status: overdue && ['REQUESTED', 'SCHEDULED', 'IN_PROGRESS'].includes(source.status) ? 'Overdue' : ({ REQUESTED: 'Requested', SCHEDULED: 'Upcoming', IN_PROGRESS: 'In Progress', COMPLETED: 'Completed', CANCELLED: 'Cancelled', REJECTED: 'Rejected' })[source.status] ?? '—',
     date: dateLabel(source.dueDate), dueAt: text(source.dueDate), dateInput: maintenanceDateInput(source.dueDate), serviceType: text(source.typeLabel) ?? maintenanceTypes[source.type] ?? '—', serviceCategory: maintenanceTypes[source.type] ?? '', description: text(source.description) ?? '—',
     canEdit: ['REQUESTED', 'SCHEDULED'].includes(source.status), canComplete: ['SCHEDULED', 'IN_PROGRESS'].includes(source.status),
+    canStart: source.status === 'SCHEDULED', canCancel: ['REQUESTED', 'SCHEDULED'].includes(source.status),
     estimatedCost: source.currency === 'NGN' ? number(source.estimatedCost) : null,
     odometer: number(source.odometerKm), cost: source.currency === 'NGN' ? number(source.actualCost) : null,
     nextDue: dateLabel(source.nextDueDate),

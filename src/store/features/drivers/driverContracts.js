@@ -1,40 +1,46 @@
 import { count, dateLabel, number, object, rows, safeUrl, text, timestampLabel, tripView } from '../trips/tripContracts.js';
 import { reviewView } from '../reviews/reviewContracts.js';
 
-// The list wrapper remains undocumented. Membership supplies the complete
-// collection; the documented company detail DTO supplies profile fields.
-export function companyDriverView(source) {
-  if (!text(source?.userId) || source.user?.id !== source.userId) return null;
-  return {
-    apiBacked: true, id: source.userId,
-    name: [text(source.user.firstName), text(source.user.lastName)].filter(Boolean).join(' ') || '—',
-    email: text(source.user.email) ?? '—', phone: text(source.user.phone) ?? '—', photo: safeUrl(source.user.avatarUrl),
-    active: source.status === 'ACTIVE' ? true : ['UNLINKED', 'INVITED', 'SUSPENDED'].includes(source.status) ? false : null, truckId: text(source.truck?.id), truckPlate: text(source.truck?.plateNumber),
-    truckKnown: source.truck === null || !!text(source.truck?.id),
-    kyc: ({ VERIFIED: 'Verified', PENDING: 'Pending', REJECTED: 'Rejected' })[source.user.kycStatus] ?? '—',
-    status: '—', joined: '—', address: '—', licenseNumber: '—', licenseClass: '—', licenseExpiry: '—',
-    rating: null, reviewCount: '—', tripsCompleted: '—',
-  };
-}
+const availabilityLabels = { ON_TRIP: 'On Trip', AVAILABLE: 'Available', OFF_DUTY: 'Off Duty', NO_TRUCK: 'Unassigned', UNAVAILABLE: 'Unavailable' };
+const percent = (value) => number(value) !== null && value <= 100 ? value : null;
 
-export function companyDriverDetailView(source) {
+export function companyDriverView(source) {
   if (!text(source?.id)) return null;
   const rating = number(source.rating?.average), license = object(source.license);
-  const recent = rows(source.recentTrips);
-  const onTrip = recent?.some((trip) => tripView(trip)?.open === true);
-  const licenseUrl = safeUrl(license?.url);
   return {
     apiBacked: true, id: source.id, name: text(source.name) ?? '—',
     email: text(source.email) ?? '—', phone: text(source.phone) ?? '—', photo: safeUrl(source.avatarUrl),
     active: source.status === 'ACTIVE' ? true : ['UNLINKED', 'INVITED', 'SUSPENDED'].includes(source.status) ? false : null,
     truckId: text(source.truck?.id), truckPlate: text(source.truck?.plateNumber), truckKnown: source.truck === null || !!text(source.truck?.id),
-    kyc: ({ VERIFIED: 'Verified', PENDING: 'Pending', REJECTED: 'Rejected' })[source.kycStatus] ?? '—',
-    status: onTrip ? 'On Trip' : '—', joined: dateLabel(source.joinedAt), address: '—',
+    kyc: ({ VERIFIED: 'Verified', PENDING: 'Pending', IN_REVIEW: 'Pending', REJECTED: 'Rejected' })[source.kycStatus] ?? '—',
+    status: availabilityLabels[source.availability] ?? '—', joined: '—', address: '—',
     licenseNumber: text(license?.number) ?? '—', licenseClass: text(license?.class) ?? '—', licenseExpiry: dateLabel(license?.expiresAt),
-    rating: rating !== null && rating >= 1 && rating <= 5 ? rating : null,
-    reviewCount: count(source.rating?.count) ?? '—', tripsCompleted: count(source.stats?.completedTrips) ?? '—',
-    documents: licenseUrl ? [{ type: "Driver's License", name: "Driver's Licence", number: text(license?.number) ?? '—', expiryDate: dateLabel(license?.expiresAt), uploadedOn: '—', status: '—', url: licenseUrl }] : [],
+    rating: rating !== null && rating <= 5 ? rating : null,
+    reviewCount: count(source.rating?.count) ?? '—', tripsCompleted: count(source.completedTrips) ?? '—',
   };
+}
+
+export function companyDriverDetailView(source) {
+  const driver = companyDriverView(source);
+  if (!driver) return null;
+  const recent = rows(source.recentTrips);
+  const onTrip = recent?.some((trip) => tripView(trip)?.open === true);
+  const licenseUrl = safeUrl(source.license?.url);
+  return {
+    ...driver,
+    status: availabilityLabels[source.availability] ?? (onTrip ? 'On Trip' : source.truck === null ? 'Unassigned' : '—'),
+    joined: dateLabel(source.joinedAt), address: text(source.address) ?? '—',
+    tripsCompleted: count(source.stats?.completedTrips) ?? '—',
+    onTimeRate: source.performance?.windowDays === 90 ? percent(source.performance.onTimePercent) : null,
+    incidents: source.performance?.windowDays === 90 ? count(source.performance.incidentCount) : null,
+    // No platform safety scoring exists; preserve the unavailable value.
+    safetyScore: null,
+    documents: licenseUrl ? [{ type: "Driver's License", name: "Driver's Licence", number: driver.licenseNumber, expiryDate: driver.licenseExpiry, uploadedOn: '—', status: '—', url: licenseUrl }] : [],
+  };
+}
+
+export function driverSummaryView(source) {
+  return { total: count(source?.total), available: count(source?.available), onTrip: count(source?.onTrip), offDuty: count(source?.offDuty) };
 }
 
 export function driverTripView(source, detail = false) {

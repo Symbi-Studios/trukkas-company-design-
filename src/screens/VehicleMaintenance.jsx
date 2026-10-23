@@ -3,8 +3,9 @@
 import { useRef, useState } from 'react';
 import { Badge, Button, Card, DataTable, DonutChart, DropdownMenu, EmptyState, Icon, SearchField, Select, SkeletonRow, StatCard, Switch } from '../ds.js';
 import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
-import { useCompleteFleetMaintenanceMutation, useGetFleetMaintenanceQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
+import { useGetFleetMaintenanceQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
 import { MaintenanceModal } from '../components/MaintenanceModal.jsx';
+import { MaintenanceActionModal, MaintenanceExportButton } from '../components/MaintenanceActions.jsx';
 import { total } from '../store/features/fleet/fleetContracts.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { Toast, useToast } from '../components/Toast.jsx';
@@ -12,17 +13,15 @@ import { formatNaira } from '../mock/format.js';
 import { VehicleDetailFrame } from './VehicleDetailFrame.jsx';
 
 const STATUS_TONE = { Completed: 'success', Upcoming: 'info', Requested: 'info', 'In Progress': 'warning', Overdue: 'danger', Cancelled: 'neutral', Rejected: 'danger' };
-const STATUS_OPTIONS = ['All Status', 'Completed', 'Upcoming', 'In Progress', 'Overdue'];
+const STATUS_OPTIONS = ['All Status', 'Completed', 'Upcoming', 'In Progress', 'Overdue', 'Requested', 'Cancelled', 'Rejected'];
 
 export function VehicleMaintenance() {
   const { truck } = useFleetVehicle();
   const { currentData: maintenanceData, error, isLoading } = useGetFleetMaintenanceQuery(truck?.id, { skip: !truck, refetchOnMountOrArgChange: true });
   const records = error ? undefined : maintenanceData?.records;
-  const [completeMaintenance] = useCompleteFleetMaintenanceMutation();
   const [updateVehicle, { isLoading: savingReminders }] = useUpdateFleetVehicleMutation();
   const updatingReminders = useRef(false);
-  const [busyRecord, setBusyRecord] = useState(null);
-  const completing = useRef(false);
+  const [action, setAction] = useState(null);
   const [toast, showToast] = useToast();
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Status');
@@ -44,14 +43,6 @@ export function VehicleMaintenance() {
   const next = error ? null : maintenanceData?.nextDue;
   const money = (value) => typeof value === 'number' && Number.isFinite(value) ? formatNaira(value) : '—';
   const percent = (value) => value === null ? '—' : `${records.length ? Math.round(value / records.length * 100) : 0}%`;
-  async function complete(record) {
-    if (completing.current) return;
-    if (!record.canComplete) { setRowMenu(null); showToast('Only scheduled or in-progress maintenance can be completed.'); return; }
-    completing.current = true; setBusyRecord(record.id); setRowMenu(null);
-    try { await completeMaintenance({ id: record.id, truckId: truck.id }).unwrap(); }
-    catch (err) { showToast(getApiErrorMessage(err)); }
-    finally { completing.current = false; setBusyRecord(null); }
-  }
   const donutData = [
     { label: 'Completed', value: completed, color: 'var(--tk-success)' },
     { label: 'Upcoming', value: upcoming, color: 'var(--tk-warning)' },
@@ -63,7 +54,7 @@ export function VehicleMaintenance() {
       tab="maintenance"
       title="Truck Maintenance"
       description="View and manage maintenance records, schedule services, and track costs for this truck."
-      primaryAction={<Button icon="plus" onClick={() => setScheduleOpen(true)}>Schedule Maintenance</Button>}
+      primaryAction={<><MaintenanceExportButton truckId={truck.id} search={query} status={statusFilter} disabled={!records} onToast={showToast} /><Button icon="plus" onClick={() => setScheduleOpen(true)}>Schedule Maintenance</Button></>}
       rail={
         <>
           <Card style={{ display: 'grid', gap: 12 }}>
@@ -93,7 +84,7 @@ export function VehicleMaintenance() {
             <Card style={{ display: 'grid', gap: 6 }}>
               <h3 className="tk-title" style={{ margin: 0, fontSize: 14 }}>Recent Notes</h3>
               <p style={{ margin: 0, font: '400 13px/20px var(--tk-font-sans)', color: 'var(--tk-ink-500)' }}>{truck.notes}</p>
-              <span className="tk-meta">— Fleet Manager · {truck.odometerUpdated}</span>
+              <span className="tk-meta">— Fleet Manager · {truck.notesUpdated}</span>
             </Card>
           )}
           <Card style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
@@ -139,26 +130,29 @@ export function VehicleMaintenance() {
           { key: 'cost', header: 'Cost (₦)', render: (m) => money(m.cost) },
           { key: 'status', header: 'Status', render: (m) => <Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge> },
           { key: 'nextDue', header: 'Next Due', render: (m) => m.nextDue || '—' },
-          { key: 'actions', header: 'Actions', render: (m) => (
+          { key: 'actions', header: 'Actions', render: (m) => m.canEdit || m.canStart || m.canComplete || m.canCancel ? (
             <span style={{ position: 'relative' }}>
-              <Button size="sm" variant="outline" icon="ellipsis" disabled={!!busyRecord} onClick={() => setRowMenu(rowMenu === m.id ? null : m.id)} />
+              <Button size="sm" variant="outline" icon="ellipsis" disabled={!!action} onClick={() => setRowMenu(rowMenu === m.id ? null : m.id)} />
               {rowMenu === m.id && (
                 <span style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20 }}>
                   <DropdownMenu width={190} items={[
-                    ...(m.status !== 'Completed' ? [{ label: 'Mark Completed', icon: 'circle-check', onClick: () => complete(m) }] : []),
+                    ...(m.canStart ? [{ label: 'Start Maintenance', icon: 'circle-play', onClick: () => { setRowMenu(null); setAction({ kind: 'start', record: m }); } }] : []),
+                    ...(m.canComplete ? [{ label: 'Mark Completed', icon: 'circle-check', onClick: () => { setRowMenu(null); setAction({ kind: 'complete', record: m }); } }] : []),
                     { label: 'Edit Record', icon: 'pencil', onClick: () => {
                       setRowMenu(null);
                       if (!m.canEdit) { showToast('Only requested or scheduled maintenance can be edited.'); return; }
                       setEditingRecord(m); setScheduleOpen(true);
                     } },
+                    ...(m.canCancel ? [{ divider: true }, { label: 'Cancel Maintenance', icon: 'ban', tone: 'danger', onClick: () => { setRowMenu(null); setAction({ kind: 'cancel', record: m }); } }] : []),
                   ]} />
                 </span>
               )}
             </span>
-          ) },
+          ) : '—' },
         ]} />
       )}
       <MaintenanceModal key={`${scheduleOpen}-${editingRecord?.id ?? ''}`} open={scheduleOpen} onClose={() => { setScheduleOpen(false); setEditingRecord(null); }} truckId={truck.id} record={editingRecord} />
+      {action && <MaintenanceActionModal key={action.kind + '-' + action.record.id} record={action.record} action={action.kind} onClose={() => setAction(null)} onDone={(message) => { setAction(null); showToast(message); }} />}
       <Toast message={toast} />
     </VehicleDetailFrame>
   );

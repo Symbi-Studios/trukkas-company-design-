@@ -6,7 +6,7 @@ const identity = (state) => JSON.stringify([state.auth.account?.id, state.auth.a
 function companyRead(request, mapResponse, notFoundValue) {
   return async (_arg, api, _options, baseQuery) => {
     const account = api.getState().auth.account;
-    if (!account?.id || account.apiRole !== 'TRUCKER' || account.truckerType !== 'COMPANY') return unavailable('Sign in with your company account to load the dashboard.');
+    if (!account?.id || account.apiRole !== 'TRUCKER' || account.truckerType !== 'COMPANY' || api.getState().auth.activeCompanyId !== account.id) return unavailable('Sign in with your company account to load the dashboard.');
     const company = identity(api.getState());
     if (api.signal.aborted) return unavailable('The dashboard request was cancelled.');
     const result = await baseQuery(request);
@@ -23,7 +23,7 @@ const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value : nul
 const boolean = (value) => typeof value === 'boolean' ? value : null;
 const money = (value, currency) => number(value) !== null && currency === 'NGN'
   ? new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value) : '—';
-const date = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))
+const date = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value))
   ? new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Lagos' }).format(new Date(value)) : '—';
 const fleetCategories = [
   ['active', 'Active', 'var(--tk-success)'], ['onTrip', 'On Trip', 'var(--tk-blue)'],
@@ -49,7 +49,7 @@ const jobTypes = {
   PORT_TO_DESTINATION: 'Port-to-Destination', PORT_TO_PORT: 'Port-to-Port',
   BULK_BREAK: 'Break-bulk', EXPORT: 'Export',
 };
-const requestedDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))
+const requestedDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value))
   ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Africa/Lagos' }).format(new Date(value)) : '—';
 
 function overviewView(response) {
@@ -69,6 +69,8 @@ function overviewView(response) {
   const submitted = count(setup?.requiredDocumentsSubmitted);
   const required = count(setup?.requiredDocumentsTotal);
   const documentsKnown = submitted !== null && required !== null && submitted <= required;
+  const requiredDocuments = rows(setup?.requiredDocuments);
+  const documentsNeedAttention = requiredDocuments?.some((document) => ['REJECTED', 'MISSING'].includes(document.status)) === true;
   const expiring = count(dashboard?.documentAlerts?.expiring);
   const expired = count(dashboard?.documentAlerts?.expired);
   const activity = rows(dashboard?.recentActivity);
@@ -86,7 +88,7 @@ function overviewView(response) {
     })) ?? null,
     setup: {
       contact: email === false || phone === false ? false : email === true && phone === true ? true : null,
-      documents: documentsKnown ? submitted === required : null,
+      documents: documentsNeedAttention ? false : documentsKnown ? submitted === required : null,
       documentHint: documentsKnown ? `${submitted}/${required} required uploaded` : '—',
       truck: totalTrucks === null ? null : totalTrucks > 0,
       driver: count(overview?.drivers?.total) === null ? null : overview.drivers.total > 0,

@@ -177,13 +177,14 @@ function DispatchCard({ job, summary, onDispatch }) {
 }
 
 function DispatchModal({ job, open, onClose, onDone }) {
-  const { data: drivers = [], error: optionsError, isLoading: optionsLoading } = useGetJobDispatchOptionsQuery(undefined, { skip: !open, refetchOnMountOrArgChange: true });
+  const { currentData: loadedDrivers, error: optionsError, isFetching: optionsLoading } = useGetJobDispatchOptionsQuery(undefined, { skip: !open, refetchOnMountOrArgChange: true });
   const [dispatchDriver] = useDispatchJobDriverMutation();
   const [plate, setPlate] = useState('');
   const [driverId, setDriverId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const submitting = useRef(false);
+  const drivers = optionsError ? [] : loadedDrivers ?? [];
   const freeDrivers = drivers.filter((driver) => !plate || driver.truckId === plate);
   const freeTrucks = [...new Map(drivers.map((driver) => [driver.truckId, { ...driver, plate: driver.truckId, label: driver.plate }])).values()];
 
@@ -197,7 +198,7 @@ function DispatchModal({ job, open, onClose, onDone }) {
   async function submit(event) {
     event.preventDefault();
     if (submitting.current) return;
-    if (!plate || !driverId) { setError('Select a truck and a driver.'); return; }
+    if (optionsLoading || optionsError || !drivers.some((driver) => driver.id === driverId && driver.truckId === plate)) { setError('Select a truck and a driver.'); return; }
     submitting.current = true;
     setBusy(true);
     setError('');
@@ -303,16 +304,17 @@ export function JobDetail({ apiJobId } = {}) {
   const jobId = apiJobId ?? params.jobId;
   const navigate = useNavigate();
   const company = useSelector((state) => state.auth.account);
-  const { currentData: job, error, isFetching } = useGetJobDetailQuery(jobId, { skip: !jobId, refetchOnMountOrArgChange: true });
+  const { currentData: loadedJob, error, isFetching } = useGetJobDetailQuery(jobId, { skip: !jobId, refetchOnMountOrArgChange: true });
+  const job = error ? undefined : loadedJob;
   const marketplaceJob = job && isMarketplaceJob(job);
-  const { data: availableJobs } = useGetAvailableJobsQuery(undefined, { skip: !marketplaceJob });
-  const { currentData: earnings = null, error: earningsError, isLoading: earningsLoading, isFetching: earningsFetching, refetch: refetchEarnings } = useGetJobEarningsQuery(job, { skip: !job || !!marketplaceJob });
-  const { data: allTrips, error: tripsError, isLoading: tripsLoading } = useGetCompanyTripsQuery(undefined, { skip: !job || !!marketplaceJob });
+  const { currentData: loadedAvailableJobs, error: availableError } = useGetAvailableJobsQuery(undefined, { skip: !marketplaceJob });
+  const { currentData: loadedEarnings, error: earningsError, isLoading: earningsLoading, isFetching: earningsFetching, refetch: refetchEarnings } = useGetJobEarningsQuery(job, { skip: !job || !!marketplaceJob });
+  const { currentData: loadedTrips, error: tripsError, isLoading: tripsLoading } = useGetCompanyTripsQuery(undefined, { skip: !job || !!marketplaceJob });
   const [sendMessage] = useSendJobMessageMutation();
   const [setSavedJob] = useSetSavedJobMutation();
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [infoTab, setInfoTab] = useState('requirements');
-  const { currentData: tripDocs = null, error: paperworkError, isFetching: paperworkLoading } = useGetJobPaperworkQuery(jobId, { skip: !job || !!marketplaceJob || infoTab !== 'documents', refetchOnMountOrArgChange: true });
+  const { currentData: loadedPaperwork, error: paperworkError, isFetching: paperworkLoading } = useGetJobPaperworkQuery(jobId, { skip: !job || !!marketplaceJob || infoTab !== 'documents', refetchOnMountOrArgChange: true });
   const [moreOpen, setMoreOpen] = useState(false);
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
@@ -321,6 +323,10 @@ export function JobDetail({ apiJobId } = {}) {
   const [saving, setSaving] = useState(false);
   const savingJob = useRef(false);
 
+  const availableJobs = availableError ? undefined : loadedAvailableJobs;
+  const allTrips = tripsError ? undefined : loadedTrips;
+  const earnings = earningsError ? null : loadedEarnings ?? null;
+  const tripDocs = paperworkError ? null : loadedPaperwork ?? null;
   const jobTrips = useMemo(() => allTrips ? allTrips.filter((trip) => trip.jobId === jobId) : null, [allTrips, jobId]);
   const similar = useMemo(() => {
     if (!job) return [];
@@ -329,7 +335,7 @@ export function JobDetail({ apiJobId } = {}) {
       .slice(0, 3);
   }, [availableJobs, job]);
 
-  if (isFetching && !job) return <SkeletonRow variant="detail" />;
+  if (isFetching && !loadedJob) return <SkeletonRow variant="detail" />;
 
   if (!job) {
     return (
@@ -427,8 +433,8 @@ export function JobDetail({ apiJobId } = {}) {
           {hasCargoPhotos(job) && (
             <div className={styles.gallery} aria-label="Cargo photos from the forwarder">
               <CargoThumb category={job.category} width="100%" height="100%" iconSize={56}>{job.cargoPhotoUrl && <img src={job.cargoPhotoUrl} alt="Cargo shared by the forwarder" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}</CargoThumb>
-              {[0, 1, 2].map((i) => <CargoThumb key={i} category={job.category} width="100%" height="100%" iconSize={30}><span>—</span></CargoThumb>)}
-              <CargoThumb category={job.category} width="100%" height="100%" iconSize={30}><span>—</span>
+              {[0, 1, 2].map((i) => <CargoThumb key={i} category={job.category} width="100%" height="100%" iconSize={30}>{job.cargoPhotos?.[i + 1] ? <img src={job.cargoPhotos[i + 1]} alt="Cargo shared by the forwarder" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} /> : <span>—</span>}</CargoThumb>)}
+              <CargoThumb category={job.category} width="100%" height="100%" iconSize={30}>{job.cargoPhotos?.[4] ? <img src={job.cargoPhotos[4]} alt="Cargo shared by the forwarder" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} /> : <span>—</span>}
                 {job.photos > 4 && <span className={styles.morePhotos}><strong>+{job.photos - 4}</strong>more photos</span>}
               </CargoThumb>
             </div>
@@ -460,7 +466,7 @@ export function JobDetail({ apiJobId } = {}) {
               </div>
               <div className={styles.routeLabels}>
                 <span><strong>{job.origin.split(',')[0]}</strong><small>{job.origin.split(',').slice(1).join(',').trim() || '—'}</small></span>
-                <span style={{ textAlign: 'center' }}><strong style={{ fontWeight: 500 }}>{distanceLabel(job.distanceKm)}</strong><small>Estimated —</small></span>
+                <span style={{ textAlign: 'center' }}><strong style={{ fontWeight: 500 }}>{distanceLabel(job.distanceKm)}</strong><small>Estimated {job.estimatedDuration ?? '—'}</small></span>
                 <span style={{ textAlign: 'right' }}><strong>{shortPlace(job.destination)}</strong><small>{job.destination.split(',').slice(1).join(',').trim() || '—'}</small></span>
               </div>
             </SectionCard>
@@ -583,7 +589,7 @@ export function JobDetail({ apiJobId } = {}) {
           </SectionCard>
 
           <div id="job-map">
-            <RouteMap title="Pickup & Delivery Map" origin={job.origin} destination={job.destination} distanceKm={job.distanceKm} routeCoordinates={job.routeCoordinates} duration={null} height={200} />
+            <RouteMap title="Pickup & Delivery Map" origin={job.origin} destination={job.destination} distanceKm={job.distanceKm} routeCoordinates={job.routeCoordinates} duration={job.estimatedDuration} height={200} />
           </div>
 
           {marketplace && similar.length > 0 && (

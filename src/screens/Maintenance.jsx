@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '../router.js';
 import {
   Badge, Button, Card, DataTable, EmptyState, PageHeader, SearchField,
   SkeletonRow, StatCard,
 } from '../ds.js';
-import { useCompleteFleetMaintenanceMutation, useGetFleetMaintenanceQuery, useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
+import { useGetFleetMaintenanceQuery, useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
 import { MaintenanceModal } from '../components/MaintenanceModal.jsx';
+import { MaintenanceActionModal, MaintenanceExportButton } from '../components/MaintenanceActions.jsx';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { Toast, useToast } from '../components/Toast.jsx';
 import { syncTopBarSearch } from '../pageSearch.js';
@@ -23,19 +24,9 @@ export function Maintenance() {
   const { currentData: fleet, error: trucksError, isLoading: trucksLoading } = useGetFleetQuery(undefined, { refetchOnMountOrArgChange: true });
   const trucks = trucksError ? [] : fleet ?? [];
   const records = maintenance ?? [];
-  const [completeMaintenance] = useCompleteFleetMaintenanceMutation();
-  const [busyRecord, setBusyRecord] = useState(null);
-  const completing = useRef(false);
+  const [action, setAction] = useState(null);
   const [toast, showToast] = useToast();
   const statusCount = (statuses) => !maintenance || records.some((record) => record.status === '—') ? '—' : records.filter((record) => statuses.includes(record.status)).length;
-  async function complete(record) {
-    if (completing.current) return;
-    if (!record.canComplete) { showToast('Only scheduled or in-progress maintenance can be completed.'); return; }
-    completing.current = true; setBusyRecord(record.id);
-    try { await completeMaintenance({ id: record.id, truckId: record.truckId }).unwrap(); }
-    catch (err) { showToast(getApiErrorMessage(err)); }
-    finally { completing.current = false; setBusyRecord(null); }
-  }
   const [query, setQuery] = useState('');
   const [scheduleOpen, setScheduleOpen] = useState(false);
 
@@ -51,7 +42,7 @@ export function Maintenance() {
 
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
-      <PageHeader title="Fleet Maintenance" description="Track scheduled, upcoming, and overdue maintenance across your fleet." actions={<Button icon="plus" onClick={() => setScheduleOpen(true)}>Schedule Maintenance</Button>} />
+      <PageHeader title="Fleet Maintenance" description="Track scheduled, upcoming, and overdue maintenance across your fleet." actions={<><MaintenanceExportButton search={query} disabled={!maintenance} onToast={showToast} /><Button icon="plus" onClick={() => setScheduleOpen(true)}>Schedule Maintenance</Button></>} />
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 16 }}>
         <StatCard icon="wrench" label="Total Records" value={maintenance ? records.length : '—'} />
         <StatCard icon="circle-check" tint="green" label="Completed" value={statusCount(['Completed'])} />
@@ -76,14 +67,19 @@ export function Maintenance() {
               { key: 'description', header: 'Description', render: (r) => r.description },
               { key: 'cost', header: 'Cost', render: (r) => r.cost === null ? '—' : formatNaira(r.cost) },
               { key: 'status', header: 'Status', render: (r) => <Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge> },
-              { key: 'actions', header: 'Actions', render: (r) => r.status !== 'Completed' && (
-                <Button size="sm" variant="outline" disabled={!!busyRecord || !r.canComplete} onClick={(e) => { e.stopPropagation(); complete(r); }}>Mark Completed</Button>
-              ) },
+              { key: 'actions', header: 'Actions', render: (r) => r.canStart || r.canComplete || r.canCancel ? (
+                <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") event.stopPropagation(); }}>
+                  {r.canStart && <Button size="sm" variant="outline" icon="circle-play" disabled={!!action} onClick={() => setAction({ kind: 'start', record: r })}>Start</Button>}
+                  {r.canComplete && <Button size="sm" variant="outline" disabled={!!action} onClick={() => setAction({ kind: 'complete', record: r })}>Mark Completed</Button>}
+                  {r.canCancel && <Button size="sm" variant="outline" icon="ban" disabled={!!action} onClick={() => setAction({ kind: 'cancel', record: r })}>Cancel</Button>}
+                </span>
+              ) : '—' },
             ]}
           />
         )}
       </Card>
       <MaintenanceModal key={String(scheduleOpen)} open={scheduleOpen} onClose={() => setScheduleOpen(false)} trucks={trucks} loading={trucksLoading} loadError={trucksError ? getApiErrorMessage(trucksError) : ''} width={460} formId="schedule-maintenance-form" />
+      {action && <MaintenanceActionModal key={action.kind + '-' + action.record.id} record={action.record} action={action.kind} onClose={() => setAction(null)} onDone={(message) => { setAction(null); showToast(message); }} />}
       <Toast message={toast} />
     </div>
   );

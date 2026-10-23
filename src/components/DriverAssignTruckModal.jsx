@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Icon, Modal, SearchField, SkeletonRow } from '../ds.js';
-import { useAssignFleetDriverMutation, useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
+import { useAssignFleetDriverMutation, useGetFleetDriversQuery, useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
 import { useGetCompanyTripsQuery } from '../store/features/trips/tripsApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { PickList } from './AssignModals.jsx';
@@ -8,6 +8,7 @@ import styles from './AssignModals.module.css';
 
 export function DriverAssignTruckModal({ driver, open, onClose, onDone }) {
   const { currentData: trucks, error: trucksError, isLoading } = useGetFleetQuery(undefined, { skip: !open, refetchOnMountOrArgChange: true });
+  const { currentData: drivers, error: driversError, isFetching: driversFetching } = useGetFleetDriversQuery(undefined, { skip: !open, refetchOnMountOrArgChange: true });
   const { currentData: trips, error: tripsError } = useGetCompanyTripsQuery(undefined, { skip: !open, refetchOnMountOrArgChange: true });
   const [assign] = useAssignFleetDriverMutation();
   const [query, setQuery] = useState('');
@@ -16,6 +17,7 @@ export function DriverAssignTruckModal({ driver, open, onClose, onDone }) {
   const [error, setError] = useState('');
   const submitting = useRef(false);
   useEffect(() => { if (open) { setSelected(null); setQuery(''); setError(''); } }, [open, driver?.id]);
+  const confirmedDriver = driversError ? null : drivers?.find((item) => item.id === driver?.id);
 
   const items = (trucks ?? [])
     .filter((truck) => truck.id !== driver?.truckId)
@@ -35,7 +37,7 @@ export function DriverAssignTruckModal({ driver, open, onClose, onDone }) {
     if (submitting.current || !selected) return;
     const truck = trucks?.find((item) => item.id === selected);
     const currentTrip = trips?.some((trip) => trip.open && (trip.driverId === driver.id || driver.truckId && trip.truckId === driver.truckId || driver.truckPlate && trip.truckPlate === driver.truckPlate));
-    if (!driver.active || !truck || !trips || trucksError || tripsError || currentTrip || items.find((item) => item.id === selected)?.blocked) { setError('This driver or truck cannot be assigned right now.'); return; }
+    if (!driver.active || !confirmedDriver?.active || confirmedDriver.onTrip || driversFetching || !truck || !trips || trucksError || tripsError || currentTrip || items.find((item) => item.id === selected)?.blocked) { setError('This driver or truck cannot be assigned right now.'); return; }
     submitting.current = true; setBusy(true); setError('');
     try { await assign({ truckId: selected, driverId: driver.id }).unwrap(); onDone?.(truck.plate); }
     catch (err) { setError(getApiErrorMessage(err)); }
@@ -47,11 +49,11 @@ export function DriverAssignTruckModal({ driver, open, onClose, onDone }) {
     <Modal open={open} onClose={() => { if (!submitting.current) onClose(); }} width={560}
       title={driver.truckPlate ? 'Reassign to Another Truck' : 'Assign to Truck'}
       description={`${driver.name}${driver.truckPlate ? ` · currently on ${driver.truckPlate}` : ''}`}
-      footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button icon="truck" disabled={!selected || busy || !trucks || !trips || !!trucksError || !!tripsError || !driver.active} onClick={submit}>{busy ? 'Saving…' : 'Assign Truck'}</Button></>}>
+      footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button icon="truck" disabled={!selected || busy || driversFetching || !confirmedDriver?.active || confirmedDriver.onTrip || !trucks || !trips || !!trucksError || !!tripsError || !driver.active} onClick={submit}>{busy ? 'Saving…' : 'Assign Truck'}</Button></>}>
       <div style={{ display: 'grid', gap: 12 }}>
         <SearchField placeholder="Search trucks by plate or model..." value={query} onChange={(event) => setQuery(event.target.value)} />
-        {isLoading ? <SkeletonRow variant="list" rows={3} /> : <PickList items={items} selected={selected} onSelect={setSelected} empty="No trucks match your search." />}
-        {(error || trucksError || tripsError) && <span className={styles.error}>{error || getApiErrorMessage(trucksError || tripsError)}</span>}
+        {isLoading || driversFetching ? <SkeletonRow variant="list" rows={3} /> : <PickList items={items} selected={selected} onSelect={setSelected} empty="No trucks match your search." />}
+        {(error || trucksError || driversError || tripsError) && <span className={styles.error}>{error || getApiErrorMessage(trucksError || driversError || tripsError)}</span>}
       </div>
     </Modal>
   );

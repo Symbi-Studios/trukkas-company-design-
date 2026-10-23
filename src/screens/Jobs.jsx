@@ -203,7 +203,7 @@ function JobInspector({ job, onClose, onBid, onContact, onOpen, onShare }) {
           </div>
         )}
         {tab === 'map' && (
-          <RouteMap title="Pickup & Delivery" origin={job.origin} destination={job.destination} distanceKm={job.distanceKm} routeCoordinates={job.routeCoordinates} duration={null} height={220} style={{ boxShadow: 'none', border: 0 }} />
+          <RouteMap title="Pickup & Delivery" origin={job.origin} destination={job.destination} distanceKm={job.distanceKm} routeCoordinates={job.routeCoordinates} duration={job.estimatedDuration} height={220} style={{ boxShadow: 'none', border: 0 }} />
         )}
       </div>
       <div className={styles.companyRow}>
@@ -316,7 +316,7 @@ export function HowItWorksModal({ open, onClose }) {
 export function Jobs() {
   const navigate = useNavigate();
   const [sendMessage] = useSendJobMessageMutation();
-  const { data: jobs, error: jobsError, isLoading: jobsLoading } = useGetAvailableJobsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: loadedJobs, error: jobsError, isLoading: jobsLoading } = useGetAvailableJobsQuery(undefined, { refetchOnMountOrArgChange: true });
   const [submitBid] = useSubmitJobBidMutation();
   const [saveJob] = useSetSavedJobMutation();
   const [category, setCategory] = useState('all');
@@ -342,6 +342,7 @@ export function Jobs() {
     return () => window.removeEventListener('trukkas:global-search', onSearch);
   }, []);
 
+  const jobs = jobsError ? undefined : loadedJobs;
   const market = useMemo(() => jobs ?? [], [jobs]);
   const myBids = market.filter((job) => job.myBid);
   const options = useMemo(() => ({
@@ -362,7 +363,7 @@ export function Jobs() {
       .filter((job) => !q || [job.id, job.number, jobTitle(job), job.origin, job.destination, job.cargoType, posterFor(job).name]
         .some((v) => String(v).toLowerCase().includes(q)));
     const sorters = {
-      newest: (a, b) => time(b.postedOn.split(' · ')[0]) - time(a.postedOn.split(' · ')[0]),
+      newest: (a, b) => (b.postedAt ?? 0) - (a.postedAt ?? 0),
       closing: (a, b) => (a.closesInDays ?? 99) - (b.closesInDays ?? 99),
       budget: (a, b) => b.budget - a.budget,
       pickup: (a, b) => time(a.pickupDate) - time(b.pickupDate),
@@ -372,15 +373,15 @@ export function Jobs() {
 
   const counts = useMemo(() => Object.fromEntries([
     ['all', filtered.length],
-    ...JOB_CATEGORIES.map((c) => [c, filtered.some((job) => job.category === '—') ? '—' : filtered.filter((j) => matchesCategory(j, c)).length]),
+    ...JOB_CATEGORIES.map((c) => [c, filtered.filter((j) => matchesCategory(j, c)).length]),
   ]), [filtered]);
   const visible = category === 'all' ? filtered : filtered.filter((j) => matchesCategory(j, category));
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pageRows = visible.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const selectedRow = pageRows.find((j) => j.id === selectedId) || null;
-  const { currentData: selectedDetail } = useGetJobDetailQuery(selectedId, { skip: !selectedRow });
-  const selected = selectedRow ? selectedDetail ?? selectedRow : null;
+  const { currentData: selectedDetail, error: selectedError } = useGetJobDetailQuery(selectedId, { skip: !selectedRow });
+  const selected = selectedRow ? (selectedError ? selectedRow : selectedDetail ?? selectedRow) : null;
 
   useEffect(() => {
     if (selectedId !== '' && !selected && pageRows[0] && window.matchMedia('(min-width: 1200px)').matches) setSelectedId(pageRows[0].id);
@@ -421,7 +422,7 @@ export function Jobs() {
           <>
             <Button variant="ghost" icon="circle-help" onClick={() => setHowOpen(true)} style={{ color: 'var(--tk-blue)', textDecoration: 'underline' }}>How it works?</Button>
             <Button variant={bidsOnly ? 'primary' : 'secondary'} icon="calendar-check" onClick={() => { setBidsOnly((v) => !v); setPage(1); }}>
-              My Bids ({jobs ? myBids.length : '—'})
+              My Bids ({myBids.length})
             </Button>
           </>
         }
@@ -430,7 +431,7 @@ export function Jobs() {
       <Tabs
         value={category}
         onChange={(value) => { setCategory(value); setPage(1); }}
-        items={[{ value: 'all', label: bidsOnly ? 'My Bids' : 'All Jobs', count: jobs ? counts.all : '—' }, ...JOB_CATEGORIES.map((c) => ({ value: c, label: c, count: jobs ? counts[c] : '—' }))]}
+        items={[{ value: 'all', label: bidsOnly ? 'My Bids' : 'All Jobs', count: counts.all }, ...JOB_CATEGORIES.map((c) => ({ value: c, label: c, count: counts[c] }))]}
       />
 
       <Card pad="tight" className={styles.filterCard}>
@@ -459,7 +460,7 @@ export function Jobs() {
       <div className={`${styles.mainGrid} ${selected ? '' : styles.noInspector}`}>
         <Card pad="none" className={styles.listCard}>
           <div className={styles.listHead}>
-            <span>{jobs ? visible.length : '—'} {visible.length === 1 ? 'job' : 'jobs'} found</span>
+            <span>{visible.length} {visible.length === 1 ? 'job' : 'jobs'} found</span>
             <span className={styles.sort}>
               <span className="tk-meta">Sort by</span>
               <Select value={sort} options={JOB_SORTS} onChange={(e) => {

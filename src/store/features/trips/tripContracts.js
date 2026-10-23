@@ -159,7 +159,7 @@ export function tripView(source, isDetail = false, jobDetails = null) {
     distanceKm: number(source.distanceKm) ?? number(jobDetails?.feeBreakdown?.recommendedFare?.distanceKm),
     weightKg: weightTonnes === null ? null : weightTonnes * 1000,
     quantity: count(cargo?.containerCount) ?? (containers ? containers.length : '—'),
-    cargoValue: null, // Declared cargo value and its currency are not captured by the API.
+    cargoValue: jobDetails?.cargoCurrency === 'NGN' ? number(jobDetails.cargoValue) : null,
     tripType: label(source.movementType ?? jobDetails?.movementType, movementTypes),
     specialInstructions: text(source.specialInstructions) ?? text(jobDetails?.specialInstructions) ?? '—',
     trucksRequired: count(cargo?.trucksRequired), documents: forwarderDocs,

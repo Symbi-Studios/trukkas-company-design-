@@ -31,7 +31,8 @@ const time = (date) => new Date(date).getTime() || 0;
 const money = (n) => typeof n === 'number' && Number.isFinite(n) ? formatNaira(n) : '—';
 
 function JobValue({ job }) {
-  const { currentData: data } = useGetJobEarningsQuery(job, { skip: job.status === 'Quoted' });
+  const { currentData, error } = useGetJobEarningsQuery(job, { skip: job.status === 'Quoted' });
+  const data = error ? undefined : currentData;
   return <span className={styles.twoLine}><strong>{money(job.contractValue)}</strong><small>{job.status === 'Quoted' ? 'Your bid' : `${money(data?.released)} earned`}</small></span>;
 }
 
@@ -55,8 +56,8 @@ function JobReceipt({ job, onClose }) {
  */
 export function MyJobs() {
   const navigate = useNavigate();
-  const { data: jobs, error, isLoading } = useGetMyJobsQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { data: lifetime } = useGetMyJobLifetimeEarningsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: loadedJobs, error, isLoading } = useGetMyJobsQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: loadedLifetime, error: lifetimeError } = useGetMyJobLifetimeEarningsQuery(undefined, { refetchOnMountOrArgChange: true });
   const [tab, setTab] = useState('all');
   const [query, setQuery] = useState('');
   const [forwarder, setForwarder] = useState('');
@@ -70,6 +71,8 @@ export function MyJobs() {
     return () => window.removeEventListener('trukkas:global-search', onSearch);
   }, []);
 
+  const jobs = error ? undefined : loadedJobs;
+  const lifetime = lifetimeError ? undefined : loadedLifetime;
   const rows = useMemo(() => (jobs ?? [])
     .filter((job) => job.status !== 'Pending')
     .map((job) => {

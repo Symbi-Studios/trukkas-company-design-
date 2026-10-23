@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate, useParams } from '../router.js';
 import {
   Avatar, Badge, Button, Card, DataTable, EmptyState, EntityHeaderCard, Icon, PageHeader, ProgressBar,
   SectionCard, SkeletonRow, StatCard, Tabs, Timeline,
 } from '../ds.js';
-import { useGetCompanyDriverQuery, useGetDriverReviewsQuery, useGetDriverTripsQuery } from '../store/features/drivers/driversApi.js';
+import { useGetCompanyDriverQuery, useGetDriverReviewsQuery, useGetDriverTripsQuery, useSetCompanyDriverAvailabilityMutation } from '../store/features/drivers/driversApi.js';
 import { useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
 import { useGetDriverDocumentLibraryQuery, useUploadDriverComplianceDocumentMutation } from '../store/features/documents/documentsApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
@@ -51,6 +51,8 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
   const { currentData: feedback, error: reviewsError, isLoading: reviewsLoading } = useGetDriverReviewsQuery(driverId, { skip: !driver, refetchOnMountOrArgChange: true });
   const { currentData: documentLibrary, error: documentsError, isLoading: documentsLoading } = useGetDriverDocumentLibraryQuery(driverId, { skip: !driver || !!driverError, refetchOnMountOrArgChange: true });
   const [uploadDocument] = useUploadDriverComplianceDocumentMutation();
+  const [setAvailability, { isLoading: changingAvailability }] = useSetCompanyDriverAvailabilityMutation();
+  const changingDuty = useRef(false);
   const truck = trucks?.find((item) => item.id === driver?.truckId);
   const [tab, setTab] = useState('overview');
   const [assignOpen, setAssignOpen] = useState(false);
@@ -80,7 +82,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
   const perf = {
     rating: driver.rating ?? (reviewsError ? null : feedback?.rating), reviewCount: driver.reviewCount !== '—' ? driver.reviewCount : !reviewsError ? feedback?.reviewCount ?? '—' : '—',
     tripsCompleted: driver.tripsCompleted !== '—' ? driver.tripsCompleted : knownTrips ? completed.length : '—', completionRate: closed ? Math.round(completed.length / closed * 100) : null,
-    onTimeRate: null, safetyScore: null, incidents: '—',
+    onTimeRate: driver.onTimeRate, safetyScore: driver.safetyScore, incidents: driver.incidents ?? '—',
     distanceKm: sumCompleted((trip) => trip.distanceKm), earnings: sumCompleted((trip) => trip.revenue),
     activeTrip: !tripsError ? trips?.find((trip) => trip.open) ?? null : null,
   };
@@ -89,7 +91,13 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
   const locked = !!perf.activeTrip;
   const status = locked ? 'On Trip' : driver.status;
   const assignmentBlocked = locked || !knownTrips || !driver.active;
-  const unavailableStatus = () => showToast('Changing driver availability is not supported by the documented company API.');
+  async function changeAvailability(availability) {
+    if (changingDuty.current || changingAvailability) return;
+    changingDuty.current = true;
+    try { await setAvailability({ id: driver.id, availability }).unwrap(); showToast(availability === 'AVAILABLE' ? 'Driver marked available.' : 'Driver marked off duty.'); }
+    catch (error) { showToast(getApiErrorMessage(error)); }
+    finally { changingDuty.current = false; }
+  }
 
   const truckActions = (
     <>
@@ -125,8 +133,8 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
           <>
             {truckActions}
             {driver.status === 'Off Duty'
-              ? <Button variant="outline" onClick={unavailableStatus}>Mark Available</Button>
-              : !locked && <Button variant="outline" onClick={unavailableStatus}>Mark Off Duty</Button>}
+              ? <Button variant="outline" disabled={changingAvailability || !driver.active} onClick={() => changeAvailability('AVAILABLE')}>Mark Available</Button>
+              : !locked && <Button variant="outline" disabled={changingAvailability || !driver.active || status === 'On Trip'} onClick={() => changeAvailability('OFF_DUTY')}>Mark Off Duty</Button>}
           </>
         }
       />

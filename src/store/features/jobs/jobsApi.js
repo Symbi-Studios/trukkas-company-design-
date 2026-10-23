@@ -4,7 +4,25 @@ import { count, earningsView, jobReviewView, jobView, lifetimeEarningsView, pape
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const changedTags = ['CompanyJobs', 'CompanyDashboard', 'CompanyTrips', 'CompanyTrip'];
-const signedIn = (api) => api.getState().auth.account ? null : unavailable('Sign in to manage company jobs.');
+const signedIn = (api) => {
+  const { account, activeCompanyId } = api.getState().auth;
+  return account?.apiRole === 'TRUCKER' && account.truckerType === 'COMPANY' && account.id === activeCompanyId
+    ? null : unavailable('Sign in with your trucking-company account to manage jobs.');
+};
+
+function companyQuery(api, baseQuery) {
+  const identity = () => {
+    const { account, activeCompanyId } = api.getState().auth;
+    return JSON.stringify([account?.id, account?.actualUserId, activeCompanyId]);
+  };
+  const company = identity();
+  return async (args) => {
+    if (api.signal.aborted) return unavailable('The job request was cancelled.');
+    if (identity() !== company) return unavailable('Your company session changed. Reload Jobs before continuing.');
+    const result = await baseQuery(args);
+    return identity() === company ? result : unavailable('Your company session changed. Reload Jobs before continuing.');
+  };
+}
 
 // Read every documented page for the existing local filters and pagination.
 async function collection(baseQuery, api, url, key, params = {}) {
@@ -17,7 +35,7 @@ async function collection(baseQuery, api, url, key, params = {}) {
     const data = unwrapApiResponseData(result.data), items = rows(data?.[key]), pagination = data?.pagination;
     if (!items || pagination?.page !== page || count(pagination?.total) === null || count(pagination?.totalPages) === null) return unavailable('The API did not return a valid job collection and pagination.');
     if (page === 1) { total = pagination.total; pages = pagination.totalPages; }
-    if (pagination.total !== total || pagination.totalPages !== pages || (page < pages && !items.length)) return unavailable('The jobs changed while loading. Please reload.');
+    if ((total > 0 && pages === 0) || pagination.total !== total || pagination.totalPages !== pages || (page < pages && !items.length)) return unavailable('The jobs changed while loading. Please reload.');
     resultRows.push(...items);
     if (resultRows.length > total) return unavailable('The API returned invalid job pagination.');
   }
@@ -25,11 +43,12 @@ async function collection(baseQuery, api, url, key, params = {}) {
   return { data: resultRows };
 }
 
-export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', 'CompanyJob', 'CompanyDashboard', 'CompanyTrips', 'CompanyTrip'] }).injectEndpoints({
+export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', 'CompanyJob', 'CompanyDashboard', 'CompanyTrips', 'CompanyTrip', 'CompanyDrivers', 'CompanyFleet'] }).injectEndpoints({
   endpoints: (builder) => ({
     getAvailableJobs: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         const available = await collection(baseQuery, api, '/jobs/available', 'jobs');
         if (available.error) return available;
         const bids = await collection(baseQuery, api, '/company/bids', 'bids', { tab: 'active' });
@@ -59,6 +78,7 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
     getMyJobs: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         const assigned = await collection(baseQuery, api, '/company/jobs', 'jobs');
         if (assigned.error) return assigned;
         const bids = await collection(baseQuery, api, '/company/bids', 'bids', { tab: 'active' });
@@ -93,6 +113,7 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
     getMyJobLifetimeEarnings: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         const result = await baseQuery({ url: '/company/earnings', params: { period: '30d' } });
         if (result.error) return result;
         return { data: lifetimeEarningsView(unwrapApiResponseData(result.data)) };
@@ -102,10 +123,11 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
     getJobReview: builder.query({
       async queryFn(id, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         if (!text(id)) return unavailable('This job has no API ID.');
         const result = await collection(baseQuery, api, '/company/reviews', 'reviews', { jobId: id, sort: 'newest' });
         if (result.error) return result;
-        if (result.data.some((review) => !['COMPANY', 'DRIVER'].includes(review.reviewed?.type))) return unavailable('The API did not identify whether a job review rates the company or a driver.');
+        if (result.data.some((review) => review.jobId !== id || !['COMPANY', 'DRIVER'].includes(review.reviewed?.type))) return unavailable('The API did not identify whether a job review rates the company or a driver.');
         const companyReviews = result.data.filter((review) => review.reviewed.type === 'COMPANY');
         if (companyReviews.length > 1) return unavailable('The API returned multiple company reviews for this job.');
         const review = companyReviews.length ? jobReviewView(companyReviews[0]) : null;
@@ -117,6 +139,7 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
     getJobDetail: builder.query({
       async queryFn(id, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         if (!text(id)) return unavailable('This job has no API ID.');
         const result = await baseQuery(`/jobs/${encodeURIComponent(id)}`);
         if (result.error) return result;
@@ -128,6 +151,7 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
     getJobEarnings: builder.query({
       async queryFn(job, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         if (!text(job?.id)) return unavailable('This job has no API ID.');
         const result = await baseQuery(`/company/trips/${encodeURIComponent(job.id)}`);
         if (result.error) return result;
@@ -140,6 +164,7 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
     getJobPaperwork: builder.query({
       async queryFn(id, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         if (!text(id)) return unavailable('This job has no API ID.');
         const result = await baseQuery(`/company/trips/${encodeURIComponent(id)}`);
         if (result.error) return result;
@@ -152,17 +177,21 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
     getJobDispatchOptions: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
-        const result = await baseQuery('/dashboard/drivers');
+        baseQuery = companyQuery(api, baseQuery);
+        const result = await collection(baseQuery, api, '/company/drivers', 'drivers', { status: 'ACTIVE', availability: 'AVAILABLE' });
         if (result.error) return result;
-        const drivers = rows(unwrapApiResponseData(result.data)?.drivers);
-        if (!drivers) return unavailable('The API did not return the company’s drivers.');
-        return { data: drivers.filter((driver) => driver.status === 'ACTIVE' && text(driver.userId) && text(driver.truck?.id)).map((driver) => ({ id: driver.userId, name: [text(driver.user?.firstName), text(driver.user?.lastName)].filter(Boolean).join(' ') || '—', licenseClass: '—', truckId: driver.truck.id, plate: text(driver.truck.plateNumber) ?? '—', makeModel: [text(driver.truck.containerSize?.name), text(driver.truck.containerType?.name)].filter(Boolean).join(' ') || '—', location: '—' })) };
+        return { data: result.data.filter((driver) => driver.status === 'ACTIVE' && driver.availability === 'AVAILABLE' && text(driver.truck?.id)).map((driver) => ({
+          id: driver.id, name: text(driver.name) ?? '—', licenseClass: text(driver.license?.class) ?? '—',
+          truckId: driver.truck.id, plate: text(driver.truck.plateNumber) ?? '—',
+          makeModel: [text(driver.truck.make), text(driver.truck.model)].filter(Boolean).join(' ') || '—', location: text(driver.truck.locationLabel) ?? '—',
+        })) };
       },
-      providesTags: ['CompanyJobs'],
+      providesTags: ['CompanyJobs', 'CompanyDrivers', 'CompanyFleet', 'CompanyTrips'],
     }),
     submitJobBid: builder.mutation({
       async queryFn({ jobId, amount, message = '' }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         const error = getBidValidationError(amount, message);
         if (!text(jobId) || error) return unavailable(error ?? 'This job has no API ID.');
         const result = await baseQuery({ url: `/jobs/${encodeURIComponent(jobId)}/bids`, method: 'POST', body: { proposedPrice: Number(amount), ...(message.trim() ? { message: message.trim() } : {}) } });
@@ -175,6 +204,7 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
     withdrawJobBid: builder.mutation({
       async queryFn({ jobId, bidId }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         if (!text(jobId) || !text(bidId)) return unavailable('The API has not identified this bid.');
         const result = await baseQuery({ url: `/company/bids/${encodeURIComponent(bidId)}/withdraw`, method: 'POST' });
         if (result.error) return result;
@@ -186,6 +216,7 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
     setSavedJob: builder.mutation({
       async queryFn({ jobId, saved }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         if (!text(jobId) || typeof saved !== 'boolean') return unavailable('The job’s saved state is unavailable.');
         const result = await baseQuery({ url: `/jobs/saved-jobs/${encodeURIComponent(jobId)}`, method: 'PUT', body: { saved } });
         if (result.error) return result;
@@ -197,7 +228,12 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
     dispatchJobDriver: builder.mutation({
       async queryFn({ jobId, driverId, truckId }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         if (![jobId, driverId, truckId].every(text)) return unavailable('Select a driver and their assigned truck.');
+        const options = jobsApi.endpoints.getJobDispatchOptions.select(undefined)(api.getState());
+        if (options.isError || options.status !== 'fulfilled' || !options.data?.some((driver) => driver.id === driverId && driver.truckId === truckId)) {
+          return unavailable('Load and select an available driver and their assigned truck before dispatching.');
+        }
         const result = await baseQuery({ url: `/jobs/${encodeURIComponent(jobId)}/assignment/dispatch`, method: 'POST', body: { driverId, truckId } });
         if (result.error) return result;
         const assignment = unwrapApiResponseData(result.data)?.assignment;
@@ -208,6 +244,7 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
     sendJobMessage: builder.mutation({
       async queryFn({ jobId, receiverId, content }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
         if (!text(jobId) || !text(receiverId)) return unavailable('The API has not identified this job’s forwarder.');
         const message = text(content);
         if (!message || message.length > 500) return unavailable('Enter a message of 500 characters or fewer.');

@@ -1,4 +1,5 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
+import { pinLockoutView } from '../../api/pinContracts.js';
 import { COMPANY_REQUIREMENTS, maskNumber } from '../../../domain/documents.js';
 
 const documentTypes = {
@@ -225,6 +226,11 @@ export const onboardingApi = baseApi.injectEndpoints({
           pin: {
             set: typeof data?.transactionPinSet === 'boolean' ? data.transactionPinSet : null,
             updatedOn: displayDate(data?.transactionPinChangedAt),
+            lockout: pinLockoutView(data?.lockout),
+            requirements: Object.fromEntries([
+              ['payout', 'payouts'], ['withdraw', 'withdrawals'],
+              ['bank', 'bankChanges'], ['finance-role', 'financePermissions'],
+            ].map(([key, field]) => [key, typeof data?.pinRequirements?.[field] === 'boolean' ? data.pinRequirements[field] : null])),
           },
           passwordUpdatedOn: displayDate(data?.passwordChangedAt),
           twoFactor: {

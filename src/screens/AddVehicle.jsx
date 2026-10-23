@@ -47,11 +47,12 @@ function Field({ children, span }) {
 
 export function AddVehicle() {
   const navigate = useNavigate();
-  const { data: trucks = [] } = useGetFleetQuery();
-  const { data: companyDrivers = [] } = useGetFleetDriversQuery();
-  const drivers = useMemo(() => companyDrivers.filter((driver) => driver.active), [companyDrivers]);
-  const { data: companyTrips = [] } = useGetCompanyTripsQuery();
-  const trips = useMemo(() => companyTrips.map((trip) => ({ ...trip, driverId: drivers.find((driver) => driver.truckPlate === trip.truckPlate)?.id })), [companyTrips, drivers]);
+  const { currentData: loadedTrucks, error: trucksError } = useGetFleetQuery();
+  const { currentData: loadedDrivers, error: driversError } = useGetFleetDriversQuery();
+  const trucks = trucksError ? [] : loadedTrucks ?? [];
+  const drivers = useMemo(() => driversError ? [] : (loadedDrivers ?? []).filter((driver) => driver.active), [loadedDrivers, driversError]);
+  const { currentData: loadedTrips, error: tripsError } = useGetCompanyTripsQuery();
+  const trips = useMemo(() => tripsError ? [] : (loadedTrips ?? []).map((trip) => ({ ...trip, driverId: trip.driverId ?? drivers.find((driver) => driver.truckPlate === trip.truckPlate)?.id })), [loadedTrips, tripsError, drivers]);
   const [addVehicle] = useAddFleetVehicleMutation();
   const submitting = useRef(false);
   const partialSave = useRef(null);
@@ -74,7 +75,9 @@ export function AddVehicle() {
   const docsDone = requiredDocs.filter((r) => draft.docs[r.type].files.length && (!r.expires || draft.docs[r.type].expiry)).length;
   const photoCount = VEHICLE_PHOTO_SLOTS.filter((s) => draft.photos[s].length).length;
   const driver = drivers.find((d) => d.id === draft.driverId);
-  const driverItems = useMemo(() => driverOptions(drivers, trips, { query: driverQuery }), [drivers, trips, driverQuery]);
+  const driverItems = useMemo(() => driverOptions(drivers, trips, { query: driverQuery }).map((item) => ({
+    ...item, blocked: item.blocked || (drivers.find((driver) => driver.id === item.id)?.onTrip ? 'On an active trip — can’t be reassigned right now.' : null),
+  })), [drivers, trips, driverQuery]);
 
   function validate(key) {
     const next = {};

@@ -35,7 +35,7 @@ export function NotificationLiveUpdates() {
       // that may finish while an event is arriving. Never invent unread totals.
       timer = setTimeout(() => {
         timer = undefined;
-        if (current()) dispatch(notificationsApi.util.invalidateTags(['Notifications']));
+        if (current()) dispatch(notificationsApi.util.invalidateTags(['Notifications', 'CompanyDashboard']));
       }, 200);
     };
     const socket = io(origin, { auth: { token }, transports: ['websocket'], autoConnect: false, forceNew: true });

@@ -50,9 +50,9 @@ export function jobView(value, context = 'detail', bid = null) {
   const myBid = pending ? bidView(pending) : null;
   const route = typeof job.route === 'string' ? job.route.split(' → ') : null;
   const origin = text(job.route?.origin?.address) ?? (route?.length === 2 ? text(route[0]) : null)
-    ?? (context === 'bid' ? text(job.origin) : context === 'assigned' ? text(job.port) : null);
+    ?? text(job.pickupAddress) ?? text(job.port?.name) ?? text(job.origin) ?? (context === 'assigned' ? text(job.port) : null);
   const destination = text(job.route?.destination?.address) ?? (route?.length === 2 ? text(route[1]) : null)
-    ?? (context === 'bid' ? text(job.destination) : context === 'assigned' ? text(job.deliveryAddress) : null);
+    ?? text(job.deliveryAddress) ?? text(job.dropoffPort?.name) ?? text(job.destination);
   const category = label(job.cargoType ?? requirements?.cargoType, { CONTAINER: 'Container', BULK_BREAK: 'Break-bulk' });
   // General Cargo is the documented alias for non-containerised cargo. Both
   // existing tabs address BULK_BREAK without creating duplicate job records.
@@ -64,6 +64,12 @@ export function jobView(value, context = 'detail', bid = null) {
     ...(equipment ?? []),
   ].filter(Boolean) : null;
   const docs = rows(job.documents);
+  const primaryPhoto = safeUrl(job.cargoPhotoUrl);
+  const cargoPhotos = Array.isArray(job.cargoPhotoUrls)
+    ? job.cargoPhotoUrls.map(safeUrl)
+    : primaryPhoto ? [primaryPhoto] : null;
+  const photoCount = cargoPhotos?.every((url) => url !== null) ? cargoPhotos.length : null;
+  const duration = number(job.estimatedDurationMinutes);
   const mapped = {
     apiBacked: true, id: job.id, number: text(job.jobNumber) ?? '—', wireStatus: text(job.status),
     title: cargoDescription ?? '—', cargoDescription: cargoDescription ?? '—',
@@ -72,15 +78,18 @@ export function jobView(value, context = 'detail', bid = null) {
     origin: origin ?? '—', destination: destination ?? '—', routeCoordinates: { origin: coordinates(job.route?.origin), destination: coordinates(job.route?.destination) },
     category, categories, cargoType: cargoDescription ?? category, equipment: equipment?.length ? equipment.join(', ') : '—',
     quantity: containers ? containers.length : '—', weightKg: tons === null ? null : tons * 1000,
-    pickupDate: dateLabel(terms?.pickupDate ?? job.tdoDate), deliveryDate: dateLabel(terms?.deliveryDate), tripType: label(terms?.tripType, types), insurance: '—', paymentTerms: text(terms?.payment?.structure) ?? '—',
-    cargoValue: null, budget: listedFare,
+    pickupDate: dateLabel(terms?.pickupDate ?? job.tdoDate), deliveryDate: dateLabel(terms?.deliveryDate), tripType: label(terms?.tripType, types), insurance: text(job.insurance) ?? '—', paymentTerms: text(terms?.payment?.structure) ?? '—',
+    cargoValue: job.cargoCurrency === 'NGN' ? number(job.cargoValue) : null, budget: listedFare,
     contractValue: decimal(job.agreedPrice) ?? myBid?.amount ?? listedFare,
     trucksRequired: count(requirements?.trucksRequired) ?? count(job.requiredTrucks), negotiable: bool(terms?.negotiable), saved: bool(job.saved),
-    postedOn: stamp(job.createdAt ?? (context === 'bid' ? job.requestedAt : null)), postedAgo: null, closesInDays: null,
+    postedOn: stamp(job.createdAt ?? (context === 'bid' ? job.requestedAt : null)),
+    postedAt: instant(job.createdAt ?? (context === 'bid' ? job.requestedAt : null))?.getTime() ?? null,
+    postedAgo: null, closesInDays: null,
     distanceKm: number(job.feeBreakdown?.recommendedFare?.distanceKm),
+    estimatedDuration: duration === null ? null : duration.toLocaleString('en-NG', { maximumFractionDigits: 1 }) + ' min',
     requirements: requirementItems?.length ? [...new Set(requirementItems)] : null, specialNotes: instructions ? [instructions] : null,
     documents: docs?.map((doc) => ({ id: text(doc.id), name: text(doc.fileName) ?? text(doc.type) ?? '—', url: safeUrl(doc.url), size: number(doc.sizeBytes) === null ? '—' : `${(doc.sizeBytes / 1024).toLocaleString('en-NG', { maximumFractionDigits: 1 })} KB` })) ?? null,
-    cargoPhotoUrl: safeUrl(job.cargoPhotoUrl), photos: safeUrl(job.cargoPhotoUrl) ? 1 : null, myBid,
+    cargoPhotoUrl: cargoPhotos?.[0] ?? primaryPhoto, cargoPhotos, photos: photoCount, myBid,
     bidBounds: terms && Object.hasOwn(terms, 'bidRange') ? [decimal(bidRange?.min), decimal(bidRange?.max)] : [decimal(job.bounds?.minAmount), decimal(job.bounds?.maxAmount)],
     bidSlots: { used: count(job.myBidSlots?.used), remaining: count(job.myBidSlots?.remaining), max: count(job.myBidSlots?.max) },
     contactId: text(forwarder?.id),
@@ -117,12 +126,19 @@ export function earningsView(source, job) {
 export function paperworkView(source) {
   const documents = rows(source?.extraDocuments);
   if (!documents) return null;
-  return documents.map((doc) => ({
+  const extraDocuments = documents.map((doc) => ({
     id: text(doc.id), tripId: source.id,
     name: text(doc.name) ?? text(doc.fileName) ?? '—',
     url: safeUrl(doc.url), truckPlate: text(source.truck?.plateNumber) ?? text(source.truckPlate) ?? '—',
     uploadedOn: dateLabel(doc.uploadedAt), status: doc.status === 'UPLOADED' ? 'Uploaded' : '—',
   }));
+  const pod = object(source.pod);
+  const podDocument = pod && (text(pod.photoUrl) || text(pod.submittedAt) || text(pod.rejectedAt)) ? {
+    id: 'job-proof-of-delivery', tripId: source.id, name: 'Proof of Delivery',
+    url: safeUrl(pod.photoUrl), truckPlate: text(source.truck?.plateNumber) ?? text(source.truckPlate) ?? '—',
+    uploadedOn: dateLabel(pod.submittedAt), status: text(pod.rejectedAt) ? 'Rejected' : safeUrl(pod.photoUrl) ? 'Uploaded' : '—',
+  } : null;
+  return [...(podDocument ? [podDocument] : []), ...extraDocuments];
 }
 
 export function receiptView(job, earnings, company) {

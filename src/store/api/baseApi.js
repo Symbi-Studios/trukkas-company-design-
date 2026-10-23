@@ -1,6 +1,7 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { clearSession, setCredentials } from '../features/auth/authSlice.js';
 import { getApiErrorMessage } from './getApiErrorMessage.js';
+import { pinLockoutView } from './pinContracts.js';
 
 const configuredBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://trukkas-backend.onrender.com/api/v1';
 const baseUrl = configuredBaseUrl.replace(/\/+$/, '');
@@ -34,7 +35,7 @@ let activeRefresh = null;
 
 let requestSequence = 0;
 
-const privateLogField = /^account$|^sentTo$|authorization|cookie|token|password|secret|credential|identifier|challenge|backupcode|otp|^code$|pin|email|phone|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment|^body$|^subject$|^topic$|reason|comment|^reply$|instruction|notes?|documentnumber|^url$/i;
+const privateLogField = /^account$|^sentTo$|authorization|cookie|token|password|secret|credential|identifier|challenge|backupcode|otp|^code$|pin|email|phone|licen[cs]e|^number$|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment|^body$|^subject$|^topic$|reason|comment|^reply$|instruction|notes?|documentnumber|^url$/i;
 function bodyForLog(body, seen = new WeakSet()) {
   if (body === null || typeof body !== 'object') return body;
   if (seen.has(body)) return '[Circular]';
@@ -216,15 +217,42 @@ export function refreshSession(api, extraOptions) {
   return activeRefresh.promise;
 }
 
+const pinSession = (api) => {
+  const { account, activeCompanyId } = api.getState().auth;
+  return JSON.stringify([account?.id, account?.actualUserId, activeCompanyId]);
+};
+
+function syncPinSecurity(result, args, api, session) {
+  if (publicEndpoints.has(api.endpoint) || typeof args !== 'object' || !args.body
+    || !['POST', 'PATCH'].includes((args.method || 'GET').toUpperCase())
+    || pinSession(api) !== session) return;
+  const path = args.url.split('?')[0];
+  const approvesPin = typeof args.body.transactionPin === 'string' || typeof args.body.currentPin === 'string'
+    || path === '/profile/transaction-pin' || path === '/profile/transaction-pin/reset';
+  if (!approvesPin) return;
+  const data = unwrapApiResponseData(result.error ? result.error.data : result.data);
+  if (data && Object.hasOwn(data, 'lockout') && baseApi.endpoints.getOnboardingSecurity) {
+    const lockout = pinLockoutView(data.lockout);
+    api.dispatch(baseApi.util.updateQueryData('getOnboardingSecurity', undefined, (security) => {
+      if (security.pin) security.pin.lockout = lockout;
+    }));
+  }
+  // Successful PIN entry clears prior failures; rejected approvals can add one.
+  // Read the authoritative state even when the write response has no lockout.
+  api.dispatch(baseApi.util.invalidateTags(['AuthOnboardingSecurity']));
+}
+
 async function baseQueryWithReauth(args, api, extraOptions) {
+  const session = pinSession(api);
   const requestToken = api.getState().auth.accessToken;
   let result = await runLoggedBaseQuery(rawBaseQuery, args, api, extraOptions);
+  syncPinSecurity(result, args, api, session);
   const path = (typeof args === 'string' ? args : args.url).split('?')[0];
   const method = (typeof args === 'string' ? 'GET' : args.method || 'GET').toUpperCase();
   const safeToRetry = ['GET', 'HEAD', 'OPTIONS'].includes(method) || retryableAfterRefresh.has(api.endpoint);
 
   // This 401 is a rejected financial approval, not an expired login session.
-  if (unwrapApiResponseData(result.error?.data)?.code === 'TRANSACTION_PIN_INVALID') return result;
+  if (['TRANSACTION_PIN_INVALID', 'TRANSACTION_PIN_LOCKED'].includes(unwrapApiResponseData(result.error?.data)?.code)) return result;
   if (path === '/profile/password' && result.error?.status === 401 && unwrapApiResponseData(result.error.data)?.message === 'Current password is incorrect') return result;
   if (result.error?.status !== 401 || publicEndpoints.has(api.endpoint) || reauthExcludedPaths.has(path)) return result;
 

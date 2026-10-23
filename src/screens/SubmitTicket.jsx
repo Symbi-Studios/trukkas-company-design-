@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from '../router.js';
-import { Button, Card, Icon, PageHeader } from '../ds.js';
+import { Button, Card, Icon, PageHeader, Select } from '../ds.js';
 import { useCreateSupportTicketMutation } from '../store/features/support/supportApi.js';
 import { useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
 import { useGetCompanyDriversQuery } from '../store/features/drivers/driversApi.js';
@@ -28,7 +28,7 @@ const EMPTY = { category: '', priority: '', subject: '', description: '', relate
 
 function FieldLabel({ children, required, optional, htmlFor }) {
   return (
-    <label htmlFor={htmlFor} className={styles.label}>
+    <label id={htmlFor ? `${htmlFor}-label` : undefined} htmlFor={htmlFor} className={styles.label}>
       {children}
       {required && <span className={styles.required}> *</span>}
       {optional && <span className={styles.optional}> (Optional)</span>}
@@ -38,13 +38,11 @@ function FieldLabel({ children, required, optional, htmlFor }) {
 
 function IconSelect({ id, icon, iconColor, value, onChange, placeholder, options, error }) {
   return (
-    <div className={`${styles.control} ${error ? styles.invalid : ''}`}>
-      <Icon name={icon} size={18} color={iconColor || 'var(--tk-ink-700)'} />
-      <select id={id} value={value} onChange={onChange} className={value ? '' : styles.placeholder} aria-invalid={!!error}>
-        <option value="">{placeholder}</option>
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      <Icon name="chevron-down" size={16} color="var(--tk-ink-700)" className={styles.chevron} />
+    <div className={`${styles.selectControl} ${!value ? styles.selectPlaceholder : ''} ${error ? styles.invalid : ''}`}>
+      <Icon name={icon} size={18} color={iconColor || 'var(--tk-ink-700)'} className={styles.selectIcon} aria-hidden="true" />
+      <Select id={id} value={value} onChange={onChange} placeholder={placeholder}
+        options={[{ value: '', label: placeholder }, ...options]}
+        aria-labelledby={`${id}-label`} aria-invalid={!!error} />
     </div>
   );
 }

@@ -78,6 +78,19 @@ export function documentDriverView(source) {
     licenseNumber: text(source.license?.number) ?? '—', licenseExpiry: dateLabel(source.license?.expiresAt) };
 }
 
+// NIN is a separate identity record, not an uploaded file or document ID.
+export function driverNinDocumentView(source, driver) {
+  const statuses = { submitted: 'Pending Review', pending: 'Pending Review', verified: 'Verified', rejected: 'Rejected' };
+  if (!source || source.status !== null && !Object.hasOwn(statuses, source.status)) return null;
+  const candidate = text(source.maskedNin);
+  const masked = candidate && /^[0-9*•]+$/.test(candidate) && /[*•]/.test(candidate) ? candidate : null;
+  if (!masked && source.status === null) return null;
+  const status = statuses[source.status] ?? '—';
+  return { id: null, ownerType: 'driver', ownerId: driver.id, driverName: driver.name, type: 'NIN', name: 'NIN',
+    number: masked ?? '—', status, uploadedOn: dateLabel(source.submittedAt), fileSize: '—', url: null,
+    expiryDate: '—', expiryKnown: true, expiryDays: null };
+}
+
 export function driverDocumentView(source, driver) {
   if (!text(source?.id) || !text(source.type)) return null;
   const expiry = source.expiresAt, days = expiryDays(expiry);

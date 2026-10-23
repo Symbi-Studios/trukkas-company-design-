@@ -7,8 +7,8 @@ import { PickList } from './AssignModals.jsx';
 import styles from './AssignModals.module.css';
 
 export function FleetAssignDriverModal({ truck, open, onClose, onDone }) {
-  const { data: drivers, error: driversError } = useGetFleetDriversQuery(undefined, { skip: !open, refetchOnMountOrArgChange: true });
-  const { data: trips, error: tripsError } = useGetCompanyTripsQuery(undefined, { skip: !open, refetchOnMountOrArgChange: true });
+  const { currentData: loadedDrivers, error: driversError } = useGetFleetDriversQuery(undefined, { skip: !open, refetchOnMountOrArgChange: true });
+  const { currentData: loadedTrips, error: tripsError } = useGetCompanyTripsQuery(undefined, { skip: !open, refetchOnMountOrArgChange: true });
   const [assign] = useAssignFleetDriverMutation();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
@@ -16,10 +16,12 @@ export function FleetAssignDriverModal({ truck, open, onClose, onDone }) {
   const [error, setError] = useState('');
   const submitting = useRef(false);
   useEffect(() => { if (open) { setSelected(null); setQuery(''); setError(''); } }, [open]);
+  const drivers = driversError ? undefined : loadedDrivers;
+  const trips = tripsError ? undefined : loadedTrips;
   const items = (drivers ?? []).filter((driver) => driver.active && driver.id !== truck?.driverId)
     .filter((driver) => !query || [driver.name, driver.phone, driver.licenseNumber].some((value) => value.toLowerCase().includes(query.toLowerCase())))
     .map((driver) => {
-      const onTrip = driver.truckPlate && trips?.some((trip) => trip.truckPlate === driver.truckPlate && trip.open);
+      const onTrip = driver.onTrip || trips?.some((trip) => trip.open && (trip.driverId === driver.id || driver.truckPlate && trip.truckPlate === driver.truckPlate));
       return {
         id: driver.id, title: driver.name,
         subtitle: `${driver.licenseClass} · ★ ${driver.rating?.toFixed(1) ?? '—'} · ${driver.tripsCompleted} trips · ${driver.phone}`,

@@ -6,7 +6,7 @@ import { otpMetadata } from '../../api/otpContracts.js';
 
 const post = (url, body) => ({ url, method: 'POST', body });
 const unavailable = (message) => ({ error: { status: 'CUSTOM_ERROR', error: message } });
-const timestamp = (value) => typeof value === 'string' && /T/.test(value) && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
+const timestamp = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
 const safeCount = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
 
 function confirmedMessage(response, failureMessage) {
@@ -29,7 +29,7 @@ function registrationOtp(response) {
   const remainingResends = safeCount(otp?.remainingResends);
   const remainingAttempts = safeCount(otp?.remainingAttempts);
   if (typeof data?.sessionToken !== 'string' || !data.sessionToken.trim()
-    || !Number.isSafeInteger(otp?.length) || otp.length < 4 || otp.length > 10
+    || otp?.length !== 6
     || expiresAt === null || resendAvailableAt === null || sessionExpiresAt === null
     || !Number.isSafeInteger(otp?.retryAfterSeconds) || otp.retryAfterSeconds < 0
     || remainingResends === null || remainingAttempts === null
@@ -50,7 +50,7 @@ function resentOtp(response) {
   const resendAvailableAt = timestamp(otp?.resendAvailableAt);
   const remainingResends = safeCount(otp?.remainingResends);
   const remainingAttempts = safeCount(otp?.remainingAttempts);
-  if (!Number.isSafeInteger(otp?.length) || otp.length < 4 || otp.length > 10
+  if (otp?.length !== 6
     || expiresAt === null || resendAvailableAt === null
     || !Number.isSafeInteger(otp?.retryAfterSeconds) || otp.retryAfterSeconds < 0
     || remainingResends === null || remainingAttempts === null
@@ -70,7 +70,7 @@ function loginChallenge(response, purpose) {
   const data = unwrapApiResponseData(response);
   if (data?.twoFactorRequired !== true) return null;
   if (typeof data.challengeId !== 'string' || !data.challengeId.trim() || data.method !== 'TOTP'
-    || typeof data.expiresAt !== 'string' || !Number.isFinite(Date.parse(data.expiresAt)) || Date.parse(data.expiresAt) <= Date.now()) {
+    || timestamp(data.expiresAt) === null || timestamp(data.expiresAt) <= Date.now()) {
     return unavailable('The API did not return a valid sign-in challenge. Please sign in again.');
   }
   return { data: { twoFactorRequired: true, challenge: { id: data.challengeId, method: 'app', expiresAt: data.expiresAt, purpose } } };
@@ -170,11 +170,25 @@ async function storeSession(_arg, { dispatch, getState, queryFulfilled }) {
 }
 
 function companyRequestAccount(api) {
-  const account = api.getState().auth.account;
-  return account?.id && account.apiRole === 'TRUCKER' && account.truckerType === 'COMPANY' ? account : null;
+  const { account, activeCompanyId } = api.getState().auth;
+  return account?.id && account.id === activeCompanyId && account.apiRole === 'TRUCKER' && account.truckerType === 'COMPANY' ? account : null;
 }
 
 const changedSession = () => unavailable('Your company session changed while this request was running. Please reload before continuing.');
+
+function companyOnboardingQuery(api, baseQuery) {
+  const identity = () => {
+    const { account, activeCompanyId } = api.getState().auth;
+    return JSON.stringify([account?.id, account?.actualUserId, activeCompanyId]);
+  };
+  const company = identity();
+  return async (args) => {
+    if (api.signal.aborted) return unavailable('The registration request was cancelled.');
+    if (!companyRequestAccount(api) || identity() !== company) return changedSession();
+    const result = await baseQuery(args);
+    return identity() === company ? result : changedSession();
+  };
+}
 
 async function syncOnboardingAccount(_arg, { dispatch, getState, queryFulfilled }) {
   const account = getState().auth.account;
@@ -314,6 +328,7 @@ export const authApi = baseApi.injectEndpoints({
       async queryFn(form, api, _options, baseQuery) {
         const account = companyRequestAccount(api);
         if (!account) return unavailable('Sign in with your company account to save registration details.');
+        baseQuery = companyOnboardingQuery(api, baseQuery);
         let body;
         try { body = companyFormBody(form); }
         catch (error) { return unavailable(error.message); }
@@ -342,6 +357,7 @@ export const authApi = baseApi.injectEndpoints({
       async queryFn(_arg, api, _options, baseQuery) {
         const account = companyRequestAccount(api);
         if (!account) return unavailable('Sign in with your company account to retry business verification.');
+        baseQuery = companyOnboardingQuery(api, baseQuery);
         const current = await baseQuery('/profile');
         if (current.error) return current;
         if (api.getState().auth.account !== account) return changedSession();
@@ -368,6 +384,7 @@ export const authApi = baseApi.injectEndpoints({
       async queryFn(_arg, api, _options, baseQuery) {
         const account = companyRequestAccount(api);
         if (!account) return unavailable('Sign in with your company account to resume registration.');
+        baseQuery = companyOnboardingQuery(api, baseQuery);
         const result = await baseQuery('/profile');
         if (result.error) return result;
         if (api.getState().auth.account !== account) return changedSession();
@@ -381,6 +398,7 @@ export const authApi = baseApi.injectEndpoints({
       async queryFn({ acceptedTerms } = {}, api, _options, baseQuery) {
         const account = companyRequestAccount(api);
         if (!account) return unavailable('Sign in with your company account to finish registration.');
+        baseQuery = companyOnboardingQuery(api, baseQuery);
         const profile = await baseQuery('/profile');
         if (profile.error) return profile;
         if (api.getState().auth.account !== account) return changedSession();
@@ -474,7 +492,7 @@ export const authApi = baseApi.injectEndpoints({
         if (recovery?.email === email.trim().toLowerCase() && recovery.otp?.expiresAt <= Date.now()) return unavailable('This reset code has expired. Request a new code.');
         if (recovery?.email === email.trim().toLowerCase() && recovery.otp?.remainingAttempts === 0) return unavailable('No verification attempts remain. Request a new code.');
         const result = await baseQuery(post('/auth/reset-password', { email: email.trim(), otp: token.trim(), newPassword }));
-        return result.error ? result : confirmedMessage(result.data, 'The API did not confirm the password reset. Try signing in before requesting another code.');
+        return result.error ? otpFailure(result) : confirmedMessage(result.data, 'The API did not confirm the password reset. Try signing in before requesting another code.');
       },
     }),
   }),

@@ -94,10 +94,14 @@ export const notificationsApi = baseApi.injectEndpoints({
       providesTags: ['Notifications'],
     }),
     markNotificationRead: builder.mutation({
-      queryFn(id, api, _options, baseQuery) {
+      async queryFn(id, api, _options, baseQuery) {
         baseQuery = companyQuery(api, baseQuery);
         if (!text(id)) return invalid('This notification has no API ID and cannot be marked as read.');
-        return baseQuery({ url: `/notifications/${encodeURIComponent(id)}/read`, method: 'PATCH' });
+        const result = await baseQuery({ url: `/notifications/${encodeURIComponent(id)}/read`, method: 'PATCH' });
+        if (result.error) return result;
+        return text(unwrapApiResponseData(result.data)?.message)
+          ? { data: { id, read: true } }
+          : invalid('The API did not confirm that the notification was marked as read. Please try again.');
       },
       invalidatesTags: (_data, error) => error ? [] : ['Notifications'],
     }),

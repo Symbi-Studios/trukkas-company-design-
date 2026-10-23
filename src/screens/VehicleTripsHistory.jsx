@@ -17,7 +17,8 @@ const STATUS_OPTIONS = ['All Status', 'In Transit', 'Completed', 'Cancelled'];
 export function VehicleTripsHistory() {
   const navigate = useNavigate();
   const { truck } = useFleetVehicle();
-  const { data: trips, error, isLoading } = useGetFleetTripsQuery(truck?.id, { skip: !truck, refetchOnMountOrArgChange: true });
+  const { currentData: loadedTrips, error, isLoading } = useGetFleetTripsQuery(truck?.id, { skip: !truck, refetchOnMountOrArgChange: true });
+  const trips = error ? undefined : loadedTrips;
   const [toast, showToast] = useToast();
   const [exportTrips, { isFetching: exporting }] = useLazyExportFleetTripsQuery();
   const downloading = useRef(false);

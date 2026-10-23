@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from '../router.js';
 import {
   Avatar, Badge, Button, Card, DataTable, EmptyState, Icon, Modal, PageHeader,
   SearchField, SkeletonRow, StatCard, TextField,
 } from '../ds.js';
-import { useAddCompanyDriverMutation, useGetCompanyDriversQuery } from '../store/features/drivers/driversApi.js';
+import { useAddCompanyDriverMutation, useGetCompanyDriversQuery, useGetCompanyDriverSummaryQuery } from '../store/features/drivers/driversApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { driverDetailHref } from '../domain/driverLinks.js';
 import { syncTopBarSearch } from '../pageSearch.js';
@@ -18,18 +18,19 @@ function AddDriverModal({ open, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [addDriver] = useAddCompanyDriverMutation();
+  const submitting = useRef(false);
   useEffect(() => { if (open) setError(''); }, [open]);
   async function submit(event) {
     event.preventDefault();
-    if (!draft.name.trim()) return;
-    setBusy(true);
+    if (submitting.current || !draft.name.trim()) return;
+    submitting.current = true; setBusy(true);
     setError('');
     try {
       await addDriver(draft).unwrap();
       setDraft({ name: '', phone: '', email: '', licenseNumber: '' });
       onClose();
     } catch (err) { setError(getApiErrorMessage(err)); }
-    finally { setBusy(false); }
+    finally { submitting.current = false; setBusy(false); }
   }
   return (
     <Modal open={open} onClose={onClose} title="Add Driver" width={460}
@@ -48,6 +49,8 @@ function AddDriverModal({ open, onClose }) {
 export function Drivers() {
   const navigate = useNavigate();
   const { currentData: collection, error, isLoading } = useGetCompanyDriversQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: summary, error: summaryError } = useGetCompanyDriverSummaryQuery(undefined, { refetchOnMountOrArgChange: true });
+  const stats = summaryError ? null : summary;
   const drivers = collection ?? [];
   const [query, setQuery] = useState('');
   const [addOpen, setAddOpen] = useState(false);
@@ -65,10 +68,10 @@ export function Drivers() {
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
       <PageHeader title="Drivers" description="Manage your drivers, licenses, and assignments." actions={<Button icon="plus" onClick={() => setAddOpen(true)}>Add Driver</Button>} />
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 16 }}>
-        <StatCard icon="users-round" label="Total Drivers" value={!error && collection ? drivers.length : '—'} />
-        <StatCard icon="circle-check" tint="green" label="Available" value="—" />
-        <StatCard icon="route" tint="blue" label="On Trip" value="—" />
-        <StatCard icon="moon" tint="purple" label="Off Duty" value="—" />
+        <StatCard icon="users-round" label="Total Drivers" value={stats?.total ?? '—'} />
+        <StatCard icon="circle-check" tint="green" label="Available" value={stats?.available ?? '—'} />
+        <StatCard icon="route" tint="blue" label="On Trip" value={stats?.onTrip ?? '—'} />
+        <StatCard icon="moon" tint="purple" label="Off Duty" value={stats?.offDuty ?? '—'} />
       </section>
       <Card pad="none">
         <div style={{ padding: 14, borderBottom: '1px solid var(--tk-line)' }}>

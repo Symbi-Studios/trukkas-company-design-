@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Avatar, Badge, Banner, Button, Checkbox, DataTable, DropdownMenu, Icon, IconButton, Modal, SectionCard, Select, SkeletonRow, Tag, TextField, Textarea,
 } from '../../ds.js';
@@ -72,7 +72,8 @@ export function TeamSettings({ onToast }) {
   const [savePin, { isLoading: savingPin }] = useSaveSettingsPinMutation();
   const [updateMember, { isLoading: updating }] = useUpdateSettingsMemberMutation();
   const [removeMember, { isLoading: removing }] = useRemoveSettingsMemberMutation();
-  const [resendInvite, { isLoading: resending }] = useResendSettingsInviteMutation();
+  const [resendInvite, { isLoading: resending, originalArgs: resendingId }] = useResendSettingsInviteMutation();
+  const actionPending = useRef(false);
   const members = data?.members ?? [];
   const roles = roleData?.roles ?? [];
   const canManage = !accessError && !loadError && access?.isOwner === true;
@@ -93,9 +94,11 @@ export function TeamSettings({ onToast }) {
     catch (err) { throw new Error(getApiErrorMessage(err)); }
   }
   async function run(action, message) {
-    if (busy || !canManage) return;
+    if (busy || actionPending.current || !canManage) return;
+    actionPending.current = true;
     setMenu(null); setError('');
     try { await action(); onToast(message); } catch (err) { setError(err instanceof Error ? err.message : getApiErrorMessage(err)); }
+    finally { actionPending.current = false; }
   }
 
   async function changeRole(member, roleId) {
@@ -140,9 +143,12 @@ export function TeamSettings({ onToast }) {
             { key: '2fa', header: '2FA', render: (m) => (m.twoFactor === null ? <Tag>—</Tag> : m.twoFactor ? <Tag tone="success" icon={<Icon name="shield-check" size={11} />}>On</Tag> : <Tag>Off</Tag>) },
             { key: 'active', header: 'Last Active', render: (m) => <span className="tk-meta">{m.lastActive}</span> },
             {
-              key: 'actions', header: '', width: 56, render: (m) => (m.roleId === 'owner' ? null : (
+              key: 'actions', header: '', width: 56, render: (m) => {
+                const sending = resending && m.kind === 'invite' && resendingId === m.id;
+                return m.roleId === 'owner' ? null : (
                 <span style={{ position: 'relative' }}>
-                  <IconButton icon="ellipsis" tone="outline" size={30} disabled={!canManage || busy || !m.id} label={`Actions for ${m.name}`} onClick={() => setMenu(menu === m.id ? null : m.id)} />
+                  <IconButton icon={sending ? 'loader-circle' : 'ellipsis'} className={sending ? styles.resending : undefined} aria-busy={sending}
+                    tone="outline" size={30} disabled={!canManage || busy || !m.id} label={sending ? `Resending invite to ${m.email}` : `Actions for ${m.name}`} onClick={() => setMenu(menu === m.id ? null : m.id)} />
                   {menu === m.id && (
                     <span style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20 }}>
                       <DropdownMenu width={200} items={[
@@ -156,7 +162,8 @@ export function TeamSettings({ onToast }) {
                     </span>
                   )}
                 </span>
-              )),
+                );
+              },
             },
           ]}
         />}

@@ -304,18 +304,21 @@ export function ResetPasswordScreen() {
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmation, setConfirmation] = React.useState('');
   const [error, setError] = React.useState('');
+  const [lastCodeFailure, setLastCodeFailure] = React.useState(null);
   const submitting = React.useRef(false);
   const [clock, setClock] = React.useState(() => Date.now());
   const recoveryOtp = recovery?.email === email.trim().toLowerCase() ? recovery.otp : null;
-  const codeUnavailable = !!recoveryOtp && (clock >= recoveryOtp.expiresAt || recoveryOtp.remainingAttempts === 0);
+  const remainingAttempts = lastCodeFailure?.email === email.trim().toLowerCase() && lastCodeFailure.recovery === recovery
+    ? lastCodeFailure.remainingAttempts : recoveryOtp?.remainingAttempts;
+  const codeUnavailable = remainingAttempts === 0 || !!recoveryOtp && clock >= recoveryOtp.expiresAt;
   React.useEffect(() => {
     if (!recoveryOtp) return undefined;
     const expired = () => { setClock(Date.now()); setError('This reset code has expired. Request a new code.'); };
-    if (recoveryOtp.remainingAttempts === 0) { setError('No verification attempts remain. Request a new code.'); return undefined; }
+    if (remainingAttempts === 0) { setError('No verification attempts remain. Request a new code.'); return undefined; }
     if (recoveryOtp.expiresAt <= Date.now()) { expired(); return undefined; }
     const timer = setTimeout(expired, recoveryOtp.expiresAt - Date.now());
     return () => clearTimeout(timer);
-  }, [recoveryOtp]);
+  }, [recoveryOtp, remainingAttempts]);
 
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -327,9 +330,9 @@ export function ResetPasswordScreen() {
     event.preventDefault();
     if (busy || submitting.current) return;
     setError('');
-    if (recoveryOtp && (Date.now() >= recoveryOtp.expiresAt || recoveryOtp.remainingAttempts === 0)) {
+    if (remainingAttempts === 0 || recoveryOtp && Date.now() >= recoveryOtp.expiresAt) {
       setClock(Date.now());
-      setError(recoveryOtp.remainingAttempts === 0 ? 'No verification attempts remain. Request a new code.' : 'This reset code has expired. Request a new code.');
+      setError(remainingAttempts === 0 ? 'No verification attempts remain. Request a new code.' : 'This reset code has expired. Request a new code.');
       return;
     }
     if (!email.trim() || !token.trim() || !newPassword) {
@@ -355,6 +358,9 @@ export function ResetPasswordScreen() {
       dispatch(baseApi.util.resetApiState());
       router.replace('/login?reset=1');
     } catch (requestError) {
+      if (Number.isSafeInteger(requestError?.remainingAttempts) && requestError.remainingAttempts >= 0) {
+        setLastCodeFailure({ email: email.trim().toLowerCase(), recovery, remainingAttempts: requestError.remainingAttempts });
+      }
       setError(getApiErrorMessage(requestError));
     } finally { submitting.current = false; }
   }

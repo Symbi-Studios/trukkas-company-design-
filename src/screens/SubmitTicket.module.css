@@ -90,7 +90,6 @@
   box-shadow: var(--tk-focus-ring-danger);
 }
 .control input,
-.control select,
 .control textarea {
   flex: 1;
   width: 100%;
@@ -102,23 +101,35 @@
   color: var(--tk-ink-900);
   font: 400 14px/20px var(--tk-font-sans);
 }
-.control select {
-  appearance: none;
-  cursor: pointer;
-  padding-right: 22px;
-  text-overflow: ellipsis;
-}
-.control select.placeholder {
-  color: var(--tk-ink-500);
-}
 .control input::placeholder,
 .control textarea::placeholder {
   color: var(--tk-ink-500);
 }
-.chevron {
+.selectControl {
+  position: relative;
+  min-width: 0;
+}
+.selectIcon {
   position: absolute;
-  right: 14px;
+  top: 50%;
+  left: 14px;
+  z-index: 1;
+  transform: translateY(-50%);
   pointer-events: none;
+}
+.selectControl [role='combobox'] {
+  height: 44px;
+  padding: 0 14px 0 42px;
+}
+.selectPlaceholder [role='combobox'] > [data-placeholder] {
+  color: var(--tk-ink-500);
+}
+.selectControl.invalid [role='combobox'] {
+  border-color: var(--tk-danger);
+}
+.selectControl.invalid [role='combobox']:focus-visible,
+.selectControl.invalid [role='combobox'][data-open='true'] {
+  box-shadow: var(--tk-focus-ring-danger);
 }
 .area {
   height: auto;

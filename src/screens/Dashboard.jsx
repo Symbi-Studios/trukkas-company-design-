@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSelector } from 'react-redux';
 import {
@@ -84,6 +84,7 @@ export function Dashboard() {
   const { currentData: bankResult, error: bankError } = useGetDashboardBankSetupQuery(undefined, { refetchOnMountOrArgChange: true });
   const [markNotificationRead, { isLoading: markingRead }] = useMarkNotificationReadMutation();
   const [actionError, setActionError] = useState(null);
+  const openingNotification = useRef(false);
   const overview = overviewError ? EMPTY_DASHBOARD : overviewResult;
   const pendingJobData = pendingJobsError ? undefined : pendingJobResult;
   const tripData = tripsError ? undefined : tripResult;
@@ -108,13 +109,15 @@ export function Dashboard() {
   const metric = (value) => overviewLoading ? <Skeleton width={65} height={28} /> : value ?? '—';
 
   async function openNotification(notification) {
-    if (markingRead) return;
+    if (markingRead || openingNotification.current) return;
+    openingNotification.current = true;
     setActionError(null);
     try {
       if (notification.read !== true) await markNotificationRead(notification.id).unwrap();
       const destination = notification.link ?? (notification.type === 'payout' ? '/earnings-wallet' : null);
       if (destination) router.push(destination);
     } catch (error) { setActionError(error); }
+    finally { openingNotification.current = false; }
   }
 
   return (

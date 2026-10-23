@@ -4,8 +4,8 @@ import { count, object, safeUrl, text, timestampLabel, tripCollectionView, tripC
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const numberIs = (value, expected) => typeof value === 'number' && Number.isFinite(value) && value === expected;
 const signedIn = (api) => {
-  const account = api.getState().auth.account;
-  return account?.apiRole === 'TRUCKER' && account?.truckerType === 'COMPANY'
+  const { account, activeCompanyId } = api.getState().auth;
+  return account?.apiRole === 'TRUCKER' && account.truckerType === 'COMPANY' && account.id === activeCompanyId
     ? null : unavailable('Sign in with your trucking-company account to manage trips.');
 };
 function companyQuery(api, baseQuery) {
@@ -27,7 +27,7 @@ function loadedTrip(api, id, writing = false) {
 }
 const tripTags = ['CompanyTrips', 'AuthOnboardingSecurity'];
 
-export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips', 'CompanyTrip', 'CompanyTripMessages', 'CompanyJobs', 'CompanyFleet', 'CompanyDashboard', 'CompanyWallet', 'CompanyWalletTransactions', 'CompanyPayouts', 'SupportTickets'] }).injectEndpoints({
+export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips', 'CompanyTrip', 'CompanyTripMessages', 'CompanyJobs', 'CompanyFleet', 'CompanyDrivers', 'CompanyDashboard', 'CompanyWallet', 'CompanyWalletTransactions', 'CompanyPayouts', 'SupportTickets'] }).injectEndpoints({
   overrideExisting: process.env.NODE_ENV === 'development',
   endpoints: (builder) => ({
     getCompanyTrips: builder.query({
@@ -323,7 +323,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         return job?.id === trip.jobId && job.status === expected ? { data: { status: ['DRIVER_ARRIVED', 'OFFLOAD_COMPLETED', 'CONTAINER_RETURNED'].includes(expected) ? status : tripStatusLabel(expected) } } : unavailable('The API did not confirm the trip status change. Reload the trip before trying again.');
       },
       // A status write can move funds. Never retry it automatically or infer success.
-      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, 'CompanyJobs', 'CompanyFleet', 'CompanyDashboard', 'CompanyWallet', 'CompanyWalletTransactions', 'CompanyPayouts', { type: 'CompanyTrip', id: tripId }],
+      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, 'CompanyJobs', 'CompanyFleet', 'CompanyDrivers', 'CompanyDashboard', 'CompanyWallet', 'CompanyWalletTransactions', 'CompanyPayouts', { type: 'CompanyTrip', id: tripId }],
     }),
     contactCompanyTripSupport: builder.mutation({
       async queryFn({ tripId, message }, api, _options, baseQuery) {

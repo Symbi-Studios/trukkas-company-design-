@@ -1,7 +1,11 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
-import { companyDriverDetailView, companyDriverView, count, driverReviewsView, driverTripView, rows, text } from './driverContracts.js';
+import { companyDriverDetailView, companyDriverView, count, driverReviewsView, driverTripView, driverSummaryView, rows, text } from './driverContracts.js';
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
+const phoneKey = (value) => {
+  const digits = text(value)?.replace(/\D/g, '');
+  return digits && /^0\d{10}$/.test(digits) ? '234' + digits.slice(1) : digits;
+};
 const signedIn = (api) => {
   const account = api.getState().auth.account;
   return account?.apiRole === 'TRUCKER' && account?.truckerType === 'COMPANY' ? null : unavailable('Sign in to manage your company’s drivers.');
@@ -44,24 +48,18 @@ export const driversApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDrive
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
         baseQuery = companyQuery(api, baseQuery);
-        const result = await baseQuery('/dashboard/drivers');
+        const result = await allPages(baseQuery, api, '/company/drivers', 'drivers');
         if (result.error) return result;
-        const members = rows(unwrapApiResponseData(result.data)?.drivers);
-        if (members?.some((member) => text(member.companyId) && member.companyId !== api.getState().auth.account?.id)) return unavailable('The API returned drivers outside your company.');
-        const drivers = members?.map(companyDriverView);
-        if (!drivers || drivers.some((driver) => !driver) || new Set(drivers.map((driver) => driver.id)).size !== drivers.length) return unavailable('The API did not identify the company’s drivers.');
-        const profiles = [];
-        for (let offset = 0; offset < drivers.length; offset += 4) {
-          if (api.signal.aborted) return unavailable('The driver request was cancelled.');
-          const loaded = await Promise.all(drivers.slice(offset, offset + 4).map(async (member) => {
-            const detail = await baseQuery(`/company/drivers/${encodeURIComponent(member.id)}`);
-            if (detail.error) return detail.error.status === 'CUSTOM_ERROR' ? detail : { data: member };
-            const driver = companyDriverDetailView(unwrapApiResponseData(detail.data)?.driver);
-            return driver?.id === member.id ? { data: driver } : unavailable('The API did not identify this company driver.');
-          }));
-          for (const item of loaded) { if (item.error) return item; profiles.push(item.data); }
-        }
-        return { data: profiles };
+        const drivers = result.data.map(companyDriverView);
+        return drivers.every(Boolean) ? { data: drivers } : unavailable('The API did not identify the company drivers.');
+      },
+      providesTags: ['CompanyDrivers', 'CompanyFleet'],
+    }),
+    getCompanyDriverSummary: builder.query({
+      async queryFn(_arg, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        const result = await companyQuery(api, baseQuery)({ url: '/company/drivers', params: { page: 1, limit: 1 } });
+        return result.error ? result : { data: driverSummaryView(unwrapApiResponseData(result.data)?.summary) };
       },
       providesTags: ['CompanyDrivers', 'CompanyFleet'],
     }),
@@ -113,13 +111,42 @@ export const driversApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDrive
       },
       providesTags: ['CompanyDrivers'],
     }),
-    addCompanyDriver: builder.mutation({
-      async queryFn(_draft, api) {
+    setCompanyDriverAvailability: builder.mutation({
+      async queryFn({ id, availability }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
-        return unavailable('The company invite API requires an existing driver’s email and a truck ID. Adding a driver with name, phone and licence number is not supported by the documented company API.');
+        if (!text(id) || !['AVAILABLE', 'OFF_DUTY'].includes(availability)) return unavailable('Choose a driver and a supported duty status.');
+        baseQuery = companyQuery(api, baseQuery);
+        const owned = await baseQuery('/company/drivers/' + encodeURIComponent(id));
+        if (owned.error) return owned;
+        if (unwrapApiResponseData(owned.data)?.driver?.id !== id) return unavailable('The API did not identify your company driver.');
+        const result = await baseQuery({ url: '/company/drivers/' + encodeURIComponent(id) + '/availability', method: 'PATCH', body: { availability } });
+        if (result.error) return result;
+        const saved = unwrapApiResponseData(result.data);
+        return saved?.driverId === id && saved.availability === availability ? { data: { id } }
+          : unavailable('The API did not confirm the driver availability. Reload Drivers before retrying.');
       },
+      invalidatesTags: ['CompanyDrivers', 'CompanyFleet', 'CompanyDashboard'],
+    }),
+    addCompanyDriver: builder.mutation({
+      async queryFn({ name, email, phone, licenseNumber }, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        const fullName = text(name), contact = text(email), telephone = text(phone)?.replace(/[\s-]/g, '');
+        if (!fullName || !contact || !/^\S+@\S+\.\S+$/.test(contact) || !telephone || !/^\+?\d{10,15}$/.test(telephone)) {
+          return unavailable('Enter the driver’s full name, phone and email. Email is required to send their account invite.');
+        }
+        baseQuery = companyQuery(api, baseQuery);
+        const result = await baseQuery({ url: '/company/drivers', method: 'POST', body: {
+          name: fullName, phone: telephone, email: contact, ...(text(licenseNumber) ? { licenseNumber: licenseNumber.trim() } : {}),
+        } });
+        if (result.error) return result;
+        const source = unwrapApiResponseData(result.data), driver = source?.driver;
+        return text(driver?.id) && text(driver.email)?.toLowerCase() === contact.toLowerCase() && phoneKey(driver.phone) === phoneKey(telephone)
+          && driver.status === 'ACTIVE' && (!text(licenseNumber) || driver.licenseNumber === licenseNumber.trim()) && typeof source.invite?.expiresAt === 'string' && Number.isFinite(Date.parse(source.invite.expiresAt))
+          ? { data: { id: driver.id } } : unavailable('The API did not confirm the driver and invite. Check Drivers before retrying.');
+      },
+      invalidatesTags: ['CompanyDrivers', 'CompanyFleet', 'CompanyDashboard'],
     }),
   }),
 });
 
-export const { useGetCompanyDriversQuery, useGetCompanyDriverQuery, useGetDriverTripsQuery, useGetDriverReviewsQuery, useAddCompanyDriverMutation } = driversApi;
+export const { useGetCompanyDriversQuery, useGetCompanyDriverSummaryQuery, useGetCompanyDriverQuery, useGetDriverTripsQuery, useGetDriverReviewsQuery, useAddCompanyDriverMutation, useSetCompanyDriverAvailabilityMutation } = driversApi;

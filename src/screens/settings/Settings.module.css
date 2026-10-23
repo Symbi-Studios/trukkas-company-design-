@@ -252,6 +252,19 @@
   color: var(--tk-ink-400);
   font: 400 12px/17px var(--tk-font-sans);
 }
+.resending > span {
+  animation: resendSpin 1s linear infinite;
+}
+@keyframes resendSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .resending > span {
+    animation: none;
+  }
+}
 .error {
   margin: 0;
   color: var(--tk-danger);

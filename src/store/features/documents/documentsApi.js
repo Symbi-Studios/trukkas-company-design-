@@ -3,7 +3,7 @@ import { fleetApi } from '../fleet/fleetApi.js';
 import { count, dateLabel, rows, safeUrl, text } from '../fleet/fleetContracts.js';
 import { DRIVER_REQUIREMENTS, VEHICLE_REQUIREMENTS } from '../../../domain/documents.js';
 import { directorVerificationView } from '../auth/onboardingApi.js';
-import { companyDocumentTypes, companyDocumentView, companyLibraryView, documentCompanyView, documentCompliance, documentDateKey, documentDriverView, driverDocumentTypes, driverDocumentView, expiryDays, validDate, vehicleDocumentTypes, vehicleDocumentView } from './documentContracts.js';
+import { companyDocumentTypes, companyDocumentView, companyLibraryView, documentCompanyView, documentCompliance, documentDateKey, documentDriverView, driverDocumentTypes, driverDocumentView, driverNinDocumentView, expiryDays, validDate, vehicleDocumentTypes, vehicleDocumentView } from './documentContracts.js';
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const signedIn = (api) => {
@@ -74,11 +74,13 @@ async function driverDocuments(baseQuery, driver) {
       status: ({ VALID: 'Valid', EXPIRING_SOON: 'Expiring Soon', EXPIRED: 'Expired' })[licence.expiryStatus] ?? '—',
       expiryKnown: licence.expiresAt === null || expiryDays(licence.expiresAt) !== null, expiryDays: expiryDays(licence.expiresAt) }
     : null;
-  const checklistDocuments = legacyLicence ? [...documents, legacyLicence] : documents;
+  const nin = driverNinDocumentView(source.ninVerification, driver);
+  const ninKnown = !!nin;
+  const checklistDocuments = [...documents, ...(legacyLicence ? [legacyLicence] : []), ...(nin ? [nin] : [])];
   const owner = licence === null ? { ...driver, licenseNumber: '—', licenseExpiry: '—' }
     : licence ? { ...driver, licenseNumber: text(licence.number) ?? '—', licenseExpiry: dateLabel(licence.expiresAt) } : driver;
   return { data: { driver: owner, documents, expiryDocuments: checklistDocuments,
-    ...documentCompliance(DRIVER_REQUIREMENTS, checklistDocuments, Object.keys(driverDocumentTypes)) } };
+    ...documentCompliance(DRIVER_REQUIREMENTS, checklistDocuments, [...Object.keys(driverDocumentTypes), ...(ninKnown ? ['NIN'] : [])]) } };
 }
 
 async function ownedDriver(baseQuery, id) {
@@ -246,6 +248,15 @@ export const documentsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDoc
       async queryFn({ ownerId, type, file, number, expiryDate, name }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
         baseQuery = companyQuery(api, baseQuery);
+        if (type === 'NIN') {
+          if (typeof number !== 'string' || !/^\d{11}$/.test(number)) return unavailable('Enter the driver’s 11-digit NIN.');
+          const driver = await ownedDriver(baseQuery, ownerId);
+          if (driver.error) return driver;
+          const result = await baseQuery({ url: `/company/drivers/${encodeURIComponent(ownerId)}/nin`, method: 'POST', body: { nin: number } });
+          if (result.error) return result;
+          const record = driverNinDocumentView(unwrapApiResponseData(result.data)?.ninVerification, driver.data);
+          return record && record.number !== '—' ? { data: record } : unavailable('The API did not confirm the NIN submission. Reload the driver before retrying.');
+        }
         const wireType = Object.hasOwn(driverDocumentTypes, type) ? driverDocumentTypes[type] : null;
         if (!wireType) return unavailable(`The company driver API does not document ${type} submissions from this form.`);
         if (!validFile(file)) return unavailable('Choose a PDF, JPEG, PNG or WebP file up to 10 MB.');

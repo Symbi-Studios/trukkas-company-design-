@@ -256,7 +256,10 @@ export function SecuritySettings({ onToast }) {
       backupCodesRemaining: !error ? data?.twoFactor?.backupCodesRemaining ?? null : null,
       enabledOn: !error ? data?.twoFactor?.enabledOn ?? '—' : '—',
     },
-    loginAlerts: !preferencesError ? preferences?.loginAlerts ?? null : null,
+    // The security read describes the company. Only its owner can use it as a
+    // fallback for the signed-in person's notification preference.
+    loginAlerts: !preferencesError && typeof preferences?.loginAlerts === 'boolean' ? preferences.loginAlerts
+      : !error && access?.isOwner === true ? data?.loginAlerts ?? null : null,
     sessions: !sessionsError ? sessions ?? [] : [],
   };
   const others = security.sessions.filter((s) => s.current === false);

@@ -3,13 +3,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from '../router.js';
 import { Badge, Button, Card, DataTable, EmptyState, Icon, PageHeader, SkeletonRow } from '../ds.js';
-import { useGetSupportTicketsQuery } from '../store/features/support/supportApi.js';
-import { useCollection } from '../mock/useCollection.js';
+import { useGetSupportTicketsQuery, useGetSupportGuidesQuery } from '../store/features/support/supportApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { supportTicketHref } from '../domain/supportLinks.js';
 import { useTopBarSearch } from '../pageSearch.js';
 import { Toast, useToast } from '../components/Toast.jsx';
-import { SUPPORT_TOPICS, guideMatches } from '../domain/support.js';
+import { SUPPORT_TOPICS } from '../domain/support.js';
 import { GuideCard } from './HelpGuides.jsx';
 import guideStyles from './Guides.module.css';
 
@@ -23,18 +22,17 @@ export function Support() {
   const navigate = useNavigate();
   const { data, error, isLoading } = useGetSupportTicketsQuery(undefined, { refetchOnMountOrArgChange: true });
   const tickets = data ?? [];
-  // Guides are mock content until a help-centre API exists (see fixtures/guides.js).
-  const guides = useCollection('guides') || [];
   const [toast, showToast] = useToast(4000);
   useEffect(() => {
     if (pendingFlash) { showToast(pendingFlash); pendingFlash = null; }
   }, [showToast]);
   const [query, setQuery] = useState('');
   useTopBarSearch(setQuery);
+  const { currentData: guides, error: guideError, isFetching: guidesLoading } = useGetSupportGuidesQuery({ search: query });
   const q = query.trim().toLowerCase();
   const matches = (...values) => !q || values.some((v) => String(v || '').toLowerCase().includes(q));
   const visibleTickets = tickets.filter((t) => matches(t.id, t.subject, t.category, t.status));
-  const visibleGuides = (q ? guides.filter((g) => guideMatches(g, query)) : guides.filter((g) => g.popular)).slice(0, 6);
+  const visibleGuides = (q ? (guides ?? []) : (guides ?? []).filter((g) => g.popular === true)).slice(0, 6);
 
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
@@ -70,13 +68,13 @@ export function Support() {
             {SUPPORT_TOPICS.map((t) => (
               <Link key={t.slug} to={`/support/guides?topic=${t.slug}`} className={guideStyles.topicTile}>
                 <span className={guideStyles.topicTileIcon}><Icon name={t.icon} size={17} /></span>
-                <span><strong>{t.label}</strong><small>{guides.filter((g) => g.topic === t.slug).length} guides</small></span>
+                <span><strong>{t.label}</strong><small>{guides ? guides.filter((g) => g.topic === t.slug).length : '—'} guides</small></span>
               </Link>
             ))}
           </div>
         )}
         <h4 className={guideStyles.subhead}>{q ? 'Matching guides' : 'Popular guides'}</h4>
-        {visibleGuides.length === 0 ? (
+        {guidesLoading ? <SkeletonRow columns={3} /> : guideError ? <span className="tk-meta">{getApiErrorMessage(guideError)}</span> : visibleGuides.length === 0 ? (
           <span className="tk-meta">No guides match your search. <Link to="/support/guides">Browse all guides</Link></span>
         ) : (
           <div className={guideStyles.guideGrid}>

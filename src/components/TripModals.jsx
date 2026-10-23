@@ -110,7 +110,7 @@ export function TripPodModal({ trip, open, onClose, onDone }) {
         <TextField label="Receiver Phone (optional)" type="tel" autoComplete="off" disabled={busy} value={receiverPhone} onChange={(event) => setReceiverPhone(event.target.value)} />
         <div style={{ display: 'grid', gap: 8 }}>
           <span className="tk-meta">Proof of Delivery Photo *</span>
-          <input ref={fileInput} hidden type="file" accept="image/*" aria-label="Proof of Delivery Photo" disabled={busy}
+          <input ref={fileInput} hidden type="file" accept="image/jpeg,image/png,application/pdf" aria-label="Proof of Delivery Photo" disabled={busy}
             onChange={(event) => { setPhoto(event.target.files?.[0] ?? null); event.target.value = ''; }} />
           <Button type="button" variant="outline" icon="upload" disabled={busy} onClick={() => fileInput.current?.click()}>Choose Photo</Button>
           <span className="tk-meta" style={{ overflowWrap: 'anywhere' }}>{photo?.name ?? 'No photo selected'}</span>

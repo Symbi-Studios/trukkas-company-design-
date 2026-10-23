@@ -125,7 +125,7 @@ export function VehicleDetail() {
             <LabelValue label="Total Trips" value={trips?.length ?? '—'} />
             <LabelValue label="Total Distance" value={truck.odometer === null ? '—' : `${truck.odometer.toLocaleString()} km`} />
             <LabelValue label="Total Earnings" value={totalEarnings === null ? '—' : formatNaira(totalEarnings)} />
-            <LabelValue label="Average Fuel Consumption" value="—" />
+            <LabelValue label="Average Fuel Consumption" value={truck.averageFuelConsumption} />
           </Card>
           <Card style={{ display: 'grid', gap: 6 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

@@ -121,7 +121,7 @@ export function Fleet() {
                 { key: 'reg', header: 'Registration No.', render: (t) => t.plate },
                 { key: 'status', header: 'Status', render: (t) => <Badge tone={vehicleStatusTone(t.status)} dot>{t.status}</Badge> },
                 { key: 'driver', header: 'Driver', render: (t) => t.driver || '—' },
-                { key: 'lastActive', header: 'Last Active', render: (t) => t.odometerUpdated },
+                { key: 'lastActive', header: 'Last Active', render: (t) => t.lastActive },
                 {
                   key: 'actions', header: 'Actions', width: 56, render: (t) => (
                     <span style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>

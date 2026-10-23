@@ -14,9 +14,9 @@ const STATUS_ICON = {
 };
 
 /** Requirement-by-requirement checklist for one owner (company, vehicle or driver). */
-export function ComplianceChecklist({ title, description, requirements, docs, onUpload, onOpen, action, style, unavailable = false, unavailableTypes = [] }) {
-  const { rows, summary } = complianceFor(requirements, docs);
-  const summaryUnavailable = unavailable || requirements.some((req) => req.required && unavailableTypes.includes(req.type));
+export function ComplianceChecklist({ title, description, requirements, docs, onUpload, onOpen, action, style, unavailable = false, unavailableTypes = [], compliance }) {
+  const { rows, summary } = compliance ?? complianceFor(requirements, docs);
+  const summaryUnavailable = unavailable || summary.complete === null || requirements.some((req) => req.required && unavailableTypes.includes(req.type));
   const pct = summary.requiredTotal ? Math.round((summary.requiredMet / summary.requiredTotal) * 100) : 100;
   return (
     <SectionCard

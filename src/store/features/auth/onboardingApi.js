@@ -96,7 +96,7 @@ export const onboardingApi = baseApi.injectEndpoints({
     uploadOnboardingDocument: builder.mutation({
       async queryFn({ type, file, number, expiryDate }, _api, _options, baseQuery) {
         if (!Object.hasOwn(documentTypes, type)) return { error: { status: 'CUSTOM_ERROR', error: `The company API does not support ${type} submissions from this form.` } };
-        if (!(file instanceof File) || file.size > 10 * 1024 * 1024 || !['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+        if (!(file instanceof File) || file.size === 0 || file.size > 10 * 1024 * 1024 || !['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
           return { error: { status: 'CUSTOM_ERROR', error: 'Choose a PDF, JPEG, PNG or WebP file up to 10 MB.' } };
         }
         const requirement = ONBOARDING_REQUIREMENTS.find((item) => item.type === type);
@@ -124,7 +124,7 @@ export const onboardingApi = baseApi.injectEndpoints({
         if (!Array.isArray(trucks) || trucks.some((truck) => typeof truck?.id !== 'string' || !truck.id.trim())) return null;
         return trucks.map((truck) => ({
           id: truck.id, plate: text(truck.plateNumber),
-          makeModel: [text(truck.make), text(truck.model)].join(' '),
+          makeModel: [truck.make, truck.model].filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim()).join(' ') || '—',
         }));
       },
       providesTags: ['AuthOnboardingTrucks'],

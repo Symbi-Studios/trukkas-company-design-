@@ -1,25 +1,28 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from '../router.js';
-import { Button, Card, EmptyState, Icon, PageHeader, SearchField } from '../ds.js';
-import { useCollection } from '../mock/useCollection.js';
+import { Button, Card, EmptyState, Icon, PageHeader, SearchField, SkeletonRow } from '../ds.js';
+import { useSearchParams } from 'next/navigation';
+import { useGetSupportGuidesQuery } from '../store/features/support/supportApi.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
+import { supportGuideHref } from '../domain/supportLinks.js';
 import { syncTopBarSearch, useTopBarSearch } from '../pageSearch.js';
-import { SUPPORT_TOPICS, guideMatches, topicBySlug } from '../domain/support.js';
+import { SUPPORT_TOPICS, topicBySlug } from '../domain/support.js';
 import styles from './Guides.module.css';
 
 export const ticketHref = (topic) => (topic ? `/support/new?category=${encodeURIComponent(topic.value)}` : '/support/new');
 
 /** Card linking to a guide; used on the guides index and the Support page. */
 export function GuideCard({ guide, showTopic = true }) {
-  const topic = topicBySlug(guide.topic);
+  const topic = guide.topicInfo;
   return (
-    <Link to={`/support/guides/${guide.id}`} className={styles.guideCard}>
+    <Link to={supportGuideHref(guide.id)} className={styles.guideCard}>
       {showTopic && topic && <span className={styles.topicTag}><Icon name={topic.icon} size={13} />{topic.value}</span>}
       <strong>{guide.title}</strong>
       <p>{guide.summary}</p>
       <span className={styles.cardFoot}>
-        <span className={styles.meta}><Icon name="clock" size={13} /> {guide.readMinutes} min read</span>
+        <span className={styles.meta}><Icon name="clock" size={13} /> {guide.readMinutes ?? '—'} min read</span>
         <span className={styles.readMore}>Read more <Icon name="arrow-right" size={14} /></span>
       </span>
     </Link>
@@ -43,25 +46,21 @@ export function StillNeedHelp({ topic }) {
 
 export function HelpGuides() {
   const navigate = useNavigate();
-  const guides = useCollection('guides') || [];
+  const params = useSearchParams();
   const [query, setQuery] = useState('');
-  const [topicSlug, setTopicSlug] = useState('');
+  const requested = params.get('topic');
+  const topicSlug = topicBySlug(requested) ? requested : '';
+  const { currentData: guides, error, isFetching } = useGetSupportGuidesQuery({ search: query });
   useTopBarSearch(setQuery);
 
-  useEffect(() => {
-    const requested = new URLSearchParams(window.location.search).get('topic');
-    if (topicBySlug(requested)) setTopicSlug(requested);
-  }, []);
-
   function chooseTopic(slug) {
-    setTopicSlug(slug);
     navigate(slug ? `/support/guides?topic=${slug}` : '/support/guides', { replace: true });
   }
 
   const topic = topicBySlug(topicSlug);
-  const searched = guides.filter((g) => guideMatches(g, query));
+  const searched = guides ?? [];
   const visible = searched.filter((g) => !topicSlug || g.topic === topicSlug);
-  const countFor = (slug) => searched.filter((g) => g.topic === slug).length;
+  const countFor = (slug) => guides ? guides.filter((g) => g.topic === slug).length : '—';
 
   return (
     <div className={styles.page}>
@@ -84,7 +83,7 @@ export function HelpGuides() {
         />
         <div className={styles.chips} role="tablist" aria-label="Filter by topic">
           <button type="button" role="tab" aria-selected={!topicSlug} className={`${styles.chip} ${!topicSlug ? styles.chipActive : ''}`} onClick={() => chooseTopic('')}>
-            All topics <span>{searched.length}</span>
+            All topics <span>{guides ? guides.length : '—'}</span>
           </button>
           {SUPPORT_TOPICS.map((t) => (
             <button key={t.slug} type="button" role="tab" aria-selected={topicSlug === t.slug}
@@ -105,7 +104,7 @@ export function HelpGuides() {
         </div>
       )}
 
-      {visible.length === 0 ? (
+      {isFetching ? <SkeletonRow columns={3} /> : error ? <Card><EmptyState icon="life-buoy" title={getApiErrorMessage(error)} /></Card> : visible.length === 0 ? (
         <Card>
           <EmptyState icon="search" title="No guides match your search"
             description="Try different words, pick another topic, or ask our support team." />

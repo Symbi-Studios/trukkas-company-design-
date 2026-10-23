@@ -1,3 +1,4 @@
+import { SUPPORT_TOPICS } from '../../../domain/support.js';
 export const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
 export const rows = (value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && !Array.isArray(row)) ? value : null;
 export const count = (value) => Number.isSafeInteger(value) && value >= 0;
@@ -14,37 +15,71 @@ export function safeAttachmentUrl(value) {
 
 export function threadView(source) {
   if (!text(source?.id)) return null;
-  return { id: source.id, subject: text(source.subject) ?? '—', category: categories[source.category] ?? '—', status: statuses[source.status] ?? '—', createdAt: date(source.createdAt), updatedAt: date(source.updatedAt) };
+  return { id: source.id, subject: text(source.subject) ?? '—', category: text(source.subcategory) ?? categories[source.category] ?? '—', status: statuses[source.status] ?? '—', createdAt: date(source.createdAt), updatedAt: date(source.updatedAt) };
 }
 
 export function messageView(source, threadId) {
   if (!text(source?.id) || source.threadId !== threadId) return null;
   return {
-    id: source.id, author: source.senderType === 'USER' ? 'You' : '—', role: source.senderType === 'USER' ? 'You' : source.senderType === 'ADMIN' ? 'Support Agent' : '—',
+    id: source.id, author: source.senderType === 'USER' ? 'You' : text(source.senderName) ?? '—', role: source.senderType === 'USER' ? 'You' : source.senderType === 'ADMIN' ? 'Support Agent' : '—',
     agent: source.senderType === 'ADMIN', time: date(source.createdAt, true), timestamp: typeof source.createdAt === 'string' ? Date.parse(source.createdAt) : NaN,
     body: text(source.content) ?? '—',
-    // URLs alone do not establish a filename, MIME type or size. Keep their
-    // existing attachment cards usable without inventing file metadata.
-    attachments: Array.isArray(source.attachmentUrls) ? source.attachmentUrls.map((url) => ({ url: safeAttachmentUrl(url), name: '—', size: '—', type: '' })) : [],
+    attachments: Array.isArray(source.attachmentUrls) ? source.attachmentUrls.map((url) => {
+      const attachment = rows(source.attachments)?.find((item) => item.url === url);
+      return { url: safeAttachmentUrl(url), name: text(attachment?.fileName) ?? '—', size: '—', type: ({ IMAGE: 'image/', VIDEO: 'video/', PDF: 'application/pdf' })[attachment?.kind] ?? '' };
+    }) : [],
   };
 }
 
-// The Submit Ticket form uses help-centre topics (domain/support.js) as its
-// issue categories. Until the API has matching categories, map each topic to
-// the closest documented one; the topic itself is kept in the message details.
+// Broad support categories are separate from the customer-selected help topic.
 const topicCategories = {
   'Account & Login': 'GENERAL', 'Jobs & Bookings': 'GENERAL', 'Payments & Wallet': 'PAYMENT_ISSUE', 'Truck & Fleet': 'GENERAL',
   'Driver Management': 'DRIVER_ISSUE', 'Documents & Compliance': 'DOCUMENT_QUERY', Technical: 'GENERAL', Other: 'GENERAL',
 };
 export const categoryToWire = (value) => Object.entries(categories).find(([, label]) => label === value)?.[0] ?? topicCategories[value] ?? null;
 
-/**
- * The create-ticket API takes only subject, category and message. Fields it has
- * no slot for yet (topic, priority, related job/trip, truck, driver) are
- * appended to the message so support still sees them. `details` is
- * [[label, value]]; empty values are skipped.
- */
-export function ticketMessage(body, details = []) {
-  const lines = details.filter(([, value]) => text(value)).map(([label, value]) => `${label}: ${value.trim()}`);
-  return lines.length ? `${body.trim()}\n\n— Ticket details —\n${lines.join('\n')}` : body.trim();
+const normalized = (value) => text(value)?.toLowerCase();
+function articleTopic(category) {
+  return SUPPORT_TOPICS.find((topic) => [topic.slug, topic.value, topic.label].some((value) => normalized(value) === normalized(category)));
+}
+
+// Render documented Markdown/structured-guide content in the existing article
+// sections. Text stays text; backend HTML is never injected into the page.
+function articleSections(source) {
+  const guide = source.guide;
+  const steps = rows(guide?.steps);
+  if (steps?.length) {
+    const sections = steps.map((step) => ({ heading: text(step.title) ?? '—', body: Array.isArray(step.paragraphs) ? step.paragraphs.filter(text).join('\n\n') || '—' : '—' }));
+    const fields = rows(guide.fieldItems);
+    fields?.forEach((field) => sections.push({ heading: text(field.label) ?? '—', body: text(field.description) ?? '—' }));
+    if (text(guide.tip)) sections[sections.length - 1].tip = guide.tip;
+    return sections;
+  }
+  if (!text(source.body)) return [{ heading: '—', body: '—' }];
+  const sections = [];
+  let section = null;
+  for (const line of source.body.split(/\r?\n/)) {
+    const heading = line.match(/^#{1,6}\s+(.+)$/);
+    if (heading) { section = { heading: heading[1], body: '' }; sections.push(section); }
+    else {
+      if (!section) { section = { heading: '—', body: '' }; sections.push(section); }
+      section.body += (section.body ? '\n' : '') + line;
+    }
+  }
+  return sections;
+}
+
+export function guideView(source, detail = false) {
+  const topic = articleTopic(source.category);
+  return {
+    id: source.id, title: text(source.title) ?? '—', summary: text(source.summary) ?? '—',
+    category: text(source.category) ?? '—', topic: topic?.slug ?? null,
+    topicInfo: topic ?? { value: text(source.category) ?? '—', label: text(source.category) ?? '—', icon: 'file-text', slug: null },
+    popular: typeof source.featured === 'boolean' ? source.featured : null,
+    readMinutes: null, updated: date(source.updatedAt),
+    sections: detail ? articleSections(source) : [],
+    related: detail ? rows(source.relatedArticles)?.filter((item) => text(item.id)).map((item) => ({ id: item.id, title: text(item.title) ?? '—' })) ?? null : null,
+    allowFeedback: typeof source.allowFeedback === 'boolean' ? source.allowFeedback : null,
+    vote: source.myVote === 'HELPFUL' ? 'yes' : source.myVote === 'NOT_HELPFUL' ? 'no' : null,
+  };
 }

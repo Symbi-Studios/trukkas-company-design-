@@ -1,3 +1,5 @@
+import { Suspense } from 'react';
+import { SkeletonRow } from '../../../ds/components/feedback/Skeleton.jsx';
 import { HelpGuides } from '../../../screens/HelpGuides.jsx';
 
 export const metadata = {
@@ -6,5 +8,5 @@ export const metadata = {
 };
 
 export default function HelpGuidesPage() {
-  return <HelpGuides />;
+  return <Suspense fallback={<SkeletonRow columns={3} />}><HelpGuides /></Suspense>;
 }

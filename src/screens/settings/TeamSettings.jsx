@@ -4,7 +4,8 @@ import {
 } from '../../ds.js';
 import { useGetSettingsRolesQuery, useGetSettingsTeamQuery, useInviteSettingsMemberMutation, useUpdateSettingsMemberMutation, useRemoveSettingsMemberMutation, useResendSettingsInviteMutation, useSaveSettingsRoleMutation, useDeleteSettingsRoleMutation, settingsPermissionState, toggleSettingsPermission, settingsRoleNeedsApproval } from '../../store/features/settings/settingsTeamApi.js';
 import { useGetMyProfileAccessQuery } from '../../store/features/profile/profileApi.js';
-import { useGetOnboardingSecurityQuery, useSaveOnboardingPinMutation } from '../../store/features/auth/onboardingApi.js';
+import { useGetOnboardingSecurityQuery } from '../../store/features/auth/onboardingApi.js';
+import { useSaveSettingsPinMutation } from '../../store/features/settings/settingsApi.js';
 import { getApiErrorMessage } from '../../store/api/getApiErrorMessage.js';
 import { PERMISSION_GROUPS, grantsFinance, roleById } from '../../domain/access.js';
 import { PinPrompt } from '../../components/SecurityInputs.jsx';
@@ -68,7 +69,7 @@ export function TeamSettings({ onToast }) {
   const data = !loadError ? teamData : undefined;
   const roleData = !rolesError ? loadedRoles : undefined;
   const security = !securityError ? loadedSecurity : null;
-  const [savePin, { isLoading: savingPin }] = useSaveOnboardingPinMutation();
+  const [savePin, { isLoading: savingPin }] = useSaveSettingsPinMutation();
   const [updateMember, { isLoading: updating }] = useUpdateSettingsMemberMutation();
   const [removeMember, { isLoading: removing }] = useRemoveSettingsMemberMutation();
   const [resendInvite, { isLoading: resending }] = useResendSettingsInviteMutation();
@@ -177,7 +178,7 @@ export function RolesSettings({ onToast }) {
   const { currentData: loadedSecurity, error: securityError } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
   const data = !loadError ? roleData : undefined;
   const security = !securityError ? loadedSecurity : null;
-  const [savePin, { isLoading: savingPin }] = useSaveOnboardingPinMutation();
+  const [savePin, { isLoading: savingPin }] = useSaveSettingsPinMutation();
   const [saveRole, { isLoading: saving }] = useSaveSettingsRoleMutation();
   const [deleteRole, { isLoading: deleting }] = useDeleteSettingsRoleMutation();
   const roles = data?.roles ?? [];

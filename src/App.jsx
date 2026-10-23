@@ -13,6 +13,7 @@ import {
 } from "./ds.js";
 import { NAV, SEARCH_PLACEHOLDER } from "./nav.js";
 import { useLogoutAccountMutation } from "./store/features/auth/authApi.js";
+import { NotificationLiveUpdates } from "./store/features/notifications/NotificationLiveUpdates.jsx";
 import { useGetNotificationUnreadCountQuery } from "./store/features/notifications/notificationsApi.js";
 import { setActiveCompany, clearSession } from "./store/features/auth/authSlice.js";
 import { baseApi } from "./store/api/baseApi.js";
@@ -31,6 +32,8 @@ const PUBLIC_ROUTES = new Set([
   "/reset-password",
   "/signed-out",
   "/signup",
+  "/accept-invite",
+  "/join-team",
 ]);
 
 function JobNavigationObserver({ pathname, onChange }) {
@@ -204,6 +207,7 @@ export function CompanyShell({ children }) {
       }
     >
       <React.Suspense fallback={null}><JobNavigationObserver pathname={pathname} onChange={setRouteJobId} /></React.Suspense>
+      <NotificationLiveUpdates />
       {children}
     </AppShell>
   );

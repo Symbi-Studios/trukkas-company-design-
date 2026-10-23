@@ -9,6 +9,7 @@ const apiLoggingEnabled = process.env.NODE_ENV !== 'production' && !apiLoggingDi
 const publicEndpoints = new Set([
   'loginAccount', 'verifyTwoFactorLogin', 'addCompanyAccount', 'signUpAccount', 'refreshAccount', 'forgotAccountPassword', 'resetAccountPassword',
   'checkAccountEmail', 'startAccountRegistration', 'resendAccountCode', 'verifyAccountPhone',
+  'acceptAccountInvite', 'redeemCompanyInvite',
 ]);
 const reauthExcludedPaths = new Set([
   '/auth/login',
@@ -33,7 +34,7 @@ let activeRefresh = null;
 
 let requestSequence = 0;
 
-const privateLogField = /^account$|^sentTo$|authorization|cookie|token|password|secret|credential|identifier|challenge|backupcode|otp|^code$|pin|email|phone|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment|^body$|reason|comment|^reply$|instruction|notes?|documentnumber|^url$/i;
+const privateLogField = /^account$|^sentTo$|authorization|cookie|token|password|secret|credential|identifier|challenge|backupcode|otp|^code$|pin|email|phone|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment|^body$|^subject$|^topic$|reason|comment|^reply$|instruction|notes?|documentnumber|^url$/i;
 function bodyForLog(body, seen = new WeakSet()) {
   if (body === null || typeof body !== 'object') return body;
   if (seen.has(body)) return '[Circular]';

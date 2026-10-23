@@ -2,7 +2,7 @@ import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
 import { clearSession, setCredentials } from '../auth/authSlice.js';
 import { profileApi } from '../profile/profileApi.js';
 import { companyFormView } from '../auth/onboardingContracts.js';
-import { bankRequestResult, syncOnboardingBank } from '../auth/onboardingApi.js';
+import { onboardingApi, bankRequestResult, syncOnboardingBank } from '../auth/onboardingApi.js';
 
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
 const bool = (value) => typeof value === 'boolean' ? value : null;
@@ -39,8 +39,9 @@ function twoFactorProof(code, backupCode) {
 }
 
 function settingsBankAccess(api) {
+  const account = api.getState().auth.account;
   const result = profileApi.endpoints.getMyProfileAccess.select()(api.getState());
-  return result.isError || result.data?.companyId !== api.getState().auth.account?.id || result.data?.canManageBank !== true
+  return !account || result.isError || result.data?.companyId !== account.id || result.data?.userId !== (account.actualUserId ?? account.id) || result.data?.canManageBank !== true
     ? settingsUnavailable('You need finance.withdraw permission to change the payout account.') : null;
 }
 
@@ -52,9 +53,10 @@ export function settingsCompanyQuery(api, baseQuery) {
   const company = identity();
   return async (args) => {
     if (api.signal.aborted) return settingsUnavailable('The settings request was cancelled.');
-    if (!api.getState().auth.account || identity() !== company) return settingsUnavailable('Your company session changed. Reload settings.');
+    const account = api.getState().auth.account;
+    if (!account || account.apiRole !== 'TRUCKER' || account.truckerType !== 'COMPANY' || identity() !== company) return settingsUnavailable('Your company session changed. Reload settings.');
     const result = await baseQuery(args);
-    return identity() === company ? result : settingsUnavailable('Your company session changed. Reload settings.');
+    return !api.signal.aborted && identity() === company ? result : settingsUnavailable('Your company session changed. Reload settings.');
   };
 }
 
@@ -93,18 +95,41 @@ function notificationView(response) {
   };
 }
 
+function settingsBankResult(result, bankName, accountNumber) {
+  const mapped = bankRequestResult(result);
+  if (mapped.error) return mapped;
+  const account = unwrapApiResponseData(result.data)?.account;
+  return text(account?.bankName)?.toLowerCase() === bankName.trim().toLowerCase() && account?.accountNo === accountNumber
+    ? mapped : settingsUnavailable('The API did not confirm the selected bank and account number. Reload the payout account before retrying.');
+}
+
 export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySettings', 'SettingsNotifications', 'SettingsSessions'] }).injectEndpoints({
   overrideExisting: process.env.NODE_ENV === 'development',
   endpoints: (builder) => ({
+    saveSettingsBank: builder.mutation({
+      async queryFn({ bankName, accountNumber }, api, _options, baseQuery) {
+        const blocked = settingsBankAccess(api); if (blocked) return blocked;
+        baseQuery = settingsCompanyQuery(api, baseQuery);
+        const current = onboardingApi.endpoints.getOnboardingBank.select()(api.getState());
+        if (current.isError || current.data !== null) return settingsUnavailable('Load and confirm that no payout account is saved before adding one.');
+        if (!text(bankName) || typeof accountNumber !== 'string' || !/^\d{10}$/.test(accountNumber)) return settingsUnavailable('Choose a supported bank and enter a 10-digit account number.');
+        const result = await baseQuery({ url: '/wallets/bank-account', method: 'POST', body: { bankName, bankAccountNo: accountNumber } });
+        return settingsBankResult(result, bankName, accountNumber);
+      },
+      onQueryStarted: syncOnboardingBank,
+      invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingBank'],
+    }),
     updateSettingsBank: builder.mutation({
       async queryFn({ bankName, accountNumber, transactionPin }, api, _options, baseQuery) {
         const blocked = settingsBankAccess(api); if (blocked) return blocked;
         baseQuery = settingsCompanyQuery(api, baseQuery);
-        if (!text(bankName) || !/^\d{10}$/.test(accountNumber || '') || !/^\d{4}$/.test(transactionPin || '')) {
+        const current = onboardingApi.endpoints.getOnboardingBank.select()(api.getState());
+        if (current.isError || !current.data) return settingsUnavailable('Load your saved payout account before changing it.');
+        if (!text(bankName) || typeof accountNumber !== 'string' || !/^\d{10}$/.test(accountNumber) || typeof transactionPin !== 'string' || !/^\d{4}$/.test(transactionPin)) {
           return settingsUnavailable('Choose a supported bank, enter a 10-digit account number and approve with your four-digit PIN.');
         }
         const result = await baseQuery({ url: '/wallets/bank-account', method: 'PATCH', body: { bankName, bankAccountNo: accountNumber, transactionPin } });
-        return bankRequestResult(result);
+        return settingsBankResult(result, bankName, accountNumber);
       },
       onQueryStarted: syncOnboardingBank,
       invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingBank'],
@@ -174,6 +199,29 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
           if (getState().auth.account?.id === accountId && getState().auth.refreshToken === token) { dispatch(clearSession()); dispatch(baseApi.util.resetApiState()); }
         } catch { /* The form shows the error. */ }
       },
+    }),
+    saveSettingsPin: builder.mutation({
+      async queryFn({ newPin, confirmPin, currentPin }, api, _options, baseQuery) {
+        const blocked = settingsAccess(api); if (blocked) return blocked;
+        baseQuery = settingsCompanyQuery(api, baseQuery);
+        const current = onboardingApi.endpoints.getOnboardingSecurity.select()(api.getState());
+        if (current.isError || typeof current.data?.pin?.set !== 'boolean') return settingsUnavailable('Load your current PIN status before saving.');
+        if (typeof newPin !== 'string' || !/^\d{4}$/.test(newPin) || newPin !== confirmPin) return settingsUnavailable('Enter and confirm a matching 4-digit PIN.');
+        if (current.data.pin.set && (typeof currentPin !== 'string' || !/^\d{4}$/.test(currentPin))) return settingsUnavailable('Enter your current four-digit PIN.');
+        const result = await baseQuery({ url: '/profile/transaction-pin', method: 'PATCH', body: { newPin, confirmPin, ...(current.data.pin.set ? { currentPin } : {}) } });
+        if (result.error) return result;
+        return unwrapApiResponseData(result.data)?.transactionPinSet === true ? { data: { transactionPinSet: true } }
+          : settingsUnavailable('The API did not confirm that your PIN was saved.');
+      },
+      async onQueryStarted(_arg, { dispatch, getState, queryFulfilled }) {
+        const account = getState().auth.account;
+        try {
+          await queryFulfilled;
+          if (!account || getState().auth.account !== account) return;
+          dispatch(onboardingApi.util.updateQueryData('getOnboardingSecurity', undefined, (security) => { security.pin.set = true; }));
+        } catch { /* The form shows the error; keep the confirmed PIN status. */ }
+      },
+      invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingSecurity'],
     }),
     requestSettingsPinReset: builder.mutation({
       async queryFn(_arg, api, _options, baseQuery) {
@@ -321,4 +369,4 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
   }),
 });
 
-export const { useUpdateSettingsBankMutation, useGetCompanySettingsQuery, useUpdateCompanySettingsMutation, useChangeSettingsPasswordMutation, useRequestSettingsPinResetMutation, useResetSettingsPinMutation, useGetSettingsSessionsQuery, useGetSettingsNotificationsQuery, useUpdateSettingsNotificationsMutation, useSetupSettingsTwoFactorMutation, useEnableSettingsTwoFactorMutation, useDisableSettingsTwoFactorMutation, useRegenerateSettingsBackupCodesMutation, useUpdateSettingsSignInAlertsMutation, useRevokeSettingsSessionMutation } = settingsApi;
+export const { useSaveSettingsBankMutation, useUpdateSettingsBankMutation, useGetCompanySettingsQuery, useUpdateCompanySettingsMutation, useChangeSettingsPasswordMutation, useSaveSettingsPinMutation, useRequestSettingsPinResetMutation, useResetSettingsPinMutation, useGetSettingsSessionsQuery, useGetSettingsNotificationsQuery, useUpdateSettingsNotificationsMutation, useSetupSettingsTwoFactorMutation, useEnableSettingsTwoFactorMutation, useDisableSettingsTwoFactorMutation, useRegenerateSettingsBackupCodesMutation, useUpdateSettingsSignInAlertsMutation, useRevokeSettingsSessionMutation } = settingsApi;

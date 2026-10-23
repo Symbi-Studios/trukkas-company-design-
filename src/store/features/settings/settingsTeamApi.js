@@ -76,6 +76,7 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
         baseQuery = settingsCompanyQuery(api, baseQuery);
         const [roleResult, catalogResult] = await Promise.all([baseQuery('/team/roles'), baseQuery('/team/permissions')]);
         if (roleResult.error) return roleResult;
+        if (catalogResult.error?.status === 'CUSTOM_ERROR') return catalogResult;
         const roles = collection(unwrapApiResponseData(roleResult.data)?.roles);
         if (!roles || roles.some((role) => !text(role.id)) || new Set(roles.map((role) => role.id)).size !== roles.length) return settingsUnavailable('The API did not return a valid role collection.');
         const modules = catalogResult.error ? null : unwrapApiResponseData(catalogResult.data)?.modules;
@@ -90,6 +91,7 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
         baseQuery = settingsCompanyQuery(api, baseQuery);
         const [memberResult, inviteResult] = await Promise.all([baseQuery('/team/members'), baseQuery('/team/invites')]);
         if (memberResult.error) return memberResult;
+        if (inviteResult.error?.status === 'CUSTOM_ERROR') return inviteResult;
         const members = collection(unwrapApiResponseData(memberResult.data)?.members);
         if (!members || members.some((member) => !text(member.id)) || new Set(members.map((member) => member.id)).size !== members.length) return settingsUnavailable('The API did not return a valid member collection.');
         const loadedInvites = inviteResult.error ? null : collection(unwrapApiResponseData(inviteResult.data)?.invites);
@@ -106,6 +108,8 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
         baseQuery = settingsCompanyQuery(api, baseQuery);
         const blocked = settingsAccess(api, true); if (blocked) return blocked;
         if (!text(email) || !/^\S+@\S+\.\S+$/.test(email.trim()) || !text(roleId)) return settingsUnavailable('Enter a valid email and choose a role.');
+        const roleResult = settingsTeamApi.endpoints.getSettingsRoles.select()(api.getState());
+        if (roleResult.isError || !roleResult.data?.roles.some((role) => role.id === roleId)) return settingsUnavailable('Load and choose a confirmed company role before inviting a member.');
         if (typeof name !== 'string' || !name.trim() || name.trim().length > 120 || (phone !== undefined && (typeof phone !== 'string' || phone.trim().length > 25))) return settingsUnavailable('Enter a name of at most 120 characters and a phone of at most 25 characters.');
         const account = api.getState().auth.account;
         const approval = await teamApproval(pin, api, baseQuery); if (approval.error) return approval;
@@ -128,11 +132,16 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
       async queryFn({ id, changes, pin }, api, _options, baseQuery) {
         baseQuery = settingsCompanyQuery(api, baseQuery);
         const blocked = settingsAccess(api, true); if (blocked) return blocked;
-        const members = settingsTeamApi.endpoints.getSettingsTeam.select()(api.getState()).data?.members;
-        if (!members?.some((member) => member.id === id && member.kind === 'member')) return settingsUnavailable('Choose a confirmed team member. Pending invitations can be resent or cancelled.');
+        const team = settingsTeamApi.endpoints.getSettingsTeam.select()(api.getState());
+        const members = team.data?.members;
+        if (team.isError || !members?.some((member) => member.id === id && member.kind === 'member')) return settingsUnavailable('Choose a confirmed team member. Pending invitations can be resent or cancelled.');
         if (!text(id) || Object.keys(changes).some((key) => !['roleId', 'status'].includes(key))) return settingsUnavailable('Choose a valid member change.');
         const body = {};
-        if ('roleId' in changes) { if (!text(changes.roleId)) return settingsUnavailable('Choose a role.'); body.roleId = changes.roleId; }
+        if ('roleId' in changes) {
+          const roles = settingsTeamApi.endpoints.getSettingsRoles.select()(api.getState());
+          if (!text(changes.roleId) || roles.isError || !roles.data?.roles.some((role) => role.id === changes.roleId)) return settingsUnavailable('Load and choose a confirmed company role.');
+          body.roleId = changes.roleId;
+        }
         if ('status' in changes) {
           const status = ({ Active: 'ACTIVE', Suspended: 'SUSPENDED' })[changes.status];
           if (!status) return settingsUnavailable('Choose Active or Suspended.');
@@ -184,8 +193,9 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
       async queryFn({ pin, ...draft }, api, _options, baseQuery) {
         baseQuery = settingsCompanyQuery(api, baseQuery);
         const blocked = settingsAccess(api, true); if (blocked) return blocked;
-        const cached = settingsTeamApi.endpoints.getSettingsRoles.select()(api.getState()).data;
-        if (!cached?.roles) return settingsUnavailable('Load the company role list before saving a role.');
+        const roleResult = settingsTeamApi.endpoints.getSettingsRoles.select()(api.getState());
+        const cached = roleResult.data;
+        if (roleResult.isError || !cached?.roles) return settingsUnavailable('Load the company role list before saving a role.');
         if (Object.hasOwn(draft, 'id') && !text(draft.id)) return settingsUnavailable('The role has no confirmed API ID.');
         const current = cached?.roles?.find((role) => role.id === draft.id);
         if (draft.id && (!current || current.locked)) return settingsUnavailable('System roles cannot be edited.');
@@ -229,7 +239,9 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
       async queryFn(id, api, _options, baseQuery) {
         baseQuery = settingsCompanyQuery(api, baseQuery);
         const blocked = settingsAccess(api, true); if (blocked) return blocked;
-        const role = settingsTeamApi.endpoints.getSettingsRoles.select()(api.getState()).data?.roles.find((row) => row.id === id);
+        const roles = settingsTeamApi.endpoints.getSettingsRoles.select()(api.getState());
+        if (roles.isError) return settingsUnavailable('Load the company role list before deleting a role.');
+        const role = roles.data?.roles.find((row) => row.id === id);
         if (!text(id) || !role || role.locked) return settingsUnavailable('System roles cannot be deleted.');
         const result = await baseQuery({ url: `/team/roles/${encodeURIComponent(id)}`, method: 'DELETE' });
         if (result.error) return result;

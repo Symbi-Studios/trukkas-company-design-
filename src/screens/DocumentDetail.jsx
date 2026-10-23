@@ -36,7 +36,7 @@ export function DocumentDetail({ documentId: queryId, ownerType: queryOwnerType 
   }
 
   const ownerType = document_.ownerType;
-  const ownerName = ownerType === 'company' ? company?.name ?? '—' : document_.truckPlate ?? '—';
+  const ownerName = ownerType === 'company' ? company?.name ?? '—' : ownerType === 'driver' ? document_.driverName ?? '—' : document_.truckPlate ?? '—';
   const requirement = (ownerType === 'company' ? COMPANY_DOCUMENT_REQUIREMENTS : REQUIREMENTS_BY_OWNER[ownerType] || []).find((r) => r.type === document_.type);
   const canRenew = requirement?.expires || (document_.expiryDate && document_.expiryDate !== '—');
 

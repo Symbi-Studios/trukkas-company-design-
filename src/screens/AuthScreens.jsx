@@ -20,7 +20,7 @@ import { CodeInput } from '../components/SecurityInputs.jsx';
 import { CompanyAccountModal } from '../components/CompanyAccountModal.jsx';
 import styles from './AuthScreens.module.css';
 
-function AuthFrame({ eyebrow, title, description, children }) {
+export function AuthFrame({ eyebrow, title, description, children }) {
   return (
     <main className={styles.page}>
       <div className={styles.content}>
@@ -37,7 +37,7 @@ function AuthFrame({ eyebrow, title, description, children }) {
   );
 }
 
-function Notice({ message, error = false }) {
+export function Notice({ message, error = false }) {
   if (!message) return null;
   return (
     <p className={error ? styles.error : styles.success} role={error ? 'alert' : 'status'}>
@@ -52,7 +52,7 @@ function destinationAfterLogin() {
   try {
     const destination = new URL(next, window.location.origin);
     if (destination.origin !== window.location.origin) return '/dashboard';
-    if (['/login', '/forgot-password', '/reset-password', '/signup'].includes(destination.pathname)) {
+    if (['/login', '/forgot-password', '/reset-password', '/signup', '/accept-invite', '/join-team'].includes(destination.pathname)) {
       return '/dashboard';
     }
     return destination.pathname + destination.search + destination.hash;
@@ -73,6 +73,7 @@ export function LoginScreen() {
   const [challengeExpired, setChallengeExpired] = React.useState(false);
   const [companyOffer, setCompanyOffer] = React.useState(null);
   const verifyingCode = React.useRef(false);
+  const submittingLogin = React.useRef(false);
   const [code, setCode] = React.useState('');
   const [useBackup, setUseBackup] = React.useState(false);
   const [verifyTwoFactorLogin, { isLoading: verifying }] = useVerifyTwoFactorLoginMutation();
@@ -99,29 +100,32 @@ export function LoginScreen() {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (busy || companyOffer) return;
+    if (busy || submittingLogin.current || companyOffer) return;
     setError('');
     if (!email.trim() || !password) {
       setError('Enter your email and password.');
       return;
     }
     try {
+      submittingLogin.current = true;
       const result = await loginAccount({ email: email.trim(), password }).unwrap();
       if (result.companyAccountRequired) {
         setCompanyOffer({ email: email.trim(), availableRoles: result.availableRoles });
       } else if (result.twoFactorRequired) {
         setChallenge(result.challenge);
         setChallengeExpired(false);
+        setUseBackup(false);
         setCode('');
       } else setPassword('');
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
-    }
+    } finally { submittingLogin.current = false; }
   }
 
   async function handleVerify(event, value = code) {
     event?.preventDefault();
     if (verifyingCode.current || !challenge) return;
+    if (!(useBackup ? /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i.test(value.trim()) : /^\d{6}$/.test(value))) return;
     if (challengeExpired || Date.parse(challenge.expiresAt) <= Date.now()) {
       setChallengeExpired(true); setCode(''); setError('This sign-in code expired. Sign in again to request a new one.');
       return;
@@ -134,7 +138,7 @@ export function LoginScreen() {
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
       setCode('');
-      if (authFailureCode(requestError) === 'TWO_FACTOR_CHALLENGE_EXPIRED') setChallenge(null);
+      if (authFailureCode(requestError) !== 'TWO_FACTOR_INVALID') { setChallenge(null); setChallengeExpired(false); setPassword(''); }
     } finally { verifyingCode.current = false; }
   }
 
@@ -150,15 +154,15 @@ export function LoginScreen() {
         <Notice message={error} error />
         <form className={styles.form} onSubmit={handleVerify}>
           {useBackup ? (
-            <TextField label="Backup code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="XXXX-XXXX" autoFocus autoComplete="one-time-code" />
+            <TextField label="Backup code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="XXXX-XXXX" autoFocus autoComplete="one-time-code" disabled={verifying || challengeExpired} />
           ) : (
             <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => handleVerify(null, v)} disabled={verifying || challengeExpired} />
           )}
-          <Button type="submit" fullWidth disabled={verifying || challengeExpired || code.length < 6}>{verifying ? 'Verifying…' : 'Verify & Sign in'}</Button>
+          <Button type="submit" fullWidth disabled={verifying || challengeExpired || !(useBackup ? /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i.test(code.trim()) : /^\d{6}$/.test(code))}>{verifying ? 'Verifying…' : 'Verify & Sign in'}</Button>
         </form>
         <div className={styles.bottomLinks}>
-          <a href="#" onClick={(e) => { e.preventDefault(); setUseBackup((v) => !v); setCode(''); }}>{useBackup ? 'Use verification code' : 'Use a backup code'}</a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setChallenge(null); setChallengeExpired(false); setPassword(''); setError(''); }}>Back to sign in</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); if (verifyingCode.current) return; setUseBackup((v) => !v); setCode(''); }}>{useBackup ? 'Use verification code' : 'Use a backup code'}</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); if (verifyingCode.current) return; setChallenge(null); setChallengeExpired(false); setPassword(''); setError(''); }}>Back to sign in</a>
         </div>
       </AuthFrame>
     );
@@ -206,6 +210,10 @@ export function LoginScreen() {
         </Button>
       </form>
       <p className={styles.signupPrompt}>New to Trukkas? <Link href="/signup">Create a company account</Link></p>
+      <div className={styles.bottomLinks}>
+        <Link href="/join-team">Have a team invitation?</Link>
+        <Link href="/accept-invite">Activate an invited account</Link>
+      </div>
       {companyOffer && <CompanyAccountModal {...companyOffer} initialPassword={password}
         onClose={() => setCompanyOffer(null)} onComplete={() => { setPassword(''); setCompanyOffer(null); }} />}
     </AuthFrame>
@@ -214,24 +222,35 @@ export function LoginScreen() {
 
 export function ForgotPasswordScreen() {
   const [email, setEmail] = React.useState('');
-  const [forgotAccountPassword, { isLoading: busy }] = useForgotAccountPasswordMutation();
+  const [forgotAccountPassword, { data: recovery, isLoading: busy }] = useForgotAccountPasswordMutation({ fixedCacheKey: 'password-recovery' });
   const [error, setError] = React.useState('');
+  const submitting = React.useRef(false);
   const [sent, setSent] = React.useState(false);
+  const [clock, setClock] = React.useState(() => Date.now());
+  const cooldown = recovery?.email === email.trim().toLowerCase() && recovery.otp?.resendAt > clock;
+  React.useEffect(() => {
+    if (!recovery?.otp || recovery.otp.resendAt <= Date.now()) return undefined;
+    const timer = setTimeout(() => setClock(Date.now()), Math.max(0, recovery.otp.resendAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [recovery]);
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || submitting.current) return;
+    if (recovery?.email === email.trim().toLowerCase() && recovery.otp?.resendAt > Date.now()) return;
     setError('');
     if (!email.trim()) {
       setError('Enter your registered email address.');
       return;
     }
+    submitting.current = true;
     try {
       await forgotAccountPassword({ email: email.trim() }).unwrap();
+      setClock(Date.now());
       setSent(true);
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
-    }
+    } finally { submitting.current = false; }
   }
 
   return (
@@ -262,7 +281,7 @@ export function ForgotPasswordScreen() {
             disabled={busy}
             placeholder="admin@speedlinelogistics.com"
           />
-          <Button type="submit" fullWidth disabled={busy || !/^\S+@\S+\.\S+$/.test(email.trim())}>
+          <Button type="submit" fullWidth disabled={busy || cooldown || !/^\S+@\S+\.\S+$/.test(email.trim())}>
             {busy ? 'Sending code…' : 'Send reset code'}
           </Button>
         </form>
@@ -279,22 +298,40 @@ export function ResetPasswordScreen() {
   const router = useRouter();
   const dispatch = useDispatch();
   const [resetAccountPassword, { isLoading: busy }] = useResetAccountPasswordMutation();
+  const [, { data: recovery }] = useForgotAccountPasswordMutation({ fixedCacheKey: 'password-recovery' });
   const [email, setEmail] = React.useState('');
   const [token, setToken] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmation, setConfirmation] = React.useState('');
   const [error, setError] = React.useState('');
+  const submitting = React.useRef(false);
+  const [clock, setClock] = React.useState(() => Date.now());
+  const recoveryOtp = recovery?.email === email.trim().toLowerCase() ? recovery.otp : null;
+  const codeUnavailable = !!recoveryOtp && (clock >= recoveryOtp.expiresAt || recoveryOtp.remainingAttempts === 0);
+  React.useEffect(() => {
+    if (!recoveryOtp) return undefined;
+    const expired = () => { setClock(Date.now()); setError('This reset code has expired. Request a new code.'); };
+    if (recoveryOtp.remainingAttempts === 0) { setError('No verification attempts remain. Request a new code.'); return undefined; }
+    if (recoveryOtp.expiresAt <= Date.now()) { expired(); return undefined; }
+    const timer = setTimeout(expired, recoveryOtp.expiresAt - Date.now());
+    return () => clearTimeout(timer);
+  }, [recoveryOtp]);
 
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setEmail(params.get('email') || '');
+    setEmail(params.get('email') || recovery?.email || '');
     setToken(params.get('otp') || params.get('token') || '');
   }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || submitting.current) return;
     setError('');
+    if (recoveryOtp && (Date.now() >= recoveryOtp.expiresAt || recoveryOtp.remainingAttempts === 0)) {
+      setClock(Date.now());
+      setError(recoveryOtp.remainingAttempts === 0 ? 'No verification attempts remain. Request a new code.' : 'This reset code has expired. Request a new code.');
+      return;
+    }
     if (!email.trim() || !token.trim() || !newPassword) {
       setError('Enter your email, reset code, and new password.');
       return;
@@ -311,6 +348,7 @@ export function ResetPasswordScreen() {
       setError('The passwords do not match.');
       return;
     }
+    submitting.current = true;
     try {
       await resetAccountPassword({ email: email.trim(), token: token.trim(), newPassword }).unwrap();
       dispatch(clearSession());
@@ -318,7 +356,7 @@ export function ResetPasswordScreen() {
       router.replace('/login?reset=1');
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
-    }
+    } finally { submitting.current = false; }
   }
 
   return (
@@ -379,7 +417,7 @@ export function ResetPasswordScreen() {
           disabled={busy}
           placeholder="Enter the password again"
         />
-        <Button type="submit" fullWidth disabled={busy || !/^\S+@\S+\.\S+$/.test(email.trim()) || !/^\d{6}$/.test(token.trim()) || newPassword.length < 8 || newPassword !== confirmation}>
+        <Button type="submit" fullWidth disabled={busy || codeUnavailable || !/^\S+@\S+\.\S+$/.test(email.trim()) || !/^\d{6}$/.test(token.trim()) || newPassword.length < 8 || newPassword !== confirmation}>
           {busy ? 'Updating password…' : 'Reset password'}
         </Button>
       </form>

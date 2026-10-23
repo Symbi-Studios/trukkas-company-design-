@@ -395,7 +395,7 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }) {
         title={section === 'overview' ? 'Route & Live Location' : 'Live Location'}
         origin={job.origin} destination={job.destination} distanceKm={job.distanceKm}
         progress={liveProgress} lastUpdated={trip.lastUpdated}
-        routeCoordinates={job.routeCoordinates} markerCoordinates={trip.liveCoordinates} duration={null} showUnavailableDistance
+        routeCoordinates={job.routeCoordinates} markerCoordinates={trip.liveCoordinates} duration={trip.routeDuration} showUnavailableDistance
         truckLabel={trip.liveCoordinates ? `${trip.truckPlate}${trip.speedKmh !== null ? ` · ${trip.speedKmh} km/h` : ''}` : undefined}
         height={section === 'overview' ? 250 : 220}
       />

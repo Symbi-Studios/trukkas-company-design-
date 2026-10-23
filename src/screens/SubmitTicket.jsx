@@ -103,6 +103,7 @@ export function SubmitTicket() {
   }, []);
 
   function addFiles(list) {
+    if (running.current) return;
     const incoming = Array.from(list || []);
     const problems = [];
     const wrongType = incoming.filter((f) => !ALLOWED_TYPES.has(f.type));
@@ -133,19 +134,16 @@ export function SubmitTicket() {
     if (!validate()) return;
     running.current = true;
     setBusy(true);
-    const label = (options, value) => options.find((o) => o.value === value)?.label;
     try {
       const ticket = await createTicket({
         subject: draft.subject,
         category: draft.category,
         body: draft.description,
-        details: [
-          ['Category', label(CATEGORIES, draft.category)],
-          ['Priority', draft.priority],
-          ['Related to', label(relatedOptions, draft.related)],
-          ['Truck', draft.truckPlate],
-          ['Driver', label(driverOptions, draft.driverId)],
-        ],
+        priority: draft.priority,
+        relatedType: draft.related.startsWith('trip:') ? 'TRIP' : draft.related.startsWith('job:') ? 'JOB' : undefined,
+        relatedId: draft.related.startsWith('trip:') ? trips.find((trip) => trip.id === draft.related.slice(5))?.jobId : draft.related.startsWith('job:') ? draft.related.slice(4) : undefined,
+        truckId: trucks.find((truck) => truck.plate === draft.truckPlate)?.id,
+        driverId: draft.driverId || undefined,
         files,
       }).unwrap();
       files.forEach((f) => URL.revokeObjectURL(f.url));

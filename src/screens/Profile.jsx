@@ -10,6 +10,7 @@ import {
   useUpdateMyProfileMutation, useUploadMyProfilePhotoMutation,
   useRemoveMyProfilePhotoMutation, useRequestProfileContactChangeMutation, useVerifyProfileContactChangeMutation,
   useRequestProfileEmailVerificationMutation, useVerifyProfileEmailMutation,
+  useRequestProfilePhoneVerificationMutation, useVerifyProfilePhoneMutation,
 } from '../store/features/profile/profileApi.js';
 import { useGetOnboardingSecurityQuery } from '../store/features/auth/onboardingApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
@@ -20,77 +21,94 @@ import styles from './settings/Settings.module.css';
 
 const TIMEZONES = ['Africa/Lagos (WAT, UTC+1)', 'Africa/Accra (GMT, UTC+0)', 'Africa/Nairobi (EAT, UTC+3)', 'Europe/London (UTC+0/+1)'];
 
-/** Contact modal, also opened from the dashboard for current-email verification. */
+/** Contact modal, also opened from the dashboard to verify existing contacts. */
 function ChangeContactModal({ channel, open, onClose, onDone, verifyCurrent = false, currentValue = '' }) {
   const [value, setValue] = useState('');
   const [code, setCode] = useState('');
+  const [verifyingSavedPhone, setVerifyingSavedPhone] = useState(false);
+  const currentVerification = verifyCurrent || verifyingSavedPhone;
   const [requestChange, { isLoading: sendingChange }] = useRequestProfileContactChangeMutation();
   const [verifyChange, { isLoading: verifyingChange }] = useVerifyProfileContactChangeMutation();
   const [requestEmailVerification, { isLoading: sendingEmail }] = useRequestProfileEmailVerificationMutation();
   const [verifyEmail, { isLoading: verifyingEmail }] = useVerifyProfileEmailMutation();
-  const sending = sendingChange || sendingEmail;
-  const verifying = verifyingChange || verifyingEmail;
+  const [requestPhoneVerification, { isLoading: sendingPhone }] = useRequestProfilePhoneVerificationMutation();
+  const [verifyPhone, { isLoading: verifyingPhone }] = useVerifyProfilePhoneMutation();
+  const sending = sendingChange || sendingEmail || sendingPhone;
+  const verifying = verifyingChange || verifyingEmail || verifyingPhone;
+  const [remainingAttempts, setRemainingAttempts] = useState(null);
   const submitting = useRef(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const [expiresAt, setExpiresAt] = useState(null);
   const [resendAt, setResendAt] = useState(null);
+  const timedCode = currentVerification || channel === 'email' || resendAt !== null;
   const [clock, setClock] = useState(() => Date.now());
-  useEffect(() => { if (open) { setValue(verifyCurrent ? currentValue : ''); setCode(''); setSent(false); setError(''); setExpiresAt(null); setResendAt(null); } }, [open, channel, verifyCurrent, currentValue]);
+  useEffect(() => { if (open) { setValue(verifyCurrent ? currentValue : ''); setCode(''); setSent(false); setError(''); setExpiresAt(null); setResendAt(null); setRemainingAttempts(null); setVerifyingSavedPhone(false); } }, [open, channel, verifyCurrent, currentValue]);
   useEffect(() => {
-    if (!open || !verifyCurrent) return undefined;
+    if (!open || !timedCode) return undefined;
     const timer = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [open, verifyCurrent]);
+  }, [open, timedCode]);
   const resendLeft = resendAt ? Math.max(0, Math.ceil((resendAt - clock) / 1000)) : null;
   useEffect(() => {
-    if (!open || !verifyCurrent || !sent || !expiresAt) return;
+    if (!open || !timedCode || !sent || !expiresAt) return;
     const timer = setTimeout(() => { setSent(false); setCode(''); setError('This code has expired. Send a new code.'); }, Math.max(0, expiresAt - Date.now()));
     return () => clearTimeout(timer);
-  }, [open, verifyCurrent, sent, expiresAt]);
+  }, [open, timedCode, sent, expiresAt]);
   const isEmail = channel === 'email';
   const validContact = isProfileContactValid(channel, value);
 
   async function send() {
     if (submitting.current) return;
     setError('');
-    if (verifyCurrent && resendAt > Date.now()) return;
+    if (timedCode && resendAt > Date.now()) return;
     if (!validContact) { setError(isEmail ? 'Enter a valid email.' : 'Enter a valid phone number.'); return; }
     submitting.current = true;
     try {
-      if (verifyCurrent) {
-        const receipt = await requestEmailVerification().unwrap();
-        if (receipt.verified) { onDone(); return; }
+      const samePhone = !isEmail && value.replace(/\D/g, '') === currentValue.replace(/\D/g, '');
+      if (currentVerification || samePhone) {
+        const receipt = await (isEmail ? requestEmailVerification() : requestPhoneVerification()).unwrap();
+        if (receipt.verified) { onDone(true); return; }
+        if (samePhone) setVerifyingSavedPhone(true);
+        setRemainingAttempts(receipt.remainingAttempts ?? null);
         setExpiresAt(receipt.expiresAt);
         setResendAt(receipt.resendAt);
-      } else await requestChange({ channel, value }).unwrap();
-      setSent(true); setCode('');
-    } catch (err) { setError(getApiErrorMessage(err)); if (verifyCurrent && err.retryAt) setResendAt(err.retryAt); }
+      } else {
+        const receipt = await requestChange({ channel, value }).unwrap();
+        if (isEmail) { setRemainingAttempts(receipt.remainingAttempts); setExpiresAt(receipt.expiresAt); setResendAt(receipt.resendAt); }
+      }
+      setClock(Date.now()); setSent(true); setCode('');
+    } catch (err) { setError(getApiErrorMessage(err)); if (err.retryAt) { setResendAt(err.retryAt); setClock(Date.now()); } }
     finally { submitting.current = false; }
   }
   async function confirm(c = code) {
-    if (submitting.current || !sent || !/^\d{6}$/.test(c)) return;
-    if (verifyCurrent && expiresAt !== null && Date.now() >= expiresAt) { setSent(false); setCode(''); setError('This code has expired. Send a new code.'); return; }
+    if (submitting.current || !sent || remainingAttempts === 0 || !/^\d{6}$/.test(c)) return;
+    if (timedCode && expiresAt !== null && Date.now() >= expiresAt) { setSent(false); setCode(''); setError('This code has expired. Send a new code.'); return; }
     setError('');
     submitting.current = true;
     try {
-      if (verifyCurrent) await verifyEmail({ code: c }).unwrap();
+      if (currentVerification) await (isEmail ? verifyEmail({ code: c }) : verifyPhone({ code: c })).unwrap();
       else await verifyChange({ channel, value, code: c }).unwrap();
-      onDone();
+      onDone(currentVerification);
     }
-    catch (err) { setError(getApiErrorMessage(err)); setCode(''); }
+    catch (err) {
+      const attempts = Number.isSafeInteger(err.remainingAttempts) && err.remainingAttempts >= 0 ? err.remainingAttempts : null;
+      setError(attempts === null ? getApiErrorMessage(err) : `${getApiErrorMessage(err)} ${attempts} verification attempt(s) remaining.`);
+      setCode('');
+      if (attempts !== null) { setRemainingAttempts(attempts); if (attempts === 0) setSent(false); }
+    }
     finally { submitting.current = false; }
   }
 
   return (
-    <Modal open={open} onClose={() => { if (!sending && !verifying) onClose(); }} width={440} title={verifyCurrent ? 'Verify Email Address' : isEmail ? 'Change Email Address' : 'Change Phone Number'}
-      description={verifyCurrent ? 'Confirm the email address on your account.' : isEmail ? 'We’ll send a code to your new email to confirm it.' : 'We’ll text a code to your new number to confirm it.'}
+    <Modal open={open} onClose={() => { if (!sending && !verifying) onClose(); }} width={440} title={currentVerification ? isEmail ? 'Verify Email Address' : 'Verify Phone Number' : isEmail ? 'Change Email Address' : 'Change Phone Number'}
+      description={currentVerification ? isEmail ? 'Confirm the email address on your account.' : 'Confirm the phone number on your account.' : isEmail ? 'We’ll send a code to your new email to confirm it.' : 'We’ll text a code to your new number to confirm it.'}
       footer={<><Button variant="outline" disabled={sending || verifying} onClick={onClose}>Cancel</Button>{sent ? <>
-          {verifyCurrent && <Button variant="ghost" disabled={sending || verifying || resendLeft === null || resendLeft > 0} onClick={send}>{resendLeft === null ? '—' : resendLeft > 0 ? 'Resend in ' + resendLeft + 's' : 'Resend code'}</Button>}
-          <Button disabled={!/^\d{6}$/.test(code) || verifying || sending} onClick={() => confirm()}>Confirm</Button>
-        </> : <Button disabled={sending || !validContact || (verifyCurrent && resendAt > Date.now())} onClick={send}>Send Code</Button>}</>}>
+          {timedCode && <Button variant="ghost" disabled={sending || verifying || resendLeft === null || resendLeft > 0} onClick={send}>{resendLeft === null ? '—' : resendLeft > 0 ? 'Resend in ' + resendLeft + 's' : 'Resend code'}</Button>}
+          <Button disabled={!/^\d{6}$/.test(code) || verifying || sending || remainingAttempts === 0} onClick={() => confirm()}>Confirm</Button>
+        </> : <Button disabled={sending || !validContact || (timedCode && resendAt > Date.now())} onClick={send}>Send Code</Button>}</>}>
       <div style={{ display: 'grid', gap: 14, justifyItems: 'stretch' }}>
-        <TextField label={verifyCurrent ? 'Email Address' : isEmail ? 'New Email' : 'New Phone Number'} type={isEmail ? 'email' : 'tel'} value={value} disabled={verifyCurrent || sent || sending} onChange={(e) => setValue(e.target.value)} placeholder={isEmail ? 'you@company.com' : '+234 800 000 0000'} />
+        <TextField label={currentVerification ? isEmail ? 'Email Address' : 'Phone Number' : isEmail ? 'New Email' : 'New Phone Number'} type={isEmail ? 'email' : 'tel'} value={value} disabled={currentVerification || sent || sending} onChange={(e) => setValue(e.target.value)} placeholder={isEmail ? 'you@company.com' : '+234 800 000 0000'} />
         {sent && (
           <>
             <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => confirm(v)} disabled={sending || verifying} />
@@ -109,18 +127,24 @@ export function Profile() {
 function ProfileContent() {
   const navigate = useNavigate();
   const searchParams = useSearchParams();
-  const verifyEmail = searchParams.get('verify') === 'email';
+  const requestedVerification = searchParams.get('verify');
   const account = useSelector((state) => state.auth.account);
-  const { data, error, isLoading } = useGetMyProfileQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
-  const { data: security, error: securityError } = useGetOnboardingSecurityQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
-  const { data: access, error: accessError } = useGetMyProfileAccessQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
-  const { data: loginHistory, error: historyError, isLoading: historyLoading } = useGetMyProfileLoginHistoryQuery(data?.timezoneId ?? null, {
+  const { data: profileData, error, isLoading } = useGetMyProfileQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const { data: securityData, error: securityError } = useGetOnboardingSecurityQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const { data: accessData, error: accessError } = useGetMyProfileAccessQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const data = error ? undefined : profileData;
+  const security = securityError ? undefined : securityData;
+  const access = accessError ? undefined : accessData;
+  const { currentData: loginHistory, error: historyError, isFetching: historyLoading } = useGetMyProfileLoginHistoryQuery(data?.timezoneId ?? null, {
     skip: !account || isLoading, refetchOnMountOrArgChange: true,
   });
   const [updateProfile, { isLoading: saving }] = useUpdateMyProfileMutation();
   const [uploadPhoto, { isLoading: uploading }] = useUploadMyProfilePhotoMutation();
   const [removePhoto, { isLoading: removing }] = useRemoveMyProfilePhotoMutation();
   const profile = data ?? EMPTY_PROFILE;
+  const verificationChannel = requestedVerification === 'phone' ? 'phone'
+    : requestedVerification === 'email' ? 'email'
+    : requestedVerification === 'contact' ? profile.emailVerified === false ? 'email' : profile.phoneVerified === false ? 'phone' : null : null;
   const canEdit = access?.canEdit === true;
   const busy = saving || uploading || removing;
   const [draft, setDraft] = useState(null);
@@ -130,7 +154,7 @@ function ProfileContent() {
 
   function closeContact() {
     setContact(null);
-    if (verifyEmail) {
+    if (requestedVerification) {
       const params = new URLSearchParams(searchParams.toString());
       params.delete('verify');
       const query = params.toString();
@@ -263,9 +287,14 @@ function ProfileContent() {
         </aside>
       </div>
 
-      <ChangeContactModal channel={contact ?? (verifyEmail ? 'email' : null)} open={!!contact || (verifyEmail && !!data)} onClose={closeContact}
-        verifyCurrent={!contact && verifyEmail} currentValue={profile.email}
-        onDone={() => { const ch = contact; closeContact(); showToast(!ch && verifyEmail ? 'Email verified.' : ch === 'email' ? 'Email updated.' : 'Phone number updated.'); }} />
+      <ChangeContactModal key={contact ?? verificationChannel ?? 'closed'} channel={contact ?? verificationChannel} open={!!contact || (!!verificationChannel && !!data)} onClose={closeContact}
+        verifyCurrent={!contact && !!verificationChannel} currentValue={(contact ?? verificationChannel) === 'phone' ? profile.phone : profile.email}
+        onDone={(verified = false) => {
+          if (!contact && requestedVerification === 'contact' && verificationChannel === 'email' && profile.phoneVerified === false) {
+            navigate('/profile?verify=phone', { replace: true }); showToast('Email verified.'); return;
+          }
+          const ch = contact; closeContact(); showToast(verified ? (ch ?? verificationChannel) === 'phone' ? 'Phone number verified.' : 'Email verified.' : ch === 'email' ? 'Email updated.' : 'Phone number updated.');
+        }} />
       <Toast message={toast} />
     </div>
   );

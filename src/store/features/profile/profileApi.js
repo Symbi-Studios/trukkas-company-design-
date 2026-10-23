@@ -1,8 +1,13 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
 import { setCredentials } from '../auth/authSlice.js';
+import { otpMetadata, otpRemainingAttempts, otpRetryAt } from '../../api/otpContracts.js';
 
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
 const boolean = (value) => typeof value === 'boolean' ? value : null;
+const photoUrl = (value) => {
+  try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null; }
+  catch { return null; }
+};
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const displayDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))
   ? new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeZone: 'Africa/Lagos' }).format(new Date(value)) : '—';
@@ -53,19 +58,37 @@ const verificationTime = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\
 
 function profileAccountError(api, editing = false) {
   const account = api.getState().auth.account;
-  if (!account) return unavailable('Sign in to manage your profile.');
+  if (!account || account.apiRole !== 'TRUCKER' || account.truckerType !== 'COMPANY') return unavailable('Sign in to manage your profile.');
   if (editing) {
-    const access = profileApi.endpoints.getMyProfileAccess.select()(api.getState()).data;
-    if (access?.companyId !== account.id || access.canEdit !== true) {
+    const result = profileApi.endpoints.getMyProfileAccess.select()(api.getState());
+    const access = result.data;
+    if (result.isError || access?.companyId !== account.id || access?.userId !== (account.actualUserId ?? account.id) || access.canEdit !== true) {
       return unavailable('You need the settings.edit permission to update this company profile.');
     }
   }
   return null;
 }
 
+function profileQuery(api, baseQuery) {
+  const identity = () => {
+    const { account, activeCompanyId } = api.getState().auth;
+    return JSON.stringify([account?.id, account?.actualUserId, activeCompanyId]);
+  };
+  const session = identity();
+  return async (args) => {
+    if (api.signal.aborted) return unavailable('The profile request was cancelled.');
+    const blocked = profileAccountError(api);
+    if (blocked) return blocked;
+    if (identity() !== session) return unavailable('Your company session changed. Reload your profile.');
+    const result = await baseQuery(args);
+    if (api.signal.aborted || identity() !== session) return unavailable('Your company session changed. Reload your profile.');
+    return result;
+  };
+}
+
 function profileResult(response, api) {
   const user = unwrapApiResponseData(response)?.user;
-  if (!user?.id || user.id !== api.getState().auth.account?.id) {
+  if (!user?.id || user.id !== api.getState().auth.account?.id || user.role !== 'TRUCKER' || user.truckerType !== 'COMPANY') {
     return unavailable('The API did not return your profile.');
   }
   const nameParts = { firstName: text(user.firstName), middleName: text(user.middleName), lastName: text(user.lastName) };
@@ -76,7 +99,7 @@ function profileResult(response, api) {
     name: Object.values(nameParts).filter(Boolean).join(' ') || '—',
     email: text(user.email) ?? '—',
     phone: text(user.phone) ?? '—',
-    photoUrl: text(user.avatarUrl),
+    photoUrl: photoUrl(user.avatarUrl),
     companyName: text(user.businessName) ?? '—',
     joined: displayDate(user.createdAt),
     emailVerified: boolean(user.emailVerified),
@@ -128,6 +151,7 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
   endpoints: (builder) => ({
     getMyProfile: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
+        baseQuery = profileQuery(api, baseQuery);
         const blocked = profileAccountError(api);
         if (blocked) return blocked;
         const result = await baseQuery('/profile');
@@ -138,6 +162,7 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
     }),
     getMyProfileAccess: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
+        baseQuery = profileQuery(api, baseQuery);
         const blocked = profileAccountError(api);
         if (blocked) return blocked;
         const results = await Promise.allSettled([
@@ -146,8 +171,11 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
         const [meResult, rolesResult, catalogResult] = results.map((result) => result.status === 'fulfilled'
           ? result.value : unavailable('Could not load company access information.'));
         if (meResult.error) return meResult;
+        if (rolesResult.error?.status === 'CUSTOM_ERROR') return rolesResult;
+        if (catalogResult.error?.status === 'CUSTOM_ERROR') return catalogResult;
         const me = unwrapApiResponseData(meResult.data);
-        if (me?.companyId !== api.getState().auth.account?.id || typeof me.isOwner !== 'boolean' || !text(me.userId)) {
+        const account = api.getState().auth.account;
+        if (me?.companyId !== account?.id || typeof me.isOwner !== 'boolean' || me.userId !== (account?.actualUserId ?? account?.id)) {
           return unavailable('The API did not identify your access to this company.');
         }
         const permissions = Array.isArray(me.permissions) && me.permissions.every((key) => text(key)) ? me.permissions : null;
@@ -175,7 +203,8 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
       providesTags: ['ProfileAccess'],
     }),
     getMyProfileLoginHistory: builder.query({
-      async queryFn(timezone, _api, _options, baseQuery) {
+      async queryFn(timezone, api, _options, baseQuery) {
+        baseQuery = profileQuery(api, baseQuery);
         const result = await baseQuery({ url: '/profile/login-history', params: { page: 1, limit: 10 } });
         if (result.error) return result;
         const data = unwrapApiResponseData(result.data);
@@ -191,11 +220,13 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
     }),
     updateMyProfile: builder.mutation({
       async queryFn(changes, api, _options, baseQuery) {
+        baseQuery = profileQuery(api, baseQuery);
         const blocked = profileAccountError(api, true);
         if (blocked) return blocked;
         if (Object.keys(changes).some((key) => !['name', 'title', 'bio', 'language', 'timezone'].includes(key))) return unavailable('The profile form contains an unsupported field.');
-        const current = profileApi.endpoints.getMyProfile.select()(api.getState()).data;
-        if (!current) return unavailable('Load your profile before saving changes.');
+        const currentResult = profileApi.endpoints.getMyProfile.select()(api.getState());
+        const current = currentResult.data;
+        if (currentResult.isError || current?.id !== api.getState().auth.account?.id) return unavailable('Load your profile before saving changes.');
         const body = {};
         if ('name' in changes) {
           const names = text(changes.name)?.split(/\s+/);
@@ -239,23 +270,25 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
     }),
     uploadMyProfilePhoto: builder.mutation({
       async queryFn(file, api, _options, baseQuery) {
+        baseQuery = profileQuery(api, baseQuery);
         const blocked = profileAccountError(api, true);
         if (blocked) return blocked;
-        if (!(file instanceof File) || !file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) {
-          return unavailable('Choose an image under 5 MB.');
+        if (typeof File === 'undefined' || !(file instanceof File) || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size <= 0 || file.size > 5 * 1024 * 1024) {
+          return unavailable('Choose a JPEG, PNG or WebP image up to 5 MB.');
         }
         const body = new FormData();
         body.append('file', file);
         const result = await baseQuery({ url: '/profile/avatar', method: 'POST', body });
         if (result.error) return result;
-        const photoUrl = text(unwrapApiResponseData(result.data)?.avatarUrl);
-        return photoUrl ? { data: { photoUrl } } : unavailable('The API did not confirm your uploaded profile photo.');
+        const savedPhoto = photoUrl(unwrapApiResponseData(result.data)?.avatarUrl);
+        return savedPhoto ? { data: { photoUrl: savedPhoto } } : unavailable('The API did not confirm your uploaded profile photo.');
       },
       onQueryStarted: syncProfilePhoto,
       invalidatesTags: (_data, error) => error ? [] : ['Profile'],
     }),
     removeMyProfilePhoto: builder.mutation({
       async queryFn(_arg, api, _options, baseQuery) {
+        baseQuery = profileQuery(api, baseQuery);
         const blocked = profileAccountError(api, true);
         if (blocked) return blocked;
         const result = await baseQuery({ url: '/profile/avatar', method: 'DELETE' });
@@ -268,6 +301,7 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
     }),
     requestProfileEmailVerification: builder.mutation({
       async queryFn(_arg, api, _options, baseQuery) {
+        baseQuery = profileQuery(api, baseQuery);
         const blocked = profileAccountError(api);
         if (blocked) return blocked;
         const result = await baseQuery({ url: '/profile/request-email-verification', method: 'POST' });
@@ -283,10 +317,11 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
         }
         return { data: { verified: data.emailVerified, expiresAt, resendAt } };
       },
-      invalidatesTags: (data, error) => !error && data?.verified === true ? ['Profile', 'AuthOnboardingSecurity'] : [],
+      invalidatesTags: (data, error) => !error && data?.verified === true ? ['Profile', 'AuthOnboardingSecurity', 'CompanyDashboard'] : [],
     }),
     verifyProfileEmail: builder.mutation({
       async queryFn({ code }, api, _options, baseQuery) {
+        baseQuery = profileQuery(api, baseQuery);
         const blocked = profileAccountError(api);
         if (blocked) return blocked;
         if (typeof code !== 'string' || !/^\d{6}$/.test(code)) return unavailable('Enter the 6-digit verification code.');
@@ -295,27 +330,71 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
         return unwrapApiResponseData(result.data)?.emailVerified === true
           ? { data: { verified: true } } : unavailable('The API did not confirm email verification.');
       },
-      invalidatesTags: (_data, error) => error ? [] : ['Profile', 'AuthOnboardingSecurity'],
+      invalidatesTags: (_data, error) => error ? [] : ['Profile', 'AuthOnboardingSecurity', 'CompanyDashboard'],
+    }),
+    requestProfilePhoneVerification: builder.mutation({
+      async queryFn(_arg, api, _options, baseQuery) {
+        baseQuery = profileQuery(api, baseQuery);
+        const result = await baseQuery({ url: '/profile/request-phone-verification', method: 'POST' });
+        if (result.error) {
+          const data = unwrapApiResponseData(result.error.data);
+          const seconds = data?.retryAfterSeconds;
+          return { error: { ...result.error, retryAt: Number.isFinite(seconds) && seconds > 0 ? Date.now() + seconds * 1000 : null } };
+        }
+        const data = unwrapApiResponseData(result.data);
+        if (typeof data?.phoneVerified !== 'boolean') return unavailable('The API did not confirm phone verification status.');
+        if (data.phoneVerified) return { data: { verified: true } };
+        const otp = data.otp;
+        const expiresAt = verificationTime(otp?.expiresAt), resendAt = verificationTime(otp?.resendAvailableAt);
+        if (otp?.length !== 6 || expiresAt === null || resendAt === null || expiresAt <= Date.now() || resendAt > expiresAt
+          || !Number.isSafeInteger(otp.remainingAttempts) || otp.remainingAttempts < 0) return unavailable('The API did not return valid phone verification expiry, resend and attempt details.');
+        return { data: { verified: false, expiresAt, resendAt, remainingAttempts: otp.remainingAttempts } };
+      },
+      invalidatesTags: (data, error) => !error && data?.verified ? ['Profile', 'CompanyDashboard', 'AuthOnboardingSecurity'] : [],
+    }),
+    verifyProfilePhone: builder.mutation({
+      async queryFn({ code }, api, _options, baseQuery) {
+        baseQuery = profileQuery(api, baseQuery);
+        if (typeof code !== 'string' || !/^\d{6}$/.test(code)) return unavailable('Enter the 6-digit verification code.');
+        const result = await baseQuery({ url: '/profile/verify-phone', method: 'POST', body: { code } });
+        if (result.error) {
+          const attempts = unwrapApiResponseData(result.error.data)?.remainingAttempts;
+          return { error: { ...result.error, remainingAttempts: Number.isSafeInteger(attempts) && attempts >= 0 ? attempts : null } };
+        }
+        return unwrapApiResponseData(result.data)?.phoneVerified === true ? { data: { verified: true } }
+          : unavailable('The API did not confirm phone verification.');
+      },
+      invalidatesTags: (_data, error) => error ? [] : ['Profile', 'CompanyDashboard', 'AuthOnboardingSecurity'],
     }),
     requestProfileContactChange: builder.mutation({
       async queryFn({ channel, value }, api, _options, baseQuery) {
+        baseQuery = profileQuery(api, baseQuery);
         const blocked = profileAccountError(api, true);
         if (blocked) return blocked;
         if (!['email', 'phone'].includes(channel)) return unavailable('Choose email or phone.');
         const contact = contactValue(channel, value);
         if (!contact) return unavailable(channel === 'email' ? 'Enter a valid email.' : 'Enter a valid phone number.');
-        return baseQuery({
+        const result = await baseQuery({
           url: `/profile/request-${channel}-change`, method: 'POST',
           body: channel === 'email' ? { newEmail: contact } : { newPhone: contact },
         });
+        if (result.error) return channel === 'email'
+          ? { error: { ...result.error, retryAt: otpRetryAt(unwrapApiResponseData(result.error.data)) } } : result;
+        const source = unwrapApiResponseData(result.data);
+        if (!text(source?.message)) return unavailable('The API did not confirm the contact verification request.');
+        const otp = channel === 'email' ? otpMetadata(source.otp) : null;
+        if (channel === 'email' && !otp) return unavailable('The API did not return valid email change code expiry and resend details.');
+        return { data: { length: otp?.length ?? null, expiresAt: otp?.expiresAt ?? null, resendAt: otp?.resendAt ?? null,
+          retryAfterSeconds: otp?.retryAfterSeconds ?? null, remainingAttempts: otp?.remainingAttempts ?? null } };
       },
     }),
     verifyProfileContactChange: builder.mutation({
       async queryFn({ channel, value, code }, api, _options, baseQuery) {
+        baseQuery = profileQuery(api, baseQuery);
         const blocked = profileAccountError(api, true);
         if (blocked) return blocked;
         if (!['email', 'phone'].includes(channel)) return unavailable('Choose email or phone.');
-        if (!/^\d{6}$/.test(code)) return unavailable('Enter the 6-digit verification code.');
+        if (typeof code !== 'string' || !/^\d{6}$/.test(code)) return unavailable('Enter the 6-digit verification code.');
         const contact = contactValue(channel, value);
         if (!contact) return unavailable(channel === 'email' ? 'Enter a valid email.' : 'Enter a valid phone number.');
         const account = api.getState().auth.account;
@@ -323,7 +402,8 @@ export const profileApi = baseApi.enhanceEndpoints({ addTagTypes: ['Profile', 'P
           url: `/profile/verify-${channel}-change`, method: 'POST',
           body: { ...(channel === 'email' ? { newEmail: contact } : { newPhone: contact }), code },
         });
-        if (result.error) return result;
+        if (result.error) return channel === 'email'
+          ? { error: { ...result.error, remainingAttempts: otpRemainingAttempts(unwrapApiResponseData(result.error.data)?.remainingAttempts) } } : result;
         if (api.getState().auth.account !== account) return unavailable('Your company session changed. Reload your profile.');
         const readback = await baseQuery('/profile');
         if (readback.error) return unavailable('The contact change was submitted, but confirmation failed. Reload your profile before retrying.');
@@ -345,4 +425,5 @@ export const {
   useUpdateMyProfileMutation, useUploadMyProfilePhotoMutation,
   useRemoveMyProfilePhotoMutation, useRequestProfileContactChangeMutation, useVerifyProfileContactChangeMutation,
   useRequestProfileEmailVerificationMutation, useVerifyProfileEmailMutation,
+  useRequestProfilePhoneVerificationMutation, useVerifyProfilePhoneMutation,
 } = profileApi;

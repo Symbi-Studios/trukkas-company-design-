@@ -9,6 +9,7 @@ import {
 import { useGetCompanyTripsQuery } from '../store/features/trips/tripsApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { tripDetailHref } from '../domain/tripLinks.js';
+import { jobDetailHref } from '../domain/jobLinks.js';
 import { syncTopBarSearch } from '../pageSearch.js';
 import { jobTitle } from '../domain/jobs.js';
 import {
@@ -39,13 +40,14 @@ export function Trips() {
     return () => window.removeEventListener('trukkas:global-search', onSearch);
   }, []);
 
-  const trips = useMemo(() => currentData ?? [], [currentData]);
-  // No company API documents the prototype's per-job, multi-truck dispatch summary.
-  const needsDispatch = null;
+  const availableTrips = error ? undefined : currentData;
+  const trips = useMemo(() => availableTrips ?? [], [availableTrips]);
+  const needsDispatch = useMemo(() => availableTrips ? trips.map((trip) => trip.dispatch)
+    .filter((dispatch) => dispatch && dispatch.remaining > 0) : null, [availableTrips, trips]);
 
-  const phaseCount = (phase) => currentData && trips.every((trip) => trip.phase !== null && (phase !== 'Upcoming' || trip.phase !== 'Upcoming' || trip.driverAssigned !== null))
+  const phaseCount = (phase) => availableTrips && trips.every((trip) => trip.phase !== null && (phase !== 'Upcoming' || trip.phase !== 'Upcoming' || trip.driverAssigned !== null))
     ? trips.filter((trip) => matchesPhase(trip, phase)).length : '—';
-  const counts = { all: currentData ? trips.length : '—', Upcoming: phaseCount('Upcoming'), Active: phaseCount('Active'), Completed: phaseCount('Completed'), Cancelled: phaseCount('Cancelled') };
+  const counts = { all: availableTrips ? trips.length : '—', Upcoming: phaseCount('Upcoming'), Active: phaseCount('Active'), Completed: phaseCount('Completed'), Cancelled: phaseCount('Cancelled') };
   const months = [...new Set(trips.map((t) => t.pickupMonth).filter(Boolean))];
 
   const filtered = useMemo(() => {
@@ -85,7 +87,7 @@ export function Trips() {
         <Banner
           tone="warning" icon="truck"
           title={`${needsDispatch.reduce((sum, row) => sum + row.remaining, 0)} truck(s) still to dispatch on won jobs`}
-          action={<Button size="sm" variant="outline" onClick={() => navigate(`/jobs/${needsDispatch[0].job.id}`)}>Dispatch Trucks</Button>}
+          action={<Button size="sm" variant="outline" onClick={() => navigate(jobDetailHref(needsDispatch[0].job.id))}>Dispatch Trucks</Button>}
         >
           {needsDispatch.map((row) => `${row.job.id} (${jobTitle(row.job)}): ${row.dispatched} of ${row.required} dispatched`).join(' · ')}
         </Banner>
@@ -163,7 +165,7 @@ export function Trips() {
           </div>
         )}
         <Pagination
-          page={currentPage} pageCount={pageCount} pageSize={pageSize} total={currentData ? filtered.length : undefined}
+          page={currentPage} pageCount={pageCount} pageSize={pageSize} total={availableTrips ? filtered.length : undefined}
           onPage={(p) => setPage(Math.max(1, Math.min(pageCount, p)))}
           onPageSize={(size) => { setPageSize(size); setPage(1); }}
         />

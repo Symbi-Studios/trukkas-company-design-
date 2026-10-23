@@ -72,6 +72,7 @@ function VerifyStep({ channel, target, sessionToken, otp, onVerified, onChangeTa
   const [verifyPhone] = useVerifyAccountPhoneMutation();
   const verifying = useRef(false);
   const verified = useRef(false);
+  const sending = useRef(false);
   const [otpLength, setOtpLength] = useState(otp.length);
   const [expiresAt, setExpiresAt] = useState(otp.expiresAt);
   const [resendAt, setResendAt] = useState(otp.resendAvailableAt);
@@ -101,7 +102,8 @@ function VerifyStep({ channel, target, sessionToken, otp, onVerified, onChangeTa
   }, [expired, remainingAttempts, clock, otp.sessionExpiresAt]);
 
   async function send() {
-    if (left > 0 || remainingResends <= 0 || resending || verifying.current || verified.current || clock >= otp.sessionExpiresAt) return;
+    if (Date.now() < resendAt || remainingResends <= 0 || sending.current || resending || verifying.current || verified.current || Date.now() >= otp.sessionExpiresAt) return;
+    sending.current = true;
     setError('');
     try {
       const result = await resendCode({ sessionToken }).unwrap();
@@ -112,11 +114,12 @@ function VerifyStep({ channel, target, sessionToken, otp, onVerified, onChangeTa
       setRemainingResends(result.otp.remainingResends);
       setRemainingAttempts(result.otp.remainingAttempts);
     } catch (err) { setError(getApiErrorMessage(err)); }
+    finally { sending.current = false; }
   }
 
   async function verify(value = code) {
-    if (verifying.current || resending || !codePattern.test(value)) return;
-    if (!verified.current && (clock >= effectiveExpiry || remainingAttempts === 0)) {
+    if (verifying.current || sending.current || resending || !codePattern.test(value)) return;
+    if (!verified.current && (Date.now() >= effectiveExpiry || remainingAttempts === 0)) {
       setError(remainingAttempts === 0 ? 'No verification attempts remain. Request a new code.' : 'This code has expired. Request a new code.');
       return;
     }
@@ -129,8 +132,7 @@ function VerifyStep({ channel, target, sessionToken, otp, onVerified, onChangeTa
       }
       await onVerified();
     } catch (err) {
-      const failureData = err?.data?.data && typeof err.data.data === 'object' ? err.data.data : err?.data;
-      if (Number.isSafeInteger(failureData?.remainingAttempts) && failureData.remainingAttempts >= 0) setRemainingAttempts(failureData.remainingAttempts);
+      if (Number.isSafeInteger(err?.remainingAttempts) && err.remainingAttempts >= 0) setRemainingAttempts(err.remainingAttempts);
       setError(getApiErrorMessage(err));
     } finally { verifying.current = false; setBusy(false); }
   }
@@ -166,12 +168,17 @@ export function Onboarding() {
   const [resolveBank] = useResolveOnboardingBankMutation();
   const [saveBank] = useSaveOnboardingBankMutation();
   const [saveTransactionPin] = useSaveOnboardingPinMutation();
-  const { data: documentData } = useGetOnboardingDocumentsQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const { currentData: loadedDocuments, error: documentsError } = useGetOnboardingDocumentsQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const documentData = documentsError ? undefined : loadedDocuments;
   const documents = documentData?.documents;
-  const { data: truckData, error: trucksError } = useGetOnboardingTrucksQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
-  const { data: banks, error: banksError } = useGetOnboardingBanksQuery(undefined, { skip: !account });
-  const { data: bank, error: bankError } = useGetOnboardingBankQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
-  const { data: security, error: securityError } = useGetOnboardingSecurityQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const { currentData: loadedTrucks, error: trucksError } = useGetOnboardingTrucksQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const { currentData: loadedBanks, error: banksError } = useGetOnboardingBanksQuery(undefined, { skip: !account });
+  const { currentData: loadedBank, error: bankError } = useGetOnboardingBankQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const { currentData: loadedSecurity, error: securityError } = useGetOnboardingSecurityQuery(undefined, { skip: !account, refetchOnMountOrArgChange: true });
+  const truckData = trucksError ? undefined : loadedTrucks;
+  const banks = banksError ? undefined : loadedBanks;
+  const bank = bankError ? undefined : loadedBank;
+  const security = securityError ? undefined : loadedSecurity;
   const trucks = truckData || [];
 
   const [step, setStep] = useState(0);
@@ -183,6 +190,7 @@ export function Onboarding() {
   const [uploadType, setUploadType] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const [companyOffer, setCompanyOffer] = useState(null);
 
   const resolveAccount = useCallback(async (bankCode, accountNumber) => {
@@ -274,7 +282,8 @@ export function Onboarding() {
     if (passwordStrength(form.password).score < 3) { setError('Choose a stronger password.'); return; }
     if (form.password !== form.confirm) { setError('Passwords don’t match.'); return; }
     if (!form.terms) { setError('Accept the terms to continue.'); return; }
-    if (busy) return;
+    if (busy || submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     try {
       const availability = await checkEmail({ email: form.email }).unwrap();
@@ -285,7 +294,7 @@ export function Onboarding() {
       if (authFailureCode(err) === 'EMAIL_ALREADY_REGISTERED') setCompanyOffer({ email: form.email.trim() });
       else setError(getApiErrorMessage(err));
     }
-    finally { setBusy(false); }
+    finally { submitting.current = false; setBusy(false); }
   }
 
   function continueCompanySetup(result) {
@@ -319,8 +328,9 @@ export function Onboarding() {
 
   async function sendPhoneCode(event) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || submitting.current) return;
     if (!isValidRegistrationPhone) { setError('Enter a valid Nigerian mobile number, e.g. +234 803 000 0000.'); return; }
+    submitting.current = true;
     setBusy(true); setError('');
     try {
       const result = await startRegistration({ phone: form.phone }).unwrap();
@@ -330,7 +340,7 @@ export function Onboarding() {
       setOtp({ ...result.otp, sessionExpiresAt: result.sessionExpiresAt });
       setForm((value) => ({ ...value, phoneEntered: true }));
     } catch (err) { setError(err instanceof Error ? err.message : getApiErrorMessage(err)); }
-    finally { setBusy(false); }
+    finally { submitting.current = false; setBusy(false); }
   }
 
   async function retryRejectedCompany() {
@@ -342,40 +352,43 @@ export function Onboarding() {
 
   async function submitCompany(event) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || submitting.current) return;
     setError('');
     if (!biz.name.trim() || !biz.rcNumber.trim() || !biz.address.trim()) { setError('Company name, RC/BN number and address are required.'); return; }
     if (!biz.directorName.trim() || !biz.directorDob) { setError('Enter the director’s full name and date of birth.'); return; }
+    submitting.current = true;
     setBusy(true);
     try {
       const saved = await saveCompany(biz).unwrap();
       setBiz((value) => ({ ...value, ...saved.onboardingCompany }));
       go(4);
     } catch (err) { setError(getApiErrorMessage(err)); }
-    finally { setBusy(false); }
+    finally { submitting.current = false; setBusy(false); }
   }
 
   async function submitTruck(event) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || submitting.current) return;
     setError('');
     if (!truck.plate.trim() || !truck.make.trim() || !truck.model.trim() || !truck.year) { setError('Enter plate, make, model and year.'); return; }
+    submitting.current = true;
     setBusy(true);
     try {
       await addTruck(truck).unwrap();
       setTruck({ plate: '', vehicleClass: 'Head', make: '', model: '', year: '' });
     } catch (err) { setError(getApiErrorMessage(err)); }
-    finally { setBusy(false); }
+    finally { submitting.current = false; setBusy(false); }
   }
 
   async function finish() {
-    if (busy) return;
+    if (busy || submitting.current) return;
+    submitting.current = true;
     setBusy(true); setError('');
     try {
       await finishOnboarding({ acceptedTerms: form.terms || account?.registrationTermsConsent === true }).unwrap();
       router.replace('/dashboard');
     } catch (err) { setError(getApiErrorMessage(err)); }
-    finally { setBusy(false); }
+    finally { submitting.current = false; setBusy(false); }
   }
   const checklist = [
     { label: 'Phone verified', done: account?.phoneVerified === true, icon: 'badge-check' },

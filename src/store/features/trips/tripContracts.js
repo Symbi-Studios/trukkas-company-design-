@@ -83,6 +83,14 @@ function timelineStage(labelText) {
   })[normalized] ?? null;
 }
 
+function dispatchView(source, jobId) {
+  const dispatch = object(source);
+  const required = count(dispatch?.trucksForThisJob), dispatched = count(dispatch?.dispatched), remaining = count(dispatch?.remaining);
+  // One company job owes one truck, regardless of the forwarder's original request.
+  if (required !== 1 || dispatched === null || remaining === null || dispatched + remaining !== required) return null;
+  return { job: { id: jobId, title: text(dispatch.title) ?? '—' }, required, dispatched, remaining };
+}
+
 export function tripView(source, isDetail = false, jobDetails = null) {
   if (!object(source) || !text(source.id)) return null;
   const route = object(source.route);
@@ -123,9 +131,11 @@ export function tripView(source, isDetail = false, jobDetails = null) {
     if (stage && stageDates[stage] === '—' && date !== '—') stageDates[stage] = date;
   });
   const mappedTimeline = timeline?.map((event) => ({
-    title: text(event.label) ?? '—', detail: '—',
-    date: dateLabel(event.at), time: timeLabel(event.at), state: event.done === true ? 'done' : event.done === false ? 'pending' : null,
-    reference: null, location: null, icon: 'circle',
+    title: text(event.label) ?? '—', detail: text(event.detail) ?? '—',
+    date: dateLabel(event.at), time: timeLabel(event.at),
+    state: ['pending', 'active', 'done', 'cancelled'].includes(event.state) ? event.state
+      : event.state === undefined ? event.done === true ? 'done' : event.done === false ? 'pending' : null : null,
+    reference: text(event.reference), location: text(event.location), icon: 'circle',
   })) ?? null;
   const location = isDetail ? object(source.location) : null;
   const locationNote = isDetail ? object(source.locationNote) : null;
@@ -149,13 +159,14 @@ export function tripView(source, isDetail = false, jobDetails = null) {
     distanceKm: number(source.distanceKm) ?? number(jobDetails?.feeBreakdown?.recommendedFare?.distanceKm),
     weightKg: weightTonnes === null ? null : weightTonnes * 1000,
     quantity: count(cargo?.containerCount) ?? (containers ? containers.length : '—'),
-    cargoValue: number(source.cargoValue), tripType: label(source.movementType ?? jobDetails?.movementType, movementTypes),
+    cargoValue: null, // Declared cargo value and its currency are not captured by the API.
+    tripType: label(source.movementType ?? jobDetails?.movementType, movementTypes),
     specialInstructions: text(source.specialInstructions) ?? text(jobDetails?.specialInstructions) ?? '—',
     trucksRequired: count(cargo?.trucksRequired), documents: forwarderDocs,
   };
   return {
     apiBacked: true, id: source.id, number: numberValue,
-    jobId, job: view, wireStatus: text(source.status), status, phase,
+    jobId, job: view, dispatch: dispatchView(source.dispatch, jobId), wireStatus: text(source.status), status, phase,
     open: phase === 'Active' || phase === 'Upcoming',
     pickupComplete: ['Picked Up', 'In Transit', 'At Destination', 'Completed'].includes(status) ? true : status === 'Assigned' ? false : null,
     delivered: status === 'Completed' ? true : phase === 'Active' || phase === 'Upcoming' ? false : null,
@@ -168,7 +179,8 @@ export function tripView(source, isDetail = false, jobDetails = null) {
     truck: truck ? { makeModel: text(truck.makeModel) ?? text(truck.label) ?? '—', status: label(truck.status, { ACTIVE: 'Active', INACTIVE: 'Inactive', MAINTENANCE: 'In Maintenance', PENDING_REVIEW: 'Pending Review', REJECTED: 'Rejected' }) } : null,
     pickupDate: dateLabel(pickup), pickupTime: timeLabel(pickup), deliveryDate: dateLabel(delivery),
     pickupMonth: instant(pickup) || dateOnly(pickup) ? dateLabel(pickup).replace(/ \d+,/, '') : null,
-    currentLocation: text(locationNote?.location) ?? '—', locationNoteUpdated: timestampLabel(locationNote?.updatedAt), lastUpdated: timestampLabel(location?.updatedAt), speedKmh: null,
+    currentLocation: text(locationNote?.location) ?? '—', locationNoteUpdated: timestampLabel(locationNote?.updatedAt), lastUpdated: timestampLabel(location?.updatedAt), speedKmh: number(location?.speedKmH),
+    routeDuration: isDetail && number(source.routeDurationMinutes) !== null ? source.routeDurationMinutes.toLocaleString('en-NG', { maximumFractionDigits: 1 }) + ' min' : null,
     liveCoordinates: location ? coordinates(location) : null,
     stageDates, timeline: mappedTimeline,
     documents: tripDocuments,

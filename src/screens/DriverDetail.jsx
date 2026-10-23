@@ -8,6 +8,7 @@ import {
 } from '../ds.js';
 import { useGetCompanyDriverQuery, useGetDriverReviewsQuery, useGetDriverTripsQuery } from '../store/features/drivers/driversApi.js';
 import { useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
+import { useGetDriverDocumentLibraryQuery, useUploadDriverComplianceDocumentMutation } from '../store/features/documents/documentsApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { formatNaira } from '../mock/format.js';
 import { jobTitle } from '../domain/jobs.js';
@@ -48,6 +49,8 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
   const { currentData: trucks, error: truckError, isLoading: truckLoading } = useGetFleetQuery(undefined, { skip: !driver, refetchOnMountOrArgChange: true });
   const { currentData: trips, error: tripsError, isLoading: tripsLoading } = useGetDriverTripsQuery(driverId, { skip: !driver, refetchOnMountOrArgChange: true });
   const { currentData: feedback, error: reviewsError, isLoading: reviewsLoading } = useGetDriverReviewsQuery(driverId, { skip: !driver, refetchOnMountOrArgChange: true });
+  const { currentData: documentLibrary, error: documentsError, isLoading: documentsLoading } = useGetDriverDocumentLibraryQuery(driverId, { skip: !driver || !!driverError, refetchOnMountOrArgChange: true });
+  const [uploadDocument] = useUploadDriverComplianceDocumentMutation();
   const truck = trucks?.find((item) => item.id === driver?.truckId);
   const [tab, setTab] = useState('overview');
   const [assignOpen, setAssignOpen] = useState(false);
@@ -56,7 +59,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
   const [toast, showToast] = useToast();
 
   const reviews = !reviewsError ? feedback?.reviews ?? [] : [];
-  const docs = driver?.documents ?? [];
+  const docs = !documentsError ? documentLibrary?.documents ?? [] : [];
 
   if (driverLoading) return <SkeletonRow variant="detail" />;
   if (driverError) return <EmptyState icon="user" title={getApiErrorMessage(driverError)} action={<Button variant="outline" onClick={() => navigate('/drivers')}>Back to Drivers</Button>} />;
@@ -225,10 +228,10 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
           )}
 
           {tab === 'documents' && (
-            <ComplianceChecklist
+            documentsLoading ? <SkeletonRow variant="list" rows={5} /> : documentsError ? <EmptyState icon="file-text" title={getApiErrorMessage(documentsError)} /> : <ComplianceChecklist
               title="Driver Documents" description="Required to dispatch this driver on trips. Trip paperwork lives on each trip."
               requirements={DRIVER_REQUIREMENTS} docs={docs}
-              unavailable
+              compliance={documentLibrary} unavailable={!documentLibrary} unavailableTypes={documentLibrary?.unavailableTypes ?? []}
               onUpload={(req) => setUploadType(req.type)} onOpen={(doc) => doc.url ? window.open(doc.url, '_blank', 'noopener,noreferrer') : showToast('The API did not return a document URL.')}
               style={{ boxShadow: 'none', border: 0 }}
             />
@@ -241,7 +244,10 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
       <UploadDocumentModal
         open={!!uploadType} onClose={() => setUploadType(null)} ownerType="driver" ownerId={driver.id} ownerLabel={driver.name}
         requirements={DRIVER_REQUIREMENTS} initialType={uploadType}
-        submitDocument={async () => { throw new Error('Uploading compliance documents for a company driver is not supported by the documented company API.'); }}
+        submitDocument={async (draft) => {
+          try { return await uploadDocument(draft).unwrap(); }
+          catch (error) { throw new Error(getApiErrorMessage(error)); }
+        }}
         onDone={(doc) => { setUploadType(null); showToast(`${doc.name} submitted for review.`); }}
       />
       <Toast message={toast} />

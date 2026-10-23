@@ -2,11 +2,23 @@ import { baseApi, refreshSession, unwrapApiResponseData } from '../../api/baseAp
 import { setCredentials } from './authSlice.js';
 import { companySession } from './authSession.js';
 import { companyFormBody, companyFormView, isAdultDate, registrationTermsConsent } from './onboardingContracts.js';
+import { otpMetadata } from '../../api/otpContracts.js';
 
 const post = (url, body) => ({ url, method: 'POST', body });
 const unavailable = (message) => ({ error: { status: 'CUSTOM_ERROR', error: message } });
 const timestamp = (value) => typeof value === 'string' && /T/.test(value) && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
 const safeCount = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
+
+function confirmedMessage(response, failureMessage) {
+  const data = unwrapApiResponseData(response);
+  return typeof data?.message === 'string' && data.message.trim()
+    ? { data: { confirmed: true } } : unavailable(failureMessage);
+}
+
+function otpFailure(result) {
+  const data = unwrapApiResponseData(result.error?.data);
+  return { ...result, error: { ...result.error, remainingAttempts: safeCount(data?.remainingAttempts) } };
+}
 
 function registrationOtp(response) {
   const data = unwrapApiResponseData(response);
@@ -51,14 +63,14 @@ function resentOtp(response) {
 let pendingRegistration = null;
 
 export const authFailureCode = (error) => error?.data?.code ?? unwrapApiResponseData(error?.data)?.code;
-const existingRegistration = (result) => ['EMAIL_ALREADY_REGISTERED', 'PHONE_ALREADY_REGISTERED'].includes(authFailureCode(result.error))
+const existingRegistration = (result) => authFailureCode(result.error) === 'EMAIL_ALREADY_REGISTERED'
   ? { data: { companyAccountRequired: true } } : result;
 
 function loginChallenge(response, purpose) {
   const data = unwrapApiResponseData(response);
   if (data?.twoFactorRequired !== true) return null;
   if (typeof data.challengeId !== 'string' || !data.challengeId.trim() || data.method !== 'TOTP'
-    || typeof data.expiresAt !== 'string' || !Number.isFinite(Date.parse(data.expiresAt))) {
+    || typeof data.expiresAt !== 'string' || !Number.isFinite(Date.parse(data.expiresAt)) || Date.parse(data.expiresAt) <= Date.now()) {
     return unavailable('The API did not return a valid sign-in challenge. Please sign in again.');
   }
   return { data: { twoFactorRequired: true, challenge: { id: data.challengeId, method: 'app', expiresAt: data.expiresAt, purpose } } };
@@ -66,7 +78,7 @@ function loginChallenge(response, purpose) {
 
 function twoFactorBody({ challengeId, code, backupCode }) {
   if (typeof challengeId !== 'string' || !challengeId.trim()) return null;
-  if (typeof backupCode === 'string' && /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i.test(backupCode.trim())) return { challengeId, backupCode: backupCode.trim().toUpperCase() };
+  if (typeof backupCode === 'string' && /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i.test(backupCode.trim())) return { challengeId, backupCode: backupCode.trim().replace(/-/g, '').toUpperCase().replace(/^(.{4})(.{4})$/, '$1-$2') };
   return typeof code === 'string' && /^\d{6}$/.test(code) ? { challengeId, code } : null;
 }
 
@@ -237,7 +249,7 @@ export const authApi = baseApi.injectEndpoints({
         const checked = await baseQuery(post('/auth/check-phone', { phone: number }));
         if (checked.error) return existingRegistration(checked);
         const available = unwrapApiResponseData(checked.data)?.available;
-        if (available === false) return { data: { companyAccountRequired: true } };
+        if (available === false) return unavailable('This phone number is already registered. Sign in to its existing account or use a different number.');
         if (available !== true) return unavailable('Phone availability could not be confirmed. Try again.');
         const result = await baseQuery(post('/auth/register/init', { phone: number, countryCode: '+234', role: 'TRUCKER' }));
         return result.error ? existingRegistration(result) : registrationOtp(result.data);
@@ -251,18 +263,23 @@ export const authApi = baseApi.injectEndpoints({
       },
     }),
     verifyAccountPhone: builder.mutation({
-      query: ({ sessionToken, code }) => post('/auth/register/verify-otp', { sessionToken, code }),
-      transformResponse: unwrapApiResponseData,
+      async queryFn({ sessionToken, code }, _api, _options, baseQuery) {
+        if (typeof sessionToken !== 'string' || !sessionToken.trim() || typeof code !== 'string' || !/^\d{6}$/.test(code)) {
+          return unavailable('Enter the six-digit code from your phone.');
+        }
+        const result = await baseQuery(post('/auth/register/verify-otp', { sessionToken, code }));
+        return result.error ? otpFailure(result) : confirmedMessage(result.data, 'The API did not confirm phone verification. Try again.');
+      },
     }),
     signUpAccount: builder.mutation({
       async queryFn({ name, email, password, dateOfBirth, sessionToken, acceptedTerms }, _api, _options, baseQuery) {
-        const names = name.trim().split(/\s+/);
+        const names = typeof name === 'string' ? name.trim().split(/\s+/) : [];
         if (acceptedTerms !== true) return unavailable('Accept the terms to continue.');
         if (names.length < 2 || !dateOfBirth || !sessionToken) {
           return unavailable('Enter your first and last name, date of birth, and verify your phone before creating an account.');
         }
         if (!isAdultDate(dateOfBirth)) return unavailable('You must be at least 18 years old to register.');
-        if (!/^\S+@\S+\.\S+$/.test(email.trim()) || typeof password !== 'string' || password.length < 8) {
+        if (typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim()) || typeof password !== 'string' || password.length < 8) {
           return unavailable('Enter a valid email and a password with at least 8 characters.');
         }
         let result = pendingRegistration?.sessionToken === sessionToken ? { data: pendingRegistration.response } : null;
@@ -371,7 +388,8 @@ export const authApi = baseApi.injectEndpoints({
         let progress;
         try { progress = onboardingAccount(user, account.id); }
         catch (error) { return unavailable(error.message); }
-        if (user.onboarding?.nextStep !== 'SUBMIT_FOR_REVIEW') {
+        // Companies may submit after their profile even when trucks were skipped.
+        if (!['ADD_TRUCKS', 'SUBMIT_FOR_REVIEW'].includes(user.onboarding?.nextStep)) {
           return { data: progress };
         }
         const submitted = await baseQuery(post('/auth/register/submit', acceptedTerms === true ? { acceptedTerms: true } : undefined));
@@ -392,16 +410,72 @@ export const authApi = baseApi.injectEndpoints({
       },
     }),
     logoutAccount: builder.mutation({
-      query: () => post('/auth/logout'),
-      transformResponse: unwrapApiResponseData,
+      async queryFn(_arg, _api, _options, baseQuery) {
+        const result = await baseQuery(post('/auth/logout'));
+        return result.error ? result : confirmedMessage(result.data, 'The API did not confirm server logout.');
+      },
+    }),
+    acceptAccountInvite: builder.mutation({
+      async queryFn({ email, code, newPassword }, _api, _options, baseQuery) {
+        if (typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())
+          || typeof code !== 'string' || code.trim().length !== 8
+          || typeof newPassword !== 'string' || newPassword.length < 8) {
+          return unavailable('Enter your invited email, eight-character invite code, and a password with at least eight characters.');
+        }
+        const result = await baseQuery(post('/auth/invite/accept', { email: email.trim(), code: code.trim(), newPassword }));
+        return result.error ? result : confirmedMessage(result.data, 'The API did not confirm account activation. Try signing in before using the code again.');
+      },
+    }),
+    redeemCompanyInvite: builder.mutation({
+      async queryFn({ code, firstName, lastName, phone, password }, _api, _options, baseQuery) {
+        const number = typeof phone === 'string' ? phone.replace(/[\s()-]/g, '') : '';
+        if (typeof code !== 'string' || !code.trim()
+          || typeof firstName !== 'string' || !firstName.trim()
+          || typeof lastName !== 'string' || !lastName.trim()
+          || !/^(?:\+234|0)\d{10}$/.test(number)
+          || typeof password !== 'string' || password.length < 8) {
+          return unavailable('Enter your invite code, first and last name, Nigerian phone number, and a password with at least eight characters.');
+        }
+        const result = await baseQuery(post('/team/invites/redeem', {
+          code: code.trim(), firstName: firstName.trim(), lastName: lastName.trim(),
+          phone: number, countryCode: '+234', password,
+        }));
+        if (result.error) return result;
+        const session = await sessionFromResponse(result.data, baseQuery);
+        const memberId = unwrapApiResponseData(result.data)?.user?.actualUserId;
+        return session.error || session.data?.account.isOwner !== false || !memberId || session.data.account.actualUserId !== memberId
+          ? unavailable('Your invitation was redeemed, but your company session could not be opened. Sign in with your new password to continue; ask your company admin if access is still unavailable.')
+          : session;
+      },
+      onQueryStarted: storeSession,
     }),
     forgotAccountPassword: builder.mutation({
-      query: ({ email }) => post('/auth/forgot-password', { email: email.trim() }),
-      transformResponse: unwrapApiResponseData,
+      async queryFn({ email }, _api, _options, baseQuery) {
+        if (typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())) return unavailable('Enter your registered email address.');
+        const result = await baseQuery(post('/auth/forgot-password', { email: email.trim() }));
+        if (result.error) return result;
+        const confirmed = confirmedMessage(result.data, 'The API did not confirm the password reset request. Try again.');
+        if (confirmed.error) return confirmed;
+        const source = unwrapApiResponseData(result.data);
+        const otp = otpMetadata(source?.otp);
+        if (source?.otp != null && !otp) return unavailable('The API did not return valid password recovery code expiry and resend details.');
+        // A generic response must not reveal whether the email is registered.
+        return { data: { ...confirmed.data, email: email.trim().toLowerCase(), otp } };
+      },
     }),
     resetAccountPassword: builder.mutation({
-      query: ({ email, token, newPassword }) => post('/auth/reset-password', { email: email.trim(), otp: token.trim(), newPassword }),
-      transformResponse: unwrapApiResponseData,
+      async queryFn({ email, token, newPassword }, api, _options, baseQuery) {
+        if (typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())
+          || typeof token !== 'string' || !/^\d{6}$/.test(token.trim())
+          || typeof newPassword !== 'string' || newPassword.length < 8) {
+          return unavailable('Enter your email, six-digit reset code, and a password with at least eight characters.');
+        }
+        const recovery = authApi.endpoints.forgotAccountPassword.select('password-recovery')(api.getState()).data;
+        if (recovery?.email === email.trim().toLowerCase() && recovery.otp?.expiresAt <= Date.now()) return unavailable('This reset code has expired. Request a new code.');
+        if (recovery?.email === email.trim().toLowerCase() && recovery.otp?.remainingAttempts === 0) return unavailable('No verification attempts remain. Request a new code.');
+        const result = await baseQuery(post('/auth/reset-password', { email: email.trim(), otp: token.trim(), newPassword }));
+        return result.error ? result : confirmedMessage(result.data, 'The API did not confirm the password reset. Try signing in before requesting another code.');
+      },
     }),
   }),
 });
@@ -412,4 +486,5 @@ export const {
   useSignUpAccountMutation, useSaveOnboardingCompanyMutation, useFinishCompanyOnboardingMutation, useRefreshAccountMutation,
   useLazyGetOnboardingStatusQuery, useRetryCompanyVerificationMutation,
   useLogoutAccountMutation, useForgotAccountPasswordMutation, useResetAccountPasswordMutation,
+  useAcceptAccountInviteMutation, useRedeemCompanyInviteMutation,
 } = authApi;

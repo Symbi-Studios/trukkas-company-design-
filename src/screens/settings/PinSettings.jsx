@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Badge, Banner, Button, EmptyState, Icon, SectionCard, SkeletonRow } from '../../ds.js';
-import { useGetOnboardingSecurityQuery, useSaveOnboardingPinMutation } from '../../store/features/auth/onboardingApi.js';
+import { useGetOnboardingSecurityQuery } from '../../store/features/auth/onboardingApi.js';
 import { useGetMyProfileAccessQuery } from '../../store/features/profile/profileApi.js';
-import { useRequestSettingsPinResetMutation, useResetSettingsPinMutation } from '../../store/features/settings/settingsApi.js';
+import { useSaveSettingsPinMutation, useRequestSettingsPinResetMutation, useResetSettingsPinMutation } from '../../store/features/settings/settingsApi.js';
 import { getApiErrorMessage } from '../../store/api/getApiErrorMessage.js';
 import { PIN_LENGTH, PIN_PROTECTED_ACTIONS, maskPhone, pinProblem } from '../../domain/security.js';
 import { CodeInput } from '../../components/SecurityInputs.jsx';
@@ -93,7 +93,7 @@ export function PinSettings({ onToast }) {
   const account = useSelector((state) => state.auth.account);
   const { currentData: security, error, isLoading } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
   const { currentData: access, error: accessError } = useGetMyProfileAccessQuery();
-  const [save] = useSaveOnboardingPinMutation();
+  const [save] = useSaveSettingsPinMutation();
   const [requestReset] = useRequestSettingsPinResetMutation();
   const [reset] = useResetSettingsPinMutation();
   const [mode, setMode] = useState(null);

@@ -1,21 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from '../router.js';
 import {
   Avatar, Badge, Banner, Button, Card, DataTable, EmptyState, Icon, LabelValue, PageHeader, ProgressBar, SearchField, SectionCard, SkeletonRow, StatCard, Tabs,
 } from '../ds.js';
-import { useGetCompanyDocumentLibraryQuery, useGetDocumentCompanyQuery, useGetDocumentVehiclesQuery, useUploadCompanyComplianceDocumentMutation } from '../store/features/documents/documentsApi.js';
+import { useGetCompanyDocumentLibraryQuery, useGetDocumentCompanyQuery, useGetDocumentVehiclesQuery, useGetDocumentDriversQuery, useUploadCompanyComplianceDocumentMutation } from '../store/features/documents/documentsApi.js';
 import { COMPANY_DOCUMENT_REQUIREMENTS, companyDocumentTypes, documentCompliance, documentExpiryTotals, EMPTY_DOCUMENT_COMPANY } from '../store/features/documents/documentContracts.js';
-import { useGetCompanyDriversQuery } from '../store/features/drivers/driversApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { documentDetailHref } from '../domain/documentLinks.js';
 import { fleetDetailHref } from '../domain/fleetLinks.js';
 import { driverDetailHref } from '../domain/driverLinks.js';
 import { syncTopBarSearch } from '../pageSearch.js';
-import {
-  DRIVER_REQUIREMENTS,
-} from '../domain/documents.js';
 import { VEHICLE_CLASSES } from '../domain/vehicles.js';
 import { ComplianceChecklist, UploadDocumentModal } from '../components/DocumentCompliance.jsx';
 import { DirectorVerificationFields } from '../components/DirectorVerificationPanel.jsx';
@@ -49,7 +45,7 @@ export function Documents() {
   const { currentData: library, error: companyDocsError, isLoading: companyDocsLoading } = useGetCompanyDocumentLibraryQuery(undefined, { refetchOnMountOrArgChange: true });
   const { currentData: companyData, error: companyError } = useGetDocumentCompanyQuery(undefined, { refetchOnMountOrArgChange: true });
   const { currentData: vehicleData, error: vehicleError, isLoading: vehiclesLoading } = useGetDocumentVehiclesQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { currentData: driverData, error: driverError, isLoading: driversLoading } = useGetCompanyDriversQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: driverData, error: driverError, isLoading: driversLoading } = useGetDocumentDriversQuery(undefined, { refetchOnMountOrArgChange: true });
   const [uploadCompanyDocument] = useUploadCompanyComplianceDocumentMutation();
   const company = !companyError && companyData ? companyData : EMPTY_DOCUMENT_COMPANY;
   const [tab, setTab] = useState('company');
@@ -67,10 +63,10 @@ export function Documents() {
   const companyDocs = !companyDocsError ? library?.documents : null;
   const companyCompliance = documentCompliance(COMPANY_DOCUMENT_REQUIREMENTS, companyDocs, Object.keys(companyDocumentTypes), library?.missingTypes ?? []);
   const vehicleRows = !vehicleError ? vehicleData ?? [] : [];
-  const driverRows = useMemo(() => (driverData ?? []).map((driver) => ({ driver, ...documentCompliance(DRIVER_REQUIREMENTS, null, []) })), [driverData]);
+  const driverRows = !driverError ? driverData ?? [] : [];
   const { expiring, expired } = documentExpiryTotals([
     companyDocs, !vehicleError && vehicleData ? vehicleData.flatMap((row) => row.documents) : null,
-    !driverError && driverData?.length === 0 ? [] : null,
+    !driverError && driverData ? driverData.flatMap((row) => row.expiryDocuments) : null,
   ]);
   const compliantCount = (data) => !data || data.some((row) => row.summary.complete === null || row.summary.expired === null) ? '—' : data.filter((row) => row.summary.complete && !row.summary.expired).length;
   const q = query.toLowerCase();
@@ -114,6 +110,7 @@ export function Documents() {
               title="Business Onboarding Documents"
               description="Required by Trukkas to verify your company before you can bid on jobs and receive payouts."
               requirements={COMPANY_DOCUMENT_REQUIREMENTS} docs={companyDocs ?? []}
+              compliance={companyCompliance}
               unavailableTypes={companyCompliance.unavailableTypes}
               onUpload={(req) => setUploadType(req.type)} onOpen={(doc) => navigate(documentDetailHref(doc))}
               style={{ boxShadow: 'none' }}

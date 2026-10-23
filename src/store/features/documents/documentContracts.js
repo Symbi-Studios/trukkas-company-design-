@@ -1,5 +1,5 @@
 import { COMPANY_REQUIREMENTS, maskNumber } from '../../../domain/documents.js';
-import { dateLabel, fleetDocumentTypes, number, rows, safeUrl, text } from '../fleet/fleetContracts.js';
+import { dateLabel, fleetDocumentTypes, rows, safeUrl, text } from '../fleet/fleetContracts.js';
 
 export const companyDocumentTypes = {
   'CAC Certificate': 'CAC_CERTIFICATE', 'CAC Status Report': 'CAC_STATUS_REPORT', TIN: 'TIN_CERTIFICATE',
@@ -10,6 +10,12 @@ export const companyDocumentTypes = {
 const companyNames = Object.fromEntries(Object.entries(companyDocumentTypes).map(([label, wire]) => [wire, label]));
 export const vehicleDocumentTypes = fleetDocumentTypes;
 const vehicleNames = Object.fromEntries(Object.entries(vehicleDocumentTypes).map(([label, wire]) => [wire, label]));
+export const driverDocumentTypes = {
+  "Driver's License": 'DRIVERS_LICENCE', 'Passport Photo': 'PASSPORT_PHOTO', 'Medical Fitness': 'MEDICAL_CERTIFICATE',
+  'Guarantor Form': 'GUARANTOR_FORM', 'Proof of Address': 'PROOF_OF_ADDRESS',
+  'Police Clearance': 'POLICE_CLEARANCE', 'Defensive Driving': 'DEFENSIVE_DRIVING',
+};
+const driverNames = { ...Object.fromEntries(Object.entries(driverDocumentTypes).map(([label, wire]) => [wire, label])), NIN_SLIP: 'NIN Slip', OTHER: 'Other' };
 const requiredCompanyTypes = ['CAC_CERTIFICATE', 'TIN_CERTIFICATE', 'GOODS_IN_TRANSIT_INSURANCE'];
 export const COMPANY_DOCUMENT_REQUIREMENTS = COMPANY_REQUIREMENTS.map((requirement) => ({
   ...requirement, required: requiredCompanyTypes.includes(companyDocumentTypes[requirement.type]),
@@ -22,11 +28,12 @@ const dayKey = (value) => {
   const parts = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Africa/Lagos' }).formatToParts(new Date(value));
   return ['year', 'month', 'day'].map((type) => parts.find((part) => part.type === type).value).join('-');
 };
+export const documentDateKey = dayKey;
 export function expiryDays(value) {
   const date = dayKey(value), today = dayKey(new Date().toISOString());
   return date ? Math.round((Date.parse(date) - Date.parse(today)) / 86_400_000) : null;
 }
-const fileSize = (value) => number(value) === null ? '—' : value < 1024 ? `${value} B` : value < 1024 * 1024 ? `${Math.round(value / 1024)} KB` : `${(value / 1024 / 1024).toFixed(1)} MB`;
+const fileSize = (value) => !Number.isSafeInteger(value) || value < 0 ? '—' : value < 1024 ? `${value} B` : value < 1024 * 1024 ? `${Math.round(value / 1024)} KB` : `${(value / 1024 / 1024).toFixed(1)} MB`;
 const expiryStatus = (source) => source === 'EXPIRED' ? 'Expired' : source === 'EXPIRING_SOON' ? 'Expiring Soon' : null;
 
 export function companyDocumentView(source, companyId) {
@@ -37,7 +44,7 @@ export function companyDocumentView(source, companyId) {
     type: label(companyNames, source.type) ?? text(source.label) ?? '—', name: text(source.fileName) ?? text(source.label) ?? '—',
     number: source.type === 'BANK_CONFIRMATION_LETTER' ? text(source.documentNumber) ? maskNumber(source.documentNumber) : '—' : text(source.documentNumber) ?? '—',
     status: source.status === 'REJECTED' ? 'Rejected' : expiryStatus(source.expiryStatus) ?? label({ APPROVED: 'Verified', PENDING: 'Pending Review' }, source.status) ?? '—',
-    expiryDate: dateLabel(expiry), uploadedOn: dateLabel(source.uploadedAt), fileSize: '—', url: safeUrl(source.url),
+    expiryDate: dateLabel(expiry), uploadedOn: dateLabel(source.uploadedAt), fileSize: fileSize(source.sizeBytes), url: safeUrl(source.url),
     expiryKnown: expiry === null || days !== null, expiryDays: days,
   };
 }
@@ -65,6 +72,25 @@ export function vehicleDocumentView(source, truck) {
   };
 }
 
+export function documentDriverView(source) {
+  if (!text(source?.id)) return null;
+  return { id: source.id, name: text(source.name) ?? '—', photo: safeUrl(source.avatarUrl),
+    licenseNumber: text(source.license?.number) ?? '—', licenseExpiry: dateLabel(source.license?.expiresAt) };
+}
+
+export function driverDocumentView(source, driver) {
+  if (!text(source?.id) || !text(source.type)) return null;
+  const expiry = source.expiresAt, days = expiryDays(expiry);
+  return {
+    id: source.id, ownerType: 'driver', ownerId: driver.id, driverName: driver.name,
+    type: label(driverNames, source.type) ?? '—', name: text(source.name) ?? text(source.fileName) ?? '—',
+    number: source.type === 'NIN_SLIP' ? text(source.number) ? maskNumber(source.number) : '—' : text(source.number) ?? '—',
+    status: expiryStatus(source.expiryStatus) ?? (source.expiryStatus === 'VALID' ? 'Valid' : source.status === 'UPLOADED' ? 'Uploaded' : '—'),
+    expiryDate: dateLabel(expiry), uploadedOn: dateLabel(source.uploadedAt), fileSize: fileSize(source.sizeBytes), url: safeUrl(source.url),
+    expiryKnown: expiry === null || days !== null, expiryDays: days,
+  };
+}
+
 // A missing unsupported requirement is unknown, not evidence of noncompliance.
 export function documentCompliance(requirements, documents, supportedTypes, missingTypes = null) {
   const entries = requirements.map((req) => {
@@ -75,7 +101,9 @@ export function documentCompliance(requirements, documents, supportedTypes, miss
   const required = entries.filter((entry) => entry.req.required);
   const uploadedWithoutExpiry = (entry) => entry.status === 'Uploaded' && entry.req.file !== false && !entry.req.expires
     && entry.doc?.expiryKnown === true && entry.doc.expiryDays === null && !!entry.doc.url;
-  const known = required.every((entry) => entry.status !== '—' && (entry.status !== 'Uploaded' || uploadedWithoutExpiry(entry)));
+  const known = required.every((entry) => entry.status !== '—'
+    && (!entry.doc || !entry.req.expires || entry.doc.expiryKnown === true && entry.doc.expiryDays !== null)
+    && (entry.status !== 'Uploaded' || uploadedWithoutExpiry(entry)));
   const met = required.filter((entry) => entry.doc && (['Valid', 'Verified', 'Pending Review', 'Expiring Soon'].includes(entry.status) || uploadedWithoutExpiry(entry))).length;
   const requiredMet = known ? met : null;
   const expiry = documentExpiryTotals([documents]);

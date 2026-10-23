@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Banner, Button, EmptyState, Icon, SectionCard, Select, SkeletonRow, TextField } from '../../ds.js';
 import { BANKS, resolveAccountName, updateBankAccount } from '../../mock/api.js';
-import { useGetOnboardingBankQuery, useGetOnboardingBanksQuery, useResolveOnboardingBankMutation, useSaveOnboardingBankMutation, useGetOnboardingSecurityQuery, useSaveOnboardingPinMutation } from '../../store/features/auth/onboardingApi.js';
-import { useUpdateSettingsBankMutation } from '../../store/features/settings/settingsApi.js';
+import { useGetOnboardingBankQuery, useGetOnboardingBanksQuery, useResolveOnboardingBankMutation, useGetOnboardingSecurityQuery } from '../../store/features/auth/onboardingApi.js';
+import { useSaveSettingsBankMutation, useUpdateSettingsBankMutation, useSaveSettingsPinMutation } from '../../store/features/settings/settingsApi.js';
 import { useGetMyProfileAccessQuery } from '../../store/features/profile/profileApi.js';
 import { getApiErrorMessage } from '../../store/api/getApiErrorMessage.js';
 import { PinPrompt } from '../../components/SecurityInputs.jsx';
@@ -88,9 +88,9 @@ export function PayoutAccountSettings({ onToast }) {
   const { currentData: security, error: securityError } = useGetOnboardingSecurityQuery(undefined, { refetchOnMountOrArgChange: true });
   const canManageBank = !accessError && access?.canManageBank === true;
   const [resolveBank] = useResolveOnboardingBankMutation();
-  const [saveBank] = useSaveOnboardingBankMutation();
+  const [saveBank] = useSaveSettingsBankMutation();
   const [updateBank] = useUpdateSettingsBankMutation();
-  const [saveTransactionPin] = useSaveOnboardingPinMutation();
+  const [saveTransactionPin] = useSaveSettingsPinMutation();
   const [editing, setEditing] = useState(false);
   const resolveAccount = useCallback(async (bankCode, accountNumber) => {
     const selected = banks?.find((row) => row.code === bankCode);

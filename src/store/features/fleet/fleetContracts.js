@@ -86,6 +86,12 @@ export function fleetDocumentView(source) {
   };
 }
 
+function fuelConsumptionLabel(source) {
+  const value = number(source?.value), periodDays = count(source?.periodDays);
+  if (value === null || source?.unit !== 'km/L' || periodDays === null || periodDays === 0) return '—';
+  return value + ' km/L (' + periodDays + ' days)';
+}
+
 export function truckView(source, detail = false) {
   if (!text(source?.id)) return null;
   const driver = object(source.driver);
@@ -105,6 +111,8 @@ export function truckView(source, detail = false) {
       notes: text(source.notes) ?? '',
       specs: Object.fromEntries(Object.entries(specificationFields).map(([key, label]) => [key, key === 'fuelType' ? (fuelLabel(source.fuelType ?? specs?.[label] ?? specs?.[key]) === '—' ? '' : fuelLabel(source.fuelType ?? specs?.[label] ?? specs?.[key])) : text(specs?.[label]) ?? text(specs?.[key]) ?? ''])),
     } : null,
+    lastActive: timestamp(source.lastActivityAt),
+    averageFuelConsumption: fuelConsumptionLabel(detail ? source.fuelConsumption : null),
     apiBacked: true, id: source.id, plate: text(source.plateNumber) ?? '—',
     status, wireStatus: text(source.status), onTrip: source.availability === 'ON_TRIP' || !!text(source.currentJob?.id),
     vehicleClass, type: [text(source.containerSize?.name ?? specs?.containerSize?.name), text(source.containerType?.name ?? specs?.containerType?.name)].filter(Boolean).join(' ') || text(source.truckType?.name ?? specs?.truckType?.name) || vehicleClass,

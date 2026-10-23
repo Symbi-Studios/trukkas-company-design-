@@ -92,7 +92,7 @@ export function Dashboard() {
   const unreadCount = unreadError ? undefined : unreadResult;
   const bankConfigured = bankError ? null : bankResult ?? null;
   const setupItems = [
-    { label: 'Verify email & phone', hint: 'Confirm your contact details', icon: 'badge-check', done: overview.setup.contact, to: '/profile?verify=email' },
+    { label: 'Verify email & phone', hint: 'Confirm your contact details', icon: 'badge-check', done: overview.setup.contact, to: '/profile?verify=contact' },
     { label: account?.kycStatus === 'REJECTED' ? 'Retry company verification' : 'Company documents', hint: account?.kycStatus === 'REJECTED' ? account.kycRejectionReason || 'Update your company details and resubmit for review.' : overview.setup.documentHint, icon: 'file-check', done: account?.kycStatus === 'REJECTED' ? false : overview.setup.documents, to: account?.kycStatus === 'REJECTED' ? '/signup' : '/documents' },
     { label: 'Add your first truck', hint: 'Papers, photos and specs', icon: 'truck', done: overview.setup.truck, to: '/fleet/new' },
     { label: 'Onboard a driver', hint: 'Licence and ID', icon: 'user-round', done: overview.setup.driver, to: '/drivers' },

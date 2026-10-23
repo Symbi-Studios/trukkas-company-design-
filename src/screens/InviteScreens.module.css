@@ -1,0 +1,49 @@
+.inviteNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 22px;
+  padding: 13px 14px;
+  color: var(--tk-blue);
+  background: var(--tk-blue-soft);
+  border-radius: var(--tk-r-md);
+}
+
+.inviteNote > span {
+  flex: none;
+  margin-top: 1px;
+}
+
+.inviteNote p {
+  margin: 0;
+  font: 500 13px/20px var(--tk-font-sans);
+}
+
+.nameFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.expiryNote {
+  margin: 18px 0 0;
+  color: var(--tk-ink-500);
+  font: 400 12px/18px var(--tk-font-sans);
+}
+
+.successMark {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin: 26px 0 22px;
+  border-radius: 50%;
+  color: var(--tk-success);
+  background: var(--tk-success-soft);
+}
+
+@media (max-width: 380px) {
+  .nameFields {
+    grid-template-columns: 1fr;
+  }
+}

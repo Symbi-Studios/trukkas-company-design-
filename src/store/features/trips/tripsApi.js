@@ -73,9 +73,11 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         if (!source || source.id !== id || (source.jobId !== undefined && source.jobId !== id)) return unavailable('The API did not identify the requested company trip.');
         const jobId = text(source.jobId) ?? id;
         const jobResult = await baseQuery(`/jobs/${encodeURIComponent(jobId)}`);
-        if (jobResult.error) return jobResult;
-        const job = unwrapApiResponseData(jobResult.data);
-        if (job?.id !== jobId) return unavailable('The API did not return this trip’s related job details.');
+        // Job documents and instructions enrich the company trip. A failure of
+        // that separate read must not hide its timeline, costs, notes or driver.
+        if (jobResult.error?.status === 'CUSTOM_ERROR') return jobResult;
+        const job = jobResult.error ? null : unwrapApiResponseData(jobResult.data);
+        if (job && job.id !== jobId) return unavailable('The API did not return this trip’s related job details.');
         const trip = tripView(source, true, job);
         return trip ? { data: trip } : unavailable('The API did not return usable company trip details.');
       },
@@ -223,7 +225,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         api.dispatch(tripsApi.util.updateQueryData('getCompanyTrip', tripId, (draft) => { draft.cancellationRequested = true; }));
         return { data: { message: text(saved.message) ?? 'Cancellation request sent to support. The trip stays active until support confirms.' } };
       },
-      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, { type: 'CompanyTrip', id: tripId }],
+      invalidatesTags: (_data, _error, { tripId }) => [...tripTags, 'SupportTickets', { type: 'CompanyTrip', id: tripId }],
     }),
     sendCompanyTripMessage: builder.mutation({
       async queryFn({ tripId, content }, api, _options, baseQuery) {
@@ -251,8 +253,8 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         const trip = loadedTrip(api, tripId, true);
         const name = text(receiverName), phone = text(receiverPhone);
         if (!trip?.actions?.pod) return unavailable('Proof of delivery can be submitted after cargo arrives, or resubmitted if rejected. Reload the trip before continuing.');
-        if (!name || typeof File === 'undefined' || !(photo instanceof File) || !photo.type.startsWith('image/') || photo.size <= 0) {
-          return unavailable('Enter the receiver’s name and choose a proof-of-delivery photo.');
+        if (!name || typeof File === 'undefined' || !(photo instanceof File) || !['image/jpeg', 'image/png', 'application/pdf'].includes(photo.type) || photo.size <= 0 || photo.size > 10 * 1024 * 1024) {
+          return unavailable('Enter the receiver’s name and choose a JPEG, PNG or PDF proof of delivery up to 10 MB.');
         }
         const body = new FormData();
         body.append('receiverName', name);
@@ -332,6 +334,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         if (!trip || !text(message) || message.length > 500) return unavailable('Enter a support message of 500 characters or fewer.');
         const result = await baseQuery({ url: '/support/threads', method: 'POST', body: {
           subject: `Trip ${trip.number === '—' ? trip.id : trip.number}`, category: 'GENERAL', message: `Trip ID: ${trip.id}\nJob ID: ${trip.jobId}\n\n${message.trim()}`,
+          relatedType: 'TRIP', relatedId: trip.jobId,
         } });
         if (result.error) return result;
         const thread = unwrapApiResponseData(result.data)?.thread;

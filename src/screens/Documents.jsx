@@ -61,7 +61,8 @@ export function Documents() {
   }, []);
 
   const companyDocs = !companyDocsError ? library?.documents : null;
-  const companyCompliance = documentCompliance(COMPANY_DOCUMENT_REQUIREMENTS, companyDocs, Object.keys(companyDocumentTypes), library?.missingTypes ?? []);
+  const companyCompliance = !companyDocsError && library?.compliance
+    ? library.compliance : documentCompliance(COMPANY_DOCUMENT_REQUIREMENTS, companyDocs, Object.keys(companyDocumentTypes), library?.missingTypes ?? []);
   const vehicleRows = !vehicleError ? vehicleData ?? [] : [];
   const driverRows = !driverError ? driverData ?? [] : [];
   const { expiring, expired } = documentExpiryTotals([

@@ -69,6 +69,19 @@ function forwarderDocuments(documents) {
   });
 }
 
+function mergeForwarderDocuments(jobDocuments, tripDocuments) {
+  if (jobDocuments === null && tripDocuments === null) return null;
+  const urls = new Set();
+  // The job read has file metadata; the trip may include additional forwarder
+  // files. Keep both collections while showing a shared URL only once.
+  return [...(jobDocuments ?? []), ...(tripDocuments ?? [])].filter((document) => {
+    if (!document.url) return true;
+    if (urls.has(document.url)) return false;
+    urls.add(document.url);
+    return true;
+  });
+}
+
 const costLabels = { FUEL: 'Fuel', TOLL: 'Tolls & Levies', DRIVER_ALLOWANCE: 'Driver Allowance', MAINTENANCE: 'Repairs', PORT_CHARGES: 'Port Charges', PARKING: 'Parking', OTHER: 'Other' };
 const costLabel = (value) => label(value, costLabels);
 const costWireValues = Object.fromEntries(Object.entries(costLabels).map(([value, labelText]) => [labelText, value]));
@@ -148,7 +161,8 @@ export function tripView(source, isDetail = false, jobDetails = null) {
   const jobRoute = object(jobDetails?.route);
   const jobOrigin = object(jobRoute?.origin);
   const jobDestination = object(jobRoute?.destination);
-  const forwarderDocs = jobForwarderDocuments?.length ? jobForwarderDocuments : listedForwarderDocuments ?? jobForwarderDocuments;
+  const forwarderDocs = mergeForwarderDocuments(jobForwarderDocuments, listedForwarderDocuments);
+  const cargoValueSource = Object.hasOwn(source, 'cargoValue') ? source : jobDetails;
   const view = {
     apiBacked: true, id: jobId, number: text(source.tripNumber) ?? '—',
     title: text(title) ?? text(cargo?.type) ?? text(source.cargoType) ?? text(jobDetails?.cargoDescription) ?? '—',
@@ -159,7 +173,7 @@ export function tripView(source, isDetail = false, jobDetails = null) {
     distanceKm: number(source.distanceKm) ?? number(jobDetails?.feeBreakdown?.recommendedFare?.distanceKm),
     weightKg: weightTonnes === null ? null : weightTonnes * 1000,
     quantity: count(cargo?.containerCount) ?? (containers ? containers.length : '—'),
-    cargoValue: jobDetails?.cargoCurrency === 'NGN' ? number(jobDetails.cargoValue) : null,
+    cargoValue: cargoValueSource?.cargoCurrency === 'NGN' ? number(cargoValueSource.cargoValue) : null,
     tripType: label(source.movementType ?? jobDetails?.movementType, movementTypes),
     specialInstructions: text(source.specialInstructions) ?? text(jobDetails?.specialInstructions) ?? '—',
     trucksRequired: count(cargo?.trucksRequired), documents: forwarderDocs,

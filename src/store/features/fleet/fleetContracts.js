@@ -56,7 +56,7 @@ export function fleetEditedSpecifications(source, draft, original) {
 
 export function fleetActivityView(entry) {
   return {
-    id: text(entry.id) ?? text(entry.refId), title: text(entry.label) ?? '—', detail: '—',
+    id: text(entry.id) ?? text(entry.refId), title: text(entry.label) ?? '—', detail: text(entry.detail) ?? '—',
     time: timestamp(entry.at), occurredAt: instant(entry.at)?.getTime() ?? null,
     tone: entry.kind === 'MAINTENANCE' ? 'warning' : 'info',
   };
@@ -120,7 +120,8 @@ export function truckView(source, detail = false) {
     purchaseDate: detail ? dateLabel(source.purchaseDate) : '—', color: text(source.color) ?? '—', ownership: detail ? ownershipLabels[source.ownership] ?? '—' : '—',
     insuranceExpiry: dateLabel(detail ? source.insuranceExpiry : source.insurance?.expiresAt), roadWorthinessExpiry: dateLabel(roadWorthiness?.expiryDate),
     odometer: number(detail ? source.odometerKm : source.mileageKm), odometerUpdated: detail ? timestamp(source.odometer?.updatedAt) : '—',
-    location: detail ? text(source.currentLocationNote?.location) ?? '—' : '—', notes: detail ? text(source.notes) : null, notesUpdated: '—',
+    location: detail ? text(source.currentLocationNote?.location) ?? '—' : '—', notes: detail ? text(source.notes) : null,
+    notesAuthor: detail ? text(source.notesAuthorName) ?? '—' : '—', notesUpdated: detail ? timestamp(source.notesUpdatedAt) : '—',
     activityLog: activity?.map(fleetActivityView) ?? null,
     remindersEnabled: detail ? boolean(source.remindersEnabled) : null,
     driverId: text(driver?.id), driver: driver ? text(driver.name) ?? '—' : source.driver === null ? null : '—',

@@ -60,6 +60,17 @@ export function companyLibraryView(source, companyId) {
   return { documents, missingTypes, verificationIncomplete: incomplete ? true : required.every((entry) => entry && ['PENDING', 'APPROVED'].includes(entry.status)) ? false : null };
 }
 
+export function companyComplianceView(library, verification) {
+  const compliance = documentCompliance(COMPANY_DOCUMENT_REQUIREMENTS, library.documents, Object.keys(companyDocumentTypes), library.missingTypes);
+  // Identity statuses belong in the existing checklist, but are not uploaded
+  // documents: keep file IDs, counts and View actions tied to actual files.
+  const statuses = { NOT_STARTED: 'Missing', PENDING_REVIEW: 'Pending Review', VERIFIED: 'Verified', REJECTED: 'Rejected' };
+  const entries = compliance.rows.map((entry) => ['NIN', 'BVN'].includes(entry.req.type)
+    ? { ...entry, status: label(statuses, verification?.[entry.req.type.toLowerCase()]?.status) ?? '—' }
+    : entry);
+  return { ...compliance, rows: entries, unavailableTypes: entries.filter((entry) => entry.status === '—').map((entry) => entry.req.type) };
+}
+
 export function vehicleDocumentView(source, truck) {
   if (!text(source?.id)) return null;
   const expiry = source.expiryDate, days = expiryDays(expiry);

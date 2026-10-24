@@ -84,7 +84,7 @@ export function VehicleMaintenance() {
             <Card style={{ display: 'grid', gap: 6 }}>
               <h3 className="tk-title" style={{ margin: 0, fontSize: 14 }}>Recent Notes</h3>
               <p style={{ margin: 0, font: '400 13px/20px var(--tk-font-sans)', color: 'var(--tk-ink-500)' }}>{truck.notes}</p>
-              <span className="tk-meta">— Fleet Manager · {truck.notesUpdated}</span>
+              <span className="tk-meta">{truck.notesAuthor} Fleet Manager · {truck.notesUpdated}</span>
             </Card>
           )}
           <Card style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>

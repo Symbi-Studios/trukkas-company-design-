@@ -256,6 +256,9 @@ async function baseQueryWithReauth(args, api, extraOptions) {
   if (path === '/profile/password' && result.error?.status === 401 && unwrapApiResponseData(result.error.data)?.message === 'Current password is incorrect') return result;
   if (result.error?.status !== 401 || publicEndpoints.has(api.endpoint) || reauthExcludedPaths.has(path)) return result;
 
+  // A pending request from another company or member must not refresh or end
+  // the session that replaced it.
+  if (pinSession(api) !== session) return result;
   const currentToken = api.getState().auth.accessToken;
   if (safeToRetry && currentToken && currentToken !== requestToken) {
     return runLoggedBaseQuery(rawBaseQuery, args, api, extraOptions, `${api.endpoint} (retry)`);
@@ -266,9 +269,11 @@ async function baseQueryWithReauth(args, api, extraOptions) {
   }
 
   const refresh = await refreshSession(api, extraOptions);
+  if (pinSession(api) !== session) return result;
   if (refresh.status === 'success' && safeToRetry) {
+    const retryRefreshToken = api.getState().auth.refreshToken;
     result = await runLoggedBaseQuery(rawBaseQuery, args, api, extraOptions, `${api.endpoint} (retry)`);
-    if (result.error?.status === 401) clearExpiredSession(api);
+    if (result.error?.status === 401) clearExpiredSession(api, retryRefreshToken);
   }
   return result;
 }

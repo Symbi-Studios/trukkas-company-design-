@@ -3,7 +3,7 @@ import { fleetApi } from '../fleet/fleetApi.js';
 import { count, dateLabel, rows, safeUrl, text } from '../fleet/fleetContracts.js';
 import { DRIVER_REQUIREMENTS, VEHICLE_REQUIREMENTS } from '../../../domain/documents.js';
 import { directorVerificationView } from '../auth/onboardingApi.js';
-import { companyDocumentTypes, companyDocumentView, companyLibraryView, documentCompanyView, documentCompliance, documentDateKey, documentDriverView, driverDocumentTypes, driverDocumentView, driverNinDocumentView, expiryDays, validDate, vehicleDocumentTypes, vehicleDocumentView } from './documentContracts.js';
+import { companyComplianceView, companyDocumentTypes, companyDocumentView, companyLibraryView, documentCompanyView, documentCompliance, documentDateKey, documentDriverView, driverDocumentTypes, driverDocumentView, driverNinDocumentView, expiryDays, validDate, vehicleDocumentTypes, vehicleDocumentView } from './documentContracts.js';
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const signedIn = (api) => {
@@ -75,7 +75,8 @@ async function driverDocuments(baseQuery, driver) {
       expiryKnown: licence.expiresAt === null || expiryDays(licence.expiresAt) !== null, expiryDays: expiryDays(licence.expiresAt) }
     : null;
   const nin = driverNinDocumentView(source.ninVerification, driver);
-  const ninKnown = !!nin;
+  // The documented null status means no NIN has been entered.
+  const ninKnown = !!nin || source.ninVerification?.status === null;
   const checklistDocuments = [...documents, ...(legacyLicence ? [legacyLicence] : []), ...(nin ? [nin] : [])];
   const owner = licence === null ? { ...driver, licenseNumber: '—', licenseExpiry: '—' }
     : licence ? { ...driver, licenseNumber: text(licence.number) ?? '—', licenseExpiry: dateLabel(licence.expiresAt) } : driver;
@@ -123,14 +124,19 @@ export const documentsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDoc
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
         baseQuery = companyQuery(api, baseQuery);
+        const identity = companyIdentity(api);
         const companyId = api.getState().auth.account.id;
         const result = await baseQuery('/company-documents');
         if (result.error) return result;
         if (api.getState().auth.account?.id !== companyId) return unavailable('Your company session changed. Reload Documents.');
         const view = companyLibraryView(unwrapApiResponseData(result.data), companyId);
-        return view ? { data: view } : unavailable('The API did not return valid company documents.');
+        if (!view) return unavailable('The API did not return valid company documents.');
+        const director = await baseQuery('/company/director/verification');
+        if (companyIdentity(api) !== identity || api.signal.aborted) return changedSession();
+        const verification = director.error ? null : directorVerificationView(director.data).data;
+        return { data: { ...view, compliance: companyComplianceView(view, verification) } };
       },
-      providesTags: ['CompanyDocuments', 'AuthOnboardingDocuments'],
+      providesTags: ['CompanyDocuments', 'AuthOnboardingDocuments', 'AuthDirectorVerification'],
     }),
     getDocumentCompany: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {

@@ -287,7 +287,7 @@ function CostsSection({ trip, job, onToast }) {
 function CommunicationSection({ trip, onToast }) {
   const [body, setBody] = useState('');
   const [sendMessage, { isLoading: sending }] = useSendCompanyTripMessageMutation();
-  const { currentData: messages, error: messageError, isFetching } = useGetCompanyTripMessagesQuery(trip.id, { refetchOnMountOrArgChange: true });
+  const { currentData: messages, error: messageError, isFetching } = useGetCompanyTripMessagesQuery(trip.id, { refetchOnMountOrArgChange: true, pollingInterval: 15_000 });
   const [sendError, setSendError] = useState('');
   const submitting = useRef(false);
   const driverName = trip.driverName === '—' ? 'the driver' : trip.driverName;
@@ -338,7 +338,7 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }) {
   const params = useParams();
   const tripId = explicitTripId ?? params.tripId;
   const navigate = useNavigate();
-  const { currentData: trip, error, isFetching } = useGetCompanyTripQuery(tripId, { skip: !tripId, refetchOnMountOrArgChange: true });
+  const { currentData: trip, error, isFetching } = useGetCompanyTripQuery(tripId, { skip: !tripId, refetchOnMountOrArgChange: true, pollingInterval: 30_000 });
   const [updateStatus, { isLoading: updatingStatus }] = useUpdateCompanyTripStatusMutation();
   const [contactSupport] = useContactCompanyTripSupportMutation();
   const [requestCancellation] = useRequestCompanyTripCancellationMutation();

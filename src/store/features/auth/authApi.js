@@ -120,7 +120,7 @@ async function sessionFromResponse(response, baseQuery, resumeCompanySelection =
   const user = unwrapApiResponseData(profile.data)?.user;
   // Resume an interrupted company signup without recreating the account. Never
   // change an existing INDIVIDUAL account or a team member's account type.
-  if (resumeCompanySelection && user?.id === data.user.id && user.role === 'TRUCKER'
+  if (resumeCompanySelection && !data.user.actualUserId && user?.id === data.user.id && user.role === 'TRUCKER'
     && user.truckerType === null && user.onboarding?.complete === false) {
     const selected = await baseQuery({ ...post('/auth/register/trucker-type', { truckerType: 'COMPANY' }), headers });
     if (selected.error) return selected;
@@ -164,6 +164,8 @@ async function storeSession(_arg, { dispatch, getState, queryFulfilled }) {
     if (getState().auth.refreshToken !== previousToken) return;
     if (!data?.account || !data.accessToken || !data.refreshToken) return;
     dispatch(setCredentials(data));
+    // Cached company data and permissions belong to the previous session.
+    dispatch(baseApi.util.resetApiState());
   } catch {
     // The form owns the request error; never create a partial local session.
   }

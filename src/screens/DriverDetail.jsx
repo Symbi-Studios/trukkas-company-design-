@@ -21,6 +21,7 @@ import { DRIVER_STATUS_TONE } from '../domain/drivers.js';
 import { vehicleStatusTone } from '../domain/vehicles.js';
 import { DriverAssignTruckModal } from '../components/DriverAssignTruckModal.jsx';
 import { FleetRemoveDriverModal } from '../components/FleetAssignModals.jsx';
+import { RemoveCompanyDriverModal } from '../components/DriverInvitationModals.jsx';
 import { ComplianceChecklist, UploadDocumentModal } from '../components/DocumentCompliance.jsx';
 import { Toast, useToast } from '../components/Toast.jsx';
 import styles from './DriverDetail.module.css';
@@ -57,6 +58,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
   const [tab, setTab] = useState('overview');
   const [assignOpen, setAssignOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [removeCompanyOpen, setRemoveCompanyOpen] = useState(false);
   const [uploadType, setUploadType] = useState(null);
   const [toast, showToast] = useToast();
 
@@ -135,6 +137,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
             {driver.status === 'Off Duty'
               ? <Button variant="outline" disabled={changingAvailability || !driver.active} onClick={() => changeAvailability('AVAILABLE')}>Mark Available</Button>
               : !locked && <Button variant="outline" disabled={changingAvailability || !driver.active || status === 'On Trip'} onClick={() => changeAvailability('OFF_DUTY')}>Mark Off Duty</Button>}
+            <Button variant="danger" icon="user-minus" disabled={locked || driver.status === 'On Trip' || changingAvailability} onClick={() => setRemoveCompanyOpen(true)}>Remove from Company</Button>
           </>
         }
       />
@@ -249,6 +252,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
 
       <DriverAssignTruckModal driver={driver} open={assignOpen} onClose={() => setAssignOpen(false)} onDone={(plate) => { setAssignOpen(false); showToast(`${driver.name} assigned to ${plate}.`); }} />
       <FleetRemoveDriverModal truck={truck} open={removeOpen} onClose={() => setRemoveOpen(false)} onDone={() => { setRemoveOpen(false); showToast(`${driver.name} removed from ${truck?.plate}.`); }} />
+      <RemoveCompanyDriverModal driver={driver} open={removeCompanyOpen} onClose={() => setRemoveCompanyOpen(false)} onDone={() => navigate('/drivers')} />
       <UploadDocumentModal
         open={!!uploadType} onClose={() => setUploadType(null)} ownerType="driver" ownerId={driver.id} ownerLabel={driver.name}
         requirements={DRIVER_REQUIREMENTS} initialType={uploadType}

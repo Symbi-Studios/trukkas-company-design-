@@ -35,7 +35,7 @@ let activeRefresh = null;
 
 let requestSequence = 0;
 
-const privateLogField = /^account$|account(?:no|number)$|^sentTo$|authorization|cookie|token|password|secret|credential|identifier|challenge|backupcode|otp|^code$|pin|email|phone|licen[cs]e|^number$|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment|^body$|^subject$|^topic$|reason|comment|^reply$|instruction|notes?|documentnumber|^url$/i;
+const privateLogField = /^q$|^account$|account(?:no|number)$|^sentTo$|authorization|cookie|token|password|secret|credential|identifier|challenge|backupcode|otp|^code$|pin|email|phone|licen[cs]e|^number$|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment|^body$|^subject$|^topic$|reason|comment|^reply$|instruction|notes?|documentnumber|^url$/i;
 function bodyForLog(body, seen = new WeakSet()) {
   if (body === null || typeof body !== 'object') return body;
   if (seen.has(body)) return '[Circular]';
@@ -123,7 +123,7 @@ async function runLoggedBaseQuery(query, args, api, extraOptions, label = api.en
     statusCode,
     statusText: response?.statusText,
     ok: response?.ok,
-    url: response?.url,
+    url: response?.url ? requestUrlForLog(response.url) : undefined,
     headers: response ? bodyForLog(Object.fromEntries(response.headers.entries())) : undefined,
     redirected: response?.redirected,
     type: response?.type,

@@ -10,6 +10,9 @@ import { useAddCompanyDriverMutation, useGetCompanyDriversQuery, useGetCompanyDr
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { driverDetailHref } from '../domain/driverLinks.js';
 import { syncTopBarSearch } from '../pageSearch.js';
+import { InviteExistingDriverModal } from '../components/DriverInvitationModals.jsx';
+import { DriverInvitations } from './DriverInvitations.jsx';
+import { Toast, useToast } from '../components/Toast.jsx';
 
 const STATUS_TONE = { Available: 'success', 'On Trip': 'info', 'Off Duty': 'neutral' };
 
@@ -48,12 +51,14 @@ function AddDriverModal({ open, onClose }) {
 
 export function Drivers() {
   const navigate = useNavigate();
-  const { currentData: collection, error, isLoading } = useGetCompanyDriversQuery(undefined, { refetchOnMountOrArgChange: true });
-  const { currentData: summary, error: summaryError } = useGetCompanyDriverSummaryQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: collection, error, isLoading, refetch: refreshDrivers } = useGetCompanyDriversQuery(undefined, { refetchOnMountOrArgChange: true });
+  const { currentData: summary, error: summaryError, refetch: refreshSummary } = useGetCompanyDriverSummaryQuery(undefined, { refetchOnMountOrArgChange: true });
   const stats = summaryError ? null : summary;
   const drivers = collection ?? [];
   const [query, setQuery] = useState('');
   const [addOpen, setAddOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [toast, showToast] = useToast();
 
   useEffect(() => {
     const onSearch = (event) => setQuery(event.detail || '');
@@ -66,7 +71,7 @@ export function Drivers() {
 
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
-      <PageHeader title="Drivers" description="Manage your drivers, licenses, and assignments." actions={<Button icon="plus" onClick={() => setAddOpen(true)}>Add Driver</Button>} />
+      <PageHeader title="Drivers" description="Manage your drivers, licenses, and assignments." actions={<div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}><Button icon="plus" onClick={() => setAddOpen(true)}>Add Driver</Button><Button variant="outline" icon="send" onClick={() => setInviteOpen(true)}>Invite Existing Driver</Button></div>} />
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 16 }}>
         <StatCard icon="users-round" label="Total Drivers" value={stats?.total ?? '—'} />
         <StatCard icon="circle-check" tint="green" label="Available" value={stats?.available ?? '—'} />
@@ -95,7 +100,10 @@ export function Drivers() {
           />
         )}
       </Card>
+      <DriverInvitations onToast={showToast} onRefresh={() => { void refreshDrivers(); void refreshSummary(); }} />
       <AddDriverModal open={addOpen} onClose={() => setAddOpen(false)} />
+      <InviteExistingDriverModal open={inviteOpen} onClose={() => setInviteOpen(false)} onDone={(invitation) => { setInviteOpen(false); showToast('Invitation sent to ' + invitation.name + '. The driver joins after entering the code.'); }} />
+      <Toast message={toast} />
     </div>
   );
 }

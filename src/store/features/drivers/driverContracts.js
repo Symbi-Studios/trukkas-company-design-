@@ -79,3 +79,35 @@ export function driverReviewsView(collection) {
 }
 
 export { count, object, rows, text };
+
+export function driverInvitationTime(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && /(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+    && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
+}
+
+export function driverInvitationView(source) {
+  if (!text(source?.id)) return null;
+  const status = ['PENDING', 'REDEEMED', 'EXPIRED', 'CANCELLED'].includes(source.status) ? source.status : null;
+  return {
+    id: source.id, status, statusLabel: ({ PENDING: 'Pending', REDEEMED: 'Joined', EXPIRED: 'Expired', CANCELLED: 'Cancelled' })[status] ?? '—',
+    driverId: text(source.driver?.id), name: text(source.driver?.name) ?? '—', photo: safeUrl(source.driver?.avatarUrl),
+    created: timestampLabel(source.createdAt), expires: timestampLabel(source.expiresAt),
+    expiresAt: driverInvitationTime(source.expiresAt), redeemed: timestampLabel(source.redeemedAt),
+  };
+}
+
+export function unlinkedDriverView(source) {
+  if (!text(source?.id)) return null;
+  const invitation = object(source.invitation);
+  const expiry = driverInvitationTime(invitation?.expiresAt);
+  const rating = number(source.rating?.average);
+  return {
+    id: source.id, name: text(source.name) ?? '—', photo: safeUrl(source.avatarUrl),
+    email: text(source.maskedEmail) ?? '—', phone: text(source.maskedPhone) ?? '—',
+    verified: source.verified === true && source.identityStatus === 'VERIFIED' ? true : source.verified === false ? false : null,
+    licenseClass: text(source.licence?.class) ?? '—', licenseExpiry: dateLabel(source.licence?.expiresAt),
+    tripsCompleted: count(source.completedTrips) ?? '—', rating: rating !== null && rating <= 5 ? rating : null,
+    invitationKnown: source.invitation === null || !!text(invitation?.id) && invitation.status === 'PENDING' && expiry !== null,
+    invitation: text(invitation?.id) ? { id: invitation.id, status: invitation.status === 'PENDING' ? 'PENDING' : null, expiresAt: expiry } : null,
+  };
+}

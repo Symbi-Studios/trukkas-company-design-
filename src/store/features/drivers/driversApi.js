@@ -1,5 +1,5 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
-import { companyDriverDetailView, companyDriverView, count, driverReviewsView, driverTripView, driverSummaryView, rows, text } from './driverContracts.js';
+import { companyDriverDetailView, companyDriverView, count, driverInvitationTime, driverInvitationView, driverReviewsView, driverTripView, driverSummaryView, rows, text, unlinkedDriverView } from './driverContracts.js';
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
 const phoneKey = (value) => {
@@ -17,6 +17,7 @@ function companyQuery(api, baseQuery) {
   };
   const company = identity();
   return async (args) => {
+    if (api.signal.aborted) return unavailable('The driver request was cancelled.');
     if (identity() !== company) return unavailable('Your company session changed. Reload Drivers.');
     const result = await baseQuery(args);
     return identity() === company ? result : unavailable('Your company session changed. Reload Drivers.');
@@ -41,9 +42,88 @@ async function allPages(baseQuery, api, url, key, params) {
   return { data: collection };
 }
 
-export const driversApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDrivers', 'CompanyFleet', 'CompanyTrips'] }).injectEndpoints({
+export const driversApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDrivers', 'CompanyFleet', 'CompanyTrips', 'CompanyDriverSearch', 'CompanyDriverInvitations'] }).injectEndpoints({
   overrideExisting: process.env.NODE_ENV === 'development',
   endpoints: (builder) => ({
+    searchCompanyDrivers: builder.query({
+      async queryFn({ q, page = 1 }, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        if (!text(q) || q.trim().length < 2 || !Number.isSafeInteger(page) || page < 1) return unavailable('Enter at least two characters to find a verified driver.');
+        const result = await companyQuery(api, baseQuery)({ url: '/company/drivers/search', params: { q: q.trim(), page, limit: 20 } });
+        if (result.error) return result;
+        const data = unwrapApiResponseData(result.data), drivers = rows(data?.drivers), pagination = data?.pagination;
+        if (!drivers || pagination?.page !== page || count(pagination?.total) === null || count(pagination?.totalPages) === null
+          || drivers.length > pagination.total || (drivers.length > 0 && pagination.totalPages === 0)
+          || drivers.some((row) => !text(row.id)) || new Set(drivers.map((row) => row.id)).size !== drivers.length) {
+          return unavailable('The API did not return valid driver search results and pagination.');
+        }
+        const views = drivers.map(unlinkedDriverView);
+        return { data: { drivers: views, page, total: pagination.total, totalPages: pagination.totalPages } };
+      },
+      providesTags: ['CompanyDriverSearch'],
+    }),
+    getCompanyDriverInvitations: builder.query({
+      async queryFn(_arg, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        const result = await allPages(companyQuery(api, baseQuery), api, '/company/drivers/invitations', 'invitations');
+        return result.error ? result : { data: result.data.map(driverInvitationView) };
+      },
+      providesTags: ['CompanyDriverInvitations'],
+    }),
+    inviteCompanyDriver: builder.mutation({
+      async queryFn({ driverId, truckId, search }, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        if (!text(driverId) || (truckId !== undefined && !text(truckId)) || !text(search?.q)) return unavailable('Choose a driver from the verified search results.');
+        const cached = driversApi.endpoints.searchCompanyDrivers.select(search)(api.getState());
+        const driver = !cached.isError && cached.data?.drivers.find((row) => row.id === driverId);
+        if (!driver || driver.verified !== true || !driver.invitationKnown) return unavailable('Load and select a confirmed verified driver before inviting.');
+        if (driver.invitation?.status === 'PENDING' && driver.invitation.expiresAt > Date.now()) return unavailable('This driver already has a pending invitation. Cancel it before sending another.');
+        const result = await companyQuery(api, baseQuery)({
+          url: '/company/drivers/invitations', method: 'POST', body: { driverId, ...(truckId ? { truckId } : {}) },
+        });
+        if (result.error) {
+          const seconds = unwrapApiResponseData(result.error.data)?.retryAfterSeconds;
+          return { error: { ...result.error, retryAt: Number.isFinite(seconds) && seconds > 0 ? Date.now() + seconds * 1000 : null } };
+        }
+        const invitation = unwrapApiResponseData(result.data)?.invitation;
+        const expiresAt = driverInvitationTime(invitation?.expiresAt);
+        const delivered = Array.isArray(invitation?.deliveredVia) && invitation.deliveredVia.some((channel) => ['IN_APP', 'SMS', 'EMAIL'].includes(channel));
+        return text(invitation?.id) && invitation.driver?.id === driverId && invitation.status === 'PENDING' && expiresAt > Date.now() && delivered
+          ? { data: { id: invitation.id, name: text(invitation.driver.name) ?? '—' } }
+          : unavailable('The API did not confirm the invitation and delivery. Reload invitations before retrying.');
+      },
+      invalidatesTags: ['CompanyDriverInvitations', 'CompanyDriverSearch'],
+    }),
+    cancelCompanyDriverInvitation: builder.mutation({
+      async queryFn(id, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        const cached = driversApi.endpoints.getCompanyDriverInvitations.select()(api.getState());
+        const invitation = !cached.isError && cached.data?.find((row) => row.id === id);
+        if (!text(id) || invitation?.status !== 'PENDING' || !(invitation.expiresAt > Date.now())) return unavailable('Load and choose a pending invitation to cancel.');
+        const result = await companyQuery(api, baseQuery)({ url: '/company/drivers/invitations/' + encodeURIComponent(id), method: 'DELETE' });
+        if (result.error) return result;
+        const data = unwrapApiResponseData(result.data);
+        return data?.id === id && data.status === 'CANCELLED' ? { data: { id } }
+          : unavailable('The API did not confirm cancellation. Reload invitations before retrying.');
+      },
+      invalidatesTags: ['CompanyDriverInvitations', 'CompanyDriverSearch'],
+    }),
+    removeCompanyDriver: builder.mutation({
+      async queryFn(id, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        if (!text(id)) return unavailable('Choose a company driver to remove.');
+        baseQuery = companyQuery(api, baseQuery);
+        const owned = await baseQuery('/company/drivers/' + encodeURIComponent(id));
+        if (owned.error) return owned;
+        if (unwrapApiResponseData(owned.data)?.driver?.id !== id) return unavailable('The API did not identify your company driver.');
+        const result = await baseQuery({ url: '/company/drivers/' + encodeURIComponent(id), method: 'DELETE' });
+        if (result.error) return result;
+        const data = unwrapApiResponseData(result.data);
+        return data?.driverId === id && data.status === 'UNLINKED' ? { data: { id } }
+          : unavailable('The API did not confirm removal. Reload Drivers before retrying.');
+      },
+      invalidatesTags: ['CompanyDrivers', 'CompanyFleet', 'CompanyDashboard', 'CompanyDriverSearch', 'CompanyDriverInvitations'],
+    }),
     getCompanyDrivers: builder.query({
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
@@ -149,4 +229,4 @@ export const driversApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDrive
   }),
 });
 
-export const { useGetCompanyDriversQuery, useGetCompanyDriverSummaryQuery, useGetCompanyDriverQuery, useGetDriverTripsQuery, useGetDriverReviewsQuery, useAddCompanyDriverMutation, useSetCompanyDriverAvailabilityMutation } = driversApi;
+export const { useSearchCompanyDriversQuery, useGetCompanyDriverInvitationsQuery, useInviteCompanyDriverMutation, useCancelCompanyDriverInvitationMutation, useRemoveCompanyDriverMutation, useGetCompanyDriversQuery, useGetCompanyDriverSummaryQuery, useGetCompanyDriverQuery, useGetDriverTripsQuery, useGetDriverReviewsQuery, useAddCompanyDriverMutation, useSetCompanyDriverAvailabilityMutation } = driversApi;

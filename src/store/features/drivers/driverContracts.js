@@ -98,16 +98,17 @@ export function driverInvitationView(source) {
 
 export function unlinkedDriverView(source) {
   if (!text(source?.id)) return null;
+  const email = text(source.email);
+  const parts = email?.match(/^([^\s@]+)@([^\s@]+\.[^\s@]+)$/);
+  const maskedEmail = parts ? `${parts[1][0]}***@${parts[2]}` : '—';
+  const name = [text(source.firstName), text(source.lastName)].filter(Boolean).join(' ');
   const invitation = object(source.invitation);
-  const expiry = driverInvitationTime(invitation?.expiresAt);
-  const rating = number(source.rating?.average);
   return {
-    id: source.id, name: text(source.name) ?? '—', photo: safeUrl(source.avatarUrl),
-    email: text(source.maskedEmail) ?? '—', phone: text(source.maskedPhone) ?? '—',
-    verified: source.verified === true && source.identityStatus === 'VERIFIED' ? true : source.verified === false ? false : null,
-    licenseClass: text(source.licence?.class) ?? '—', licenseExpiry: dateLabel(source.licence?.expiresAt),
-    tripsCompleted: count(source.completedTrips) ?? '—', rating: rating !== null && rating <= 5 ? rating : null,
-    invitationKnown: source.invitation === null || !!text(invitation?.id) && invitation.status === 'PENDING' && expiry !== null,
-    invitation: text(invitation?.id) ? { id: invitation.id, status: invitation.status === 'PENDING' ? 'PENDING' : null, expiresAt: expiry } : null,
+    id: source.id, name: name || text(source.name) || '—', photo: safeUrl(source.avatarUrl),
+    email: maskedEmail, phone: text(source.maskedPhone) ?? '—',
+    verified: source.verified === true && source.status === 'ACTIVE' ? true : source.verified === false || source.status === 'PENDING_PROFILE' ? false : null,
+    licenseClass: text(source.licence?.class) ?? '—', licenseExpiry: dateLabel(source.licence?.expiresAt), licenseVerification: text(source.licence?.verification) ?? '—', tripsCompleted: '—', rating: null,
+    invitation: text(invitation?.id) && invitation.status === 'PENDING' && driverInvitationTime(invitation.expiresAt) !== null
+      ? { id: invitation.id, status: 'PENDING', expiresAt: driverInvitationTime(invitation.expiresAt), truckId: text(invitation.truckId) } : null,
   };
 }

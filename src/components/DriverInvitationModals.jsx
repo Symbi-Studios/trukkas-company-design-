@@ -18,7 +18,7 @@ export function InviteExistingDriverModal({ open, onClose, onDone }) {
   const [retryAt, setRetryAt] = useState(null);
   const submitting = useRef(false);
   const search = useMemo(() => ({ q: term, page }), [term, page]);
-  const ready = query.trim().length >= 2 && query.trim() === term;
+  const ready = query.trim().length >= 3 && query.trim() === term;
   const { currentData: results, error: searchError, isFetching } = useSearchCompanyDriversQuery(search, {
     skip: !open || !ready, refetchOnMountOrArgChange: true,
   });
@@ -26,10 +26,8 @@ export function InviteExistingDriverModal({ open, onClose, onDone }) {
   const [invite, { isLoading: busy, reset }] = useInviteCompanyDriverMutation();
   const drivers = ready && !searchError ? results?.drivers ?? [] : [];
   const driver = drivers.find((row) => row.id === selected);
-  const pending = (row) => row.invitation?.status === 'PENDING' && row.invitation.expiresAt > Date.now();
   const trucks = !fleetError ? (fleet ?? []).filter((truck) => truck.driverKnown && !truck.driverId && !truck.onTrip && ['ACTIVE', 'APPROVED'].includes(truck.wireStatus)) : [];
-  const canInvite = driver?.verified === true && driver.invitationKnown && !pending(driver)
-    && (!truckId || trucks.some((truck) => truck.id === truckId));
+  const canInvite = driver?.verified === true && (!truckId || trucks.some((truck) => truck.id === truckId));
 
   useEffect(() => {
     if (open) { setQuery(''); setTerm(''); setPage(1); setSelected(null); setTruckId(''); setError(''); setRetryAt(null); reset(); }
@@ -65,17 +63,15 @@ export function InviteExistingDriverModal({ open, onClose, onDone }) {
       description="Find a verified driver who is not linked to a company."
       footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button icon="send" disabled={busy || isFetching || !canInvite || retryAt > Date.now()} onClick={submit}>{busy ? 'Sending…' : 'Send Invitation'}</Button></>}>
       <div style={{ display: 'grid', gap: 14 }}>
-        <SearchField placeholder="Search by name, phone, email or licence..." disabled={busy} value={query} onChange={(event) => { setQuery(event.target.value); setSelected(null); setPage(1); setError(''); }} />
-        {query.trim().length < 2 ? <p className="tk-meta" style={{ margin: 0 }}>Enter at least two characters to search.</p>
+        <SearchField placeholder="Search by name, phone or email..." disabled={busy} value={query} onChange={(event) => { setQuery(event.target.value); setSelected(null); setPage(1); setError(''); }} />
+        {query.trim().length < 3 ? <p className="tk-meta" style={{ margin: 0 }}>Enter at least three characters to search.</p>
           : !ready || isFetching ? <SkeletonRow variant="list" rows={3} />
             : searchError ? <p className={styles.error}>{getApiErrorMessage(searchError)}</p>
               : <PickList selected={selected} onSelect={setSelected} empty="No verified, unlinked drivers found." items={drivers.map((row) => ({
                 id: row.id, title: row.name, subtitle: row.phone + ' · ' + row.email + ' · ' + row.licenseClass,
                 media: <Avatar name={row.name} src={row.photo || undefined} size={36} />,
                 badge: <Badge tone={row.verified === true ? 'success' : 'neutral'}>{row.verified === true ? 'Verified' : '—'}</Badge>,
-                blocked: row.verified !== true ? 'Verification has not been confirmed.'
-                  : !row.invitationKnown ? 'Invitation status is unavailable.'
-                    : pending(row) ? 'An invitation is already pending. Manage it from Driver Invitations.' : null,
+                blocked: row.verified !== true ? 'Verification has not been confirmed.' : null,
               }))} />}
         {ready && !searchError && results && results.totalPages > 1 && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>

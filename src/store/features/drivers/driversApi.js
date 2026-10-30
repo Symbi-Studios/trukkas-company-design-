@@ -48,8 +48,8 @@ export const driversApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDrive
     searchCompanyDrivers: builder.query({
       async queryFn({ q, page = 1 }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
-        if (!text(q) || q.trim().length < 2 || !Number.isSafeInteger(page) || page < 1) return unavailable('Enter at least two characters to find a verified driver.');
-        const result = await companyQuery(api, baseQuery)({ url: '/company/drivers/search', params: { q: q.trim(), page, limit: 20 } });
+        if (!text(q) || q.trim().length < 3 || !Number.isSafeInteger(page) || page < 1) return unavailable('Enter at least three characters to find a verified driver.');
+        const result = await companyQuery(api, baseQuery)({ url: '/dashboard/drivers/search', params: { q: q.trim(), status: 'ACTIVE', verified: 'true', page, limit: 20 } });
         if (result.error) return result;
         const data = unwrapApiResponseData(result.data), drivers = rows(data?.drivers), pagination = data?.pagination;
         if (!drivers || pagination?.page !== page || count(pagination?.total) === null || count(pagination?.totalPages) === null
@@ -76,21 +76,22 @@ export const driversApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDrive
         if (!text(driverId) || (truckId !== undefined && !text(truckId)) || !text(search?.q)) return unavailable('Choose a driver from the verified search results.');
         const cached = driversApi.endpoints.searchCompanyDrivers.select(search)(api.getState());
         const driver = !cached.isError && cached.data?.drivers.find((row) => row.id === driverId);
-        if (!driver || driver.verified !== true || !driver.invitationKnown) return unavailable('Load and select a confirmed verified driver before inviting.');
-        if (driver.invitation?.status === 'PENDING' && driver.invitation.expiresAt > Date.now()) return unavailable('This driver already has a pending invitation. Cancel it before sending another.');
+        if (!driver || driver.verified !== true) return unavailable('Load and select a confirmed verified driver before inviting.');
         const result = await companyQuery(api, baseQuery)({
-          url: '/company/drivers/invitations', method: 'POST', body: { driverId, ...(truckId ? { truckId } : {}) },
+          url: '/dashboard/drivers/invite', method: 'POST', body: { driverId, ...(truckId ? { truckId } : {}) },
         });
         if (result.error) {
           const seconds = unwrapApiResponseData(result.error.data)?.retryAfterSeconds;
           return { error: { ...result.error, retryAt: Number.isFinite(seconds) && seconds > 0 ? Date.now() + seconds * 1000 : null } };
         }
-        const invitation = unwrapApiResponseData(result.data)?.invitation;
-        const expiresAt = driverInvitationTime(invitation?.expiresAt);
-        const delivered = Array.isArray(invitation?.deliveredVia) && invitation.deliveredVia.some((channel) => ['IN_APP', 'SMS', 'EMAIL'].includes(channel));
-        return text(invitation?.id) && invitation.driver?.id === driverId && invitation.status === 'PENDING' && expiresAt > Date.now() && delivered
-          ? { data: { id: invitation.id, name: text(invitation.driver.name) ?? '—' } }
-          : unavailable('The API did not confirm the invitation and delivery. Reload invitations before retrying.');
+        const receipt = unwrapApiResponseData(result.data);
+        const confirmed = (receipt?.sent === true && receipt?.reused === false) || (receipt?.sent === false && receipt?.reused === true);
+        const truck = receipt?.invitation?.truck;
+        const truckLabel = truck === null ? 'No truck' : text(truck?.id) && text(truck?.plateNumber) ? text(truck.plateNumber) : '—';
+        return confirmed && text(receipt?.invitation?.id) && receipt.invitation.status === 'PENDING'
+          && driverInvitationTime(receipt.invitation.expiresAt) !== null
+          ? { data: { id: receipt.invitation.id, name: driver.name, reused: receipt.reused, truckLabel } }
+          : unavailable('The API did not confirm the invitation. Check before retrying.');
       },
       invalidatesTags: ['CompanyDriverInvitations', 'CompanyDriverSearch'],
     }),

@@ -102,7 +102,7 @@ export function Drivers() {
       </Card>
       <DriverInvitations onToast={showToast} onRefresh={() => { void refreshDrivers(); void refreshSummary(); }} />
       <AddDriverModal open={addOpen} onClose={() => setAddOpen(false)} />
-      <InviteExistingDriverModal open={inviteOpen} onClose={() => setInviteOpen(false)} onDone={(invitation) => { setInviteOpen(false); showToast('Invitation sent to ' + invitation.name + '. The driver joins after entering the code.'); }} />
+      <InviteExistingDriverModal open={inviteOpen} onClose={() => setInviteOpen(false)} onDone={(invitation) => { setInviteOpen(false); showToast(invitation.reused ? 'Existing invitation reused. Truck: ' + invitation.truckLabel + '. No new email sent. Cancel it to change the truck.' : 'Invitation sent to ' + invitation.name + '. The driver joins after entering the code.'); }} />
       <Toast message={toast} />
     </div>
   );

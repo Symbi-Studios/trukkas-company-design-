@@ -31,7 +31,7 @@ export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Acc
     setError('');
     resolveAccount(bankCode, accountNumber)
       .then((r) => { if (!cancelled) { setAccountName(r.accountName); setResolvedKey(`${bankCode}:${accountNumber}`); } })
-      .catch((err) => { if (!cancelled) setError(err.message); })
+      .catch((err) => { if (!cancelled) setError(getApiErrorMessage(err)); })
       .finally(() => { if (!cancelled) setResolving(false); });
     return () => { cancelled = true; };
   }, [bankCode, accountNumber, resolveAccount]);
@@ -55,10 +55,10 @@ export function BankAccountForm({ initial, onSaved, submitLabel = 'Save Bank Acc
     setError('');
     if (!confirmedName) { setError('Enter a valid bank and 10-digit account number.'); return; }
     if (requirePin) {
-      if (approvalUnavailable) { setError('The bank API does not support PIN-approved account changes yet.'); return; }
+      if (approvalUnavailable) { setError('Changing the payout account is currently unavailable. Please try again later.'); return; }
       setPinOpen(true); return;
     }
-    try { await save(); } catch (err) { setError(err.message); }
+    try { await save(); } catch (err) { setError(getApiErrorMessage(err)); }
   }
 
   return (
@@ -97,9 +97,9 @@ export function PayoutAccountSettings({ onToast }) {
     if (!selected) throw new Error('Choose a supported bank.');
     try {
       const result = await resolveBank({ bankName: selected.name, accountNumber }).unwrap();
-      if (!result.accountName || result.accountName === '—') throw new Error('The API could not confirm the account name.');
+      if (!result.accountName || result.accountName === '—') throw new Error('We couldn’t confirm the account name. Check the bank details and try again.');
       return result;
-    } catch (err) { throw new Error(err instanceof Error ? err.message : getApiErrorMessage(err)); }
+    } catch (err) { throw new Error(getApiErrorMessage(err)); }
   }, [banks, resolveBank]);
   async function createPin(values) {
     if (accessError || securityError || access?.canEdit !== true || security?.pin?.set !== false) throw new Error('Your current PIN status must be confirmed before creating a PIN.');
@@ -107,16 +107,16 @@ export function PayoutAccountSettings({ onToast }) {
     catch (err) { throw new Error(getApiErrorMessage(err)); }
   }
   async function saveAccount({ bankCode, accountNumber }, transactionPin) {
-    if (!canManageBank) throw new Error('You need finance.withdraw permission to save a payout account.');
+    if (!canManageBank) throw new Error('You don’t have permission to change the payout account.');
     if (bank === undefined || error || banksError || (bank && securityError)) throw new Error('Load your current payout account before saving changes.');
     const selected = banks?.find((row) => row.code === bankCode);
     if (!selected) throw new Error('Choose a supported bank.');
     try {
       const result = await (bank ? updateBank({ bankName: selected.name, accountNumber, transactionPin })
         : saveBank({ bankName: selected.name, accountNumber })).unwrap();
-      if (!result) throw new Error('The API did not confirm the saved bank account.');
+      if (!result) throw new Error('We couldn’t confirm that the bank account was saved. Check your payout details before trying again.');
       return result;
-    } catch (err) { throw new Error(err instanceof Error ? err.message : getApiErrorMessage(err)); }
+    } catch (err) { throw new Error(getApiErrorMessage(err)); }
   }
 
   return (

@@ -135,7 +135,7 @@ export const walletApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyWallet
         if (accessResult.error) return accessResult;
         const access = unwrapApiResponseData(accessResult.data);
         const permitted = access?.isOwner === true || (Array.isArray(access?.permissions) && access.permissions.includes('finance.withdraw'));
-        if (access?.companyId !== api.getState().auth.account?.id || !permitted) return unavailable('You need finance.withdraw permission to request a payout.');
+        if (access?.companyId !== api.getState().auth.account?.id || !permitted) return unavailable('You don’t have permission to request a payout.');
         const result = await baseQuery({ url: '/wallets/withdraw', method: 'POST', headers: { 'x-idempotency-key': idempotencyKey }, body: { amount, transactionPin } });
         if (result.error) return result;
         const mapped = withdrawalResultView(unwrapApiResponseData(result.data), amount);

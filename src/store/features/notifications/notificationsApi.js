@@ -44,6 +44,27 @@ function notificationView(notification) {
   };
 }
 
+// A successful write can have its message on an outer envelope. If no
+// confirmation is present, read the notification back without repeating the write.
+async function notificationIsRead(id, api, baseQuery) {
+  let page = 1;
+  let totalPages = 1;
+  do {
+    if (api.signal.aborted) return false;
+    const result = await baseQuery({ url: '/notifications', params: { page, limit: 20 } });
+    if (result.error) return false;
+    const data = unwrapApiResponseData(result.data);
+    const pages = count(data?.totalPages);
+    if (!Array.isArray(data?.notifications) || count(data.page) !== page || pages === null || pages > 500) return false;
+    const notification = data.notifications.find((item) => item?.id === id);
+    if (notification) return notification.isRead === true;
+    if (page < pages && data.notifications.length === 0) return false;
+    totalPages = page === 1 ? pages : Math.min(totalPages, pages);
+    page += 1;
+  } while (page <= totalPages);
+  return false;
+}
+
 export const notificationsApi = baseApi.injectEndpoints({
   overrideExisting: process.env.NODE_ENV === 'development',
   endpoints: (builder) => ({
@@ -99,11 +120,13 @@ export const notificationsApi = baseApi.injectEndpoints({
         if (!text(id)) return invalid('This notification has no API ID and cannot be marked as read.');
         const result = await baseQuery({ url: `/notifications/${encodeURIComponent(id)}/read`, method: 'PATCH' });
         if (result.error) return result;
-        return text(unwrapApiResponseData(result.data)?.message)
+        const confirmed = text(result.data?.message) || text(unwrapApiResponseData(result.data)?.message)
+          || await notificationIsRead(id, api, baseQuery);
+        return confirmed
           ? { data: { id, read: true } }
-          : invalid('The API did not confirm that the notification was marked as read. Please try again.');
+          : invalid('We couldn’t confirm that this notification was marked as read. Refresh and check before trying again.');
       },
-      invalidatesTags: (_data, error) => error ? [] : ['Notifications'],
+      invalidatesTags: ['Notifications'],
     }),
     markAllNotificationsRead: builder.mutation({
       queryFn(_arg, api, _options, baseQuery) {

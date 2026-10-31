@@ -3,6 +3,7 @@ import { Link } from '../router.js';
 import { Button, Icon, Modal, ProgressBar } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
 import { setTransactionPin } from '../mock/api.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { PIN_LENGTH, passwordStrength, pinProblem } from '../domain/security.js';
 import styles from './SecurityInputs.module.css';
 
@@ -119,7 +120,7 @@ export function PinPrompt({ open, onClose, title = 'Enter Transaction PIN', desc
     try {
       await onConfirm(value);
     } catch (err) {
-      setError(err.message);
+      setError(getApiErrorMessage(err));
       setPin('');
     } finally {
       running.current = false;
@@ -140,7 +141,7 @@ export function PinPrompt({ open, onClose, title = 'Enter Transaction PIN', desc
         await createPin({ newPin: pin, confirmPin });
       } else await setTransactionPin({ newPin: pin });
     } catch (err) {
-      setError(err.message);
+      setError(getApiErrorMessage(err));
       running.current = false;
       setBusy(false);
       return;

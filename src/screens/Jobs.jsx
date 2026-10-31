@@ -264,7 +264,7 @@ function BidModal({ job, open, onClose, onSubmit }) {
     try {
       await onSubmit(job.id, Number(amount), message);
     } catch (err) {
-      setError(err instanceof Error ? err.message : getApiErrorMessage(err));
+      setError(getApiErrorMessage(err));
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -402,11 +402,11 @@ export function Jobs() {
     saving.current.add(job.id);
     setSavingJobs(new Set(saving.current));
     try {
-      if (job.saved === null) throw new Error('The API has not returned this job’s saved state.');
+      if (job.saved === null) throw new Error('We couldn’t tell whether this job is saved. Please refresh and try again.');
       const updated = await saveJob({ jobId: job.id, saved: !job.saved }).unwrap();
       showToast(updated.saved ? 'Job saved.' : 'Removed from saved jobs.');
     } catch (err) {
-      showToast(err instanceof Error ? err.message : getApiErrorMessage(err));
+      showToast(getApiErrorMessage(err));
     } finally {
       saving.current.delete(job.id);
       setSavingJobs(new Set(saving.current));

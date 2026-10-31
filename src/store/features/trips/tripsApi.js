@@ -223,7 +223,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
           return unavailable('The API did not confirm the cancellation request. Check the trip before trying again.');
         }
         api.dispatch(tripsApi.util.updateQueryData('getCompanyTrip', tripId, (draft) => { draft.cancellationRequested = true; }));
-        return { data: { message: text(saved.message) ?? 'Cancellation request sent to support. The trip stays active until support confirms.' } };
+        return { data: { message: 'Cancellation request sent to support. The trip stays active until support confirms.' } };
       },
       invalidatesTags: (_data, _error, { tripId }) => [...tripTags, 'SupportTickets', { type: 'CompanyTrip', id: tripId }],
     }),

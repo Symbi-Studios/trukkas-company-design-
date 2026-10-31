@@ -20,7 +20,7 @@ export function MessageModal({ open, onClose, title, recipient, placeholder, onS
     try {
       await onSend(body.trim());
     } catch (err) {
-      setError(err instanceof Error ? err.message : getApiErrorMessage(err));
+      setError(getApiErrorMessage(err));
     } finally {
       submitting.current = false;
       setBusy(false);

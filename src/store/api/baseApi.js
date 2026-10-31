@@ -37,13 +37,7 @@ let requestSequence = 0;
 
 const privateLogField = /^q$|^account$|account(?:no|number)$|^sentTo$|authorization|cookie|token|password|secret|credential|identifier|challenge|backupcode|otp|^code$|pin|email|phone|licen[cs]e|^number$|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment|^body$|^subject$|^topic$|reason|comment|^reply$|instruction|notes?|documentnumber|^url$/i;
 function bodyForLog(body, seen = new WeakSet()) {
-  if (body === null || typeof body !== 'object') return body;
-  if (seen.has(body)) return '[Circular]';
-  seen.add(body);
-  if (typeof File !== 'undefined' && body instanceof File) return { type: body.type, size: body.size };
-  if (typeof FormData !== 'undefined' && body instanceof FormData) return Object.fromEntries([...body.entries()].map(([key, value]) => [key, privateLogField.test(key) ? '[REDACTED]' : bodyForLog(value, seen)]));
-  if (Array.isArray(body)) return body.map((value) => bodyForLog(value, seen));
-  return Object.fromEntries(Object.entries(body).map(([key, value]) => [key, privateLogField.test(key) || /search|station|plate|^vin$|engineNumber|specifications/i.test(key) ? '[REDACTED]' : bodyForLog(value, seen)]));
+  return body;
 }
 
 function requestUrlForLog(args) {

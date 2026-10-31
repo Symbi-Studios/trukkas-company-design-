@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Icon, Modal, ProgressBar, SectionCard, Select, Tag, TextField } from '../ds.js';
 import { createDocument } from '../mock/api.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { complianceFor, documentStatusTone, maskNumber } from '../domain/documents.js';
 import { FileDrop } from './FileDrop.jsx';
 import styles from './DocumentCompliance.module.css';
@@ -101,7 +102,7 @@ export function UploadDocumentModal({ open, onClose, ownerType, ownerId, ownerLa
       });
       onDone?.(doc);
     } catch (err) {
-      setError(err.message);
+      setError(getApiErrorMessage(err));
     } finally {
       submitting.current = false;
       setBusy(false);

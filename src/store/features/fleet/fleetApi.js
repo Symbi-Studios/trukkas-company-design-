@@ -447,7 +447,7 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
         baseQuery = maintenanceQuery(api, baseQuery);
         const type = maintenanceTypeToWire(serviceType);
         if (!text(truckId)) return unavailable('Select a vehicle.');
-        if (!['PREVENTIVE', 'REPAIR', 'INSPECTION', 'BREAKDOWN'].includes(type)) return unavailable('Use PREVENTIVE, REPAIR, INSPECTION or BREAKDOWN as the service type.');
+        if (!['PREVENTIVE', 'REPAIR', 'INSPECTION', 'BREAKDOWN'].includes(type)) return unavailable('Choose a service type from the list.');
         if (!text(description) || description.trim().length > 1000) return unavailable('Enter a description of up to 1000 characters.');
         const due = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00Z`) : null;
         if (!due || !Number.isFinite(due.getTime()) || due.toISOString().slice(0, 10) !== date) return unavailable('Enter a valid scheduled date.');

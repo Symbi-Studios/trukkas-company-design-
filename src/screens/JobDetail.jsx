@@ -69,7 +69,7 @@ function BidCard({ job, onToast }) {
       await submitBid({ jobId: job.id, amount: Number(amount), message }).unwrap();
       onToast(`Bid submitted for ${job.id}.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : getApiErrorMessage(err));
+      setError(getApiErrorMessage(err));
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -123,7 +123,7 @@ function MyBidCard({ job, onToast }) {
       await withdrawBid({ jobId: job.id, bidId: job.myBid.id }).unwrap();
       onToast('Bid withdrawn.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : getApiErrorMessage(err));
+      setError(getApiErrorMessage(err));
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -206,7 +206,7 @@ function DispatchModal({ job, open, onClose, onDone }) {
       const trip = await dispatchDriver({ jobId: job.id, truckId: plate, driverId }).unwrap();
       onDone(trip);
     } catch (err) {
-      setError(err instanceof Error ? err.message : getApiErrorMessage(err));
+      setError(getApiErrorMessage(err));
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -354,11 +354,11 @@ export function JobDetail({ apiJobId } = {}) {
     savingJob.current = true;
     setSaving(true);
     try {
-      if (job.saved === null) throw new Error('The API has not returned this job’s saved state.');
+      if (job.saved === null) throw new Error('We couldn’t tell whether this job is saved. Please refresh and try again.');
       const updated = await setSavedJob({ jobId: job.id, saved: !job.saved }).unwrap();
       showToast(updated.saved ? 'Job saved.' : 'Removed from saved jobs.');
     } catch (err) {
-      showToast(err instanceof Error ? err.message : getApiErrorMessage(err));
+      showToast(getApiErrorMessage(err));
     } finally {
       savingJob.current = false;
       setSaving(false);

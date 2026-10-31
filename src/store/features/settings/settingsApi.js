@@ -42,7 +42,7 @@ function settingsBankAccess(api) {
   const account = api.getState().auth.account;
   const result = profileApi.endpoints.getMyProfileAccess.select()(api.getState());
   return !account || result.isError || result.data?.companyId !== account.id || result.data?.userId !== (account.actualUserId ?? account.id) || result.data?.canManageBank !== true
-    ? settingsUnavailable('You need finance.withdraw permission to change the payout account.') : null;
+    ? settingsUnavailable('You don’t have permission to change the payout account.') : null;
 }
 
 export function settingsCompanyQuery(api, baseQuery) {

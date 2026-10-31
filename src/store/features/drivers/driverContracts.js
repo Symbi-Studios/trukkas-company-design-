@@ -33,8 +33,7 @@ export function companyDriverDetailView(source) {
     tripsCompleted: count(source.stats?.completedTrips) ?? '—',
     onTimeRate: source.performance?.windowDays === 90 ? percent(source.performance.onTimePercent) : null,
     incidents: source.performance?.windowDays === 90 ? count(source.performance.incidentCount) : null,
-    // No platform safety scoring exists; preserve the unavailable value.
-    safetyScore: null,
+    safetyScore: source.performance?.windowDays === 90 ? percent(source.performance.safetyScore) : null,
     documents: licenseUrl ? [{ type: "Driver's License", name: "Driver's Licence", number: driver.licenseNumber, expiryDate: driver.licenseExpiry, uploadedOn: '—', status: '—', url: licenseUrl }] : [],
   };
 }

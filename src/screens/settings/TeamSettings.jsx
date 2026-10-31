@@ -41,7 +41,7 @@ function InviteModal({ open, onClose, roles, onDone, security, createPin }) {
     if (!role) { setError('Choose a role from the company role list.'); return; }
     if (typeof security?.pin?.set !== 'boolean') { setError('Load your transaction PIN status before inviting a member.'); return; }
     if (needsPin) { setPinOpen(true); return; }
-    try { await invite(); } catch (err) { setError(err.message); }
+    try { await invite(); } catch (err) { setError(getApiErrorMessage(err)); }
   }
 
   return (
@@ -97,7 +97,7 @@ export function TeamSettings({ onToast }) {
     if (busy || actionPending.current || !canManage) return;
     actionPending.current = true;
     setMenu(null); setError('');
-    try { await action(); onToast(message); } catch (err) { setError(err instanceof Error ? err.message : getApiErrorMessage(err)); }
+    try { await action(); onToast(message); } catch (err) { setError(getApiErrorMessage(err)); }
     finally { actionPending.current = false; }
   }
 
@@ -209,7 +209,7 @@ export function RolesSettings({ onToast }) {
     const approval = settingsRoleNeedsApproval(draft, selected, security?.pin?.set);
     if (approval === null) { setError('Load your transaction PIN status before saving role permissions.'); return; }
     if (approval) { setPendingRole({ ...draft, permissions: [...draft.permissions] }); return; }
-    try { await persistRole(draft); } catch (err) { setError(err.message); }
+    try { await persistRole(draft); } catch (err) { setError(getApiErrorMessage(err)); }
   }
   async function persistRole(values, pin) {
     if (!canManage) throw new Error('Only the company owner can manage roles.');
@@ -270,7 +270,7 @@ export function RolesSettings({ onToast }) {
               )}
             </div>
           )}
-          <p className={styles.hint} style={{ marginTop: 12 }}>These settings control what the app shows each person. Trukkas also enforces them on the server.</p>
+          <p className={styles.hint} style={{ marginTop: 12 }}>These permissions control what each person can see and do in Trukkas.</p>
         </div>
       </div>
       <PinPrompt open={!!pendingRole} onClose={() => setPendingRole(null)} confirmLabel="Save Role" description={pendingRole?.name}

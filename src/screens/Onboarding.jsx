@@ -198,21 +198,21 @@ export function Onboarding() {
       const selected = banks?.find((item) => item.code === bankCode);
       if (!selected) throw new Error('Choose a bank from the supported bank list.');
       const resolved = await resolveBank({ bankName: selected.name, accountNumber }).unwrap();
-      if (!resolved.accountName || resolved.accountName === '—') throw new Error('The API could not confirm the account name.');
+      if (!resolved.accountName || resolved.accountName === '—') throw new Error('We couldn’t confirm the account name. Check the bank details and try again.');
       return resolved;
-    } catch (err) { throw new Error(err instanceof Error ? err.message : getApiErrorMessage(err)); }
+    } catch (err) { throw new Error(getApiErrorMessage(err)); }
   }, [banks, resolveBank]);
 
   async function saveAccount({ bankCode, accountNumber }) {
     setBusy(true);
     try {
-      if (bank !== null) throw new Error('The API must confirm that no payout account is saved before adding one. Please reload this page.');
+      if (bank !== null) throw new Error('We couldn’t confirm your current payout account. Please refresh this page.');
       const selected = banks?.find((item) => item.code === bankCode);
       if (!selected) throw new Error('Choose a bank from the supported bank list.');
       const saved = await saveBank({ bankName: selected.name, accountNumber }).unwrap();
-      if (!saved) throw new Error('The API did not return a saved bank account.');
+      if (!saved) throw new Error('We couldn’t confirm that your bank account was saved. Check your payout details before trying again.');
       return saved;
-    } catch (err) { throw new Error(err instanceof Error ? err.message : getApiErrorMessage(err)); }
+    } catch (err) { throw new Error(getApiErrorMessage(err)); }
     finally { setBusy(false); }
   }
 
@@ -224,10 +224,10 @@ export function Onboarding() {
   async function savePin(values) {
     setBusy(true);
     try {
-      if (security?.pin?.set !== false) throw new Error('The API must confirm your current PIN status before creating a PIN. Please reload this page.');
+      if (security?.pin?.set !== false) throw new Error('We couldn’t confirm your current PIN status. Please refresh this page before creating a PIN.');
       return await saveTransactionPin(values).unwrap();
     }
-    catch (err) { throw new Error(err instanceof Error ? err.message : getApiErrorMessage(err)); }
+    catch (err) { throw new Error(getApiErrorMessage(err)); }
     finally { setBusy(false); }
   }
 
@@ -335,11 +335,11 @@ export function Onboarding() {
     try {
       const result = await startRegistration({ phone: form.phone }).unwrap();
       if (result.companyAccountRequired) { setCompanyOffer({ email: form.email.trim() }); return; }
-      if (typeof result.sessionToken !== 'string' || !result.sessionToken.trim()) throw new Error('The API did not return a phone verification session.');
+      if (typeof result.sessionToken !== 'string' || !result.sessionToken.trim()) throw new Error('We couldn’t start phone verification. Please try again.');
       setSessionToken(result.sessionToken);
       setOtp({ ...result.otp, sessionExpiresAt: result.sessionExpiresAt });
       setForm((value) => ({ ...value, phoneEntered: true }));
-    } catch (err) { setError(err instanceof Error ? err.message : getApiErrorMessage(err)); }
+    } catch (err) { setError(getApiErrorMessage(err)); }
     finally { submitting.current = false; setBusy(false); }
   }
 

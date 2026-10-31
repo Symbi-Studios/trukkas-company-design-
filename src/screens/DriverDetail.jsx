@@ -243,7 +243,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
               title="Driver Documents" description="Required to dispatch this driver on trips. Trip paperwork lives on each trip."
               requirements={DRIVER_REQUIREMENTS} docs={docs}
               compliance={documentLibrary} unavailable={!documentLibrary} unavailableTypes={documentLibrary?.unavailableTypes ?? []}
-              onUpload={(req) => setUploadType(req.type)} onOpen={(doc) => doc.url ? window.open(doc.url, '_blank', 'noopener,noreferrer') : showToast('The API did not return a document URL.')}
+              onUpload={(req) => setUploadType(req.type)} onOpen={(doc) => doc.url ? window.open(doc.url, '_blank', 'noopener,noreferrer') : showToast('This document is unavailable to open right now.')}
               style={{ boxShadow: 'none', border: 0 }}
             />
           )}

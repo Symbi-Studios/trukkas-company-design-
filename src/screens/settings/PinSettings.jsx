@@ -39,7 +39,7 @@ export function PinForm({ mode, phone, onDone, savePin, sendResetCode, disabled 
       if (!sendResetCode) throw new Error('PIN reset is unavailable here.');
       const receipt = await sendResetCode();
       setExpiresAt(receipt.expiresAt); setResendAt(receipt.resendAt); setOtp(''); setSent(true);
-    } catch (err) { setError(err.message || getApiErrorMessage(err)); if (err.retryAt) setResendAt(err.retryAt); }
+    } catch (err) { setError(getApiErrorMessage(err)); if (err.retryAt) setResendAt(err.retryAt); }
     finally { setBusy(false); }
   }
 
@@ -57,7 +57,7 @@ export function PinForm({ mode, phone, onDone, savePin, sendResetCode, disabled 
     try {
       await savePin({ newPin: pin, confirmPin: confirm, currentPin: mode === 'change' ? current : undefined, otp: mode === 'reset' ? otp : undefined });
       onDone();
-    } catch (err) { setError(err.message); } finally { setBusy(false); }
+    } catch (err) { setError(getApiErrorMessage(err)); } finally { setBusy(false); }
   }
 
   return (

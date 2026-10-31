@@ -84,7 +84,7 @@ export function Fleet() {
           <div style={{ display: 'flex', gap: 24, padding: '0 16px', borderBottom: '1px solid var(--tk-line)', overflowX: 'auto' }}>
             {VEHICLE_TABS.map((t) => (
               <button key={t} type="button" onClick={() => {
-                if (t !== 'All Vehicles' && (!fleet || trucks.some((truck) => truck.vehicleClass === '—'))) { showToast('Vehicle class filtering is currently unavailable from the API.'); return; }
+                if (t !== 'All Vehicles' && (!fleet || trucks.some((truck) => truck.vehicleClass === '—'))) { showToast('Vehicle types are unavailable for some vehicles. Please refresh and try again.'); return; }
                 setTab(t);
               }} style={{
                 height: 46, border: 0, borderBottom: '2px solid ' + (tab === t ? 'var(--tk-blue)' : 'transparent'),

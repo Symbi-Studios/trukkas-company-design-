@@ -108,7 +108,7 @@ export function VehicleDocuments() {
           { key: 'uploadedOn', header: 'Uploaded On', render: (d) => d.uploadedOn },
           { key: 'actions', header: 'Actions', render: (d) => (
             <span style={{ display: 'flex', gap: 6 }}>
-              <Button size="sm" variant="outline" icon="eye" onClick={() => d.url ? window.open(d.url, '_blank', 'noopener,noreferrer') : showToast('The API did not return a document URL.')}>View</Button>
+              <Button size="sm" variant="outline" icon="eye" onClick={() => d.url ? window.open(d.url, '_blank', 'noopener,noreferrer') : showToast('This document is unavailable to open right now.')}>View</Button>
               {VEHICLE_REQUIREMENTS.some((r) => r.type === d.type) && <Button size="sm" variant="outline" icon="refresh-cw" onClick={() => setUploadType(d.type)}>Replace</Button>}
             </span>
           ) },

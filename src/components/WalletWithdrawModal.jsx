@@ -38,7 +38,7 @@ export function WalletWithdrawModal({ onClose, onDone, available, bank, attempt,
   function submit(event) {
     event.preventDefault();
     setError('');
-    if (!canWithdraw) { setError('You need finance.withdraw permission to request a payout.'); return; }
+    if (!canWithdraw) { setError('You don’t have permission to request a payout.'); return; }
     if (!Number.isFinite(value) || value < 1000 || value > Number.MAX_SAFE_INTEGER) { setError('Enter a withdrawal amount of at least ₦1,000.'); return; }
     if (attempt.current && !retrying) { setError('Retry the previous withdrawal amount and bank account before starting another request.'); return; }
     if (!retrying && (typeof available !== 'number' || !Number.isFinite(available))) { setError('Your available balance could not be confirmed. Please reload.'); return; }
@@ -51,12 +51,12 @@ export function WalletWithdrawModal({ onClose, onDone, available, bank, attempt,
     catch (err) { throw new Error(getApiErrorMessage(err)); }
   }
   async function withdraw(pin) {
-    if (!canWithdraw) throw new Error('You need finance.withdraw permission to request a payout.');
+    if (!canWithdraw) throw new Error('You don’t have permission to request a payout.');
     if (!validAmount || !bank || !fee || feeError || feeLoading) throw new Error('Confirm the withdrawal amount, bank account and fee again.');
     if (attempt.current && !retrying) throw new Error('Retry the previous withdrawal before starting another request.');
     if (attempt.current && Date.now() - attempt.current.startedAt >= 24 * 60 * 60 * 1000) throw new Error('This request is too old to retry safely. Check its status in transaction history before starting another withdrawal.');
     if (!attempt.current) {
-      if (!globalThis.crypto?.randomUUID) throw new Error('A secure request identifier could not be created. Please use a secure connection.');
+      if (!globalThis.crypto?.randomUUID) throw new Error('For your security, use a secure connection to continue.');
       attempt.current = { companyId, amount: value, bankKey, key: globalThis.crypto.randomUUID(), startedAt: Date.now() };
     }
     try {
@@ -78,7 +78,7 @@ export function WalletWithdrawModal({ onClose, onDone, available, bank, attempt,
         <TextField label="Amount (₦)" type="number" min="1000" step="0.01" required value={amount} onChange={(e) => setAmount(e.target.value)} hint={`Available balance: ${money(available)}`} error={error} />
       </form>
     </Modal>
-    <Modal open={step === 'confirm'} onClose={onClose} title="Confirm Withdrawal" description="Review the fee and amount your bank will receive. Withdrawals require backend approval." width={420}
+    <Modal open={step === 'confirm'} onClose={onClose} title="Confirm Withdrawal" description="Review the fee and amount your bank will receive. Withdrawals require approval." width={420}
       footer={<><Button variant="outline" onClick={() => setStep('amount')}>Back</Button><Button disabled={!ready} onClick={() => { if (ready) setStep('pin'); }}>Continue</Button></>}>
       {feeLoading || securityLoading ? <SkeletonRow variant="form" rows={2} action={false} /> : feeError || securityError ? <EmptyState icon="wallet" title={getApiErrorMessage(feeError || securityError)} /> : <>
         <LabelValue label="Withdrawal amount" value={money(fee?.amount)} />

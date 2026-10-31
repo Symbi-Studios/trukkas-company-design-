@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Avatar, Badge, Button, Icon, Modal, SearchField } from '../ds.js';
 import { useCollection } from '../mock/useCollection.js';
 import { assignDriverToTruck } from '../mock/api.js';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { isOpenTrip } from '../domain/trips.js';
 import styles from './AssignModals.module.css';
 
@@ -70,7 +71,7 @@ export function AssignDriverModal({ truck, open, onClose, onDone }) {
       await assignDriverToTruck(truck.plate, selected);
       onDone?.(drivers.find((d) => d.id === selected));
     } catch (err) {
-      setError(err.message);
+      setError(getApiErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -127,7 +128,7 @@ export function AssignTruckModal({ driver, open, onClose, onDone }) {
       await assignDriverToTruck(selected, driver.id);
       onDone?.(selected);
     } catch (err) {
-      setError(err.message);
+      setError(getApiErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -162,7 +163,7 @@ export function RemoveDriverModal({ truck, open, onClose, onDone }) {
       await assignDriverToTruck(truck.plate, null);
       onDone?.();
     } catch (err) {
-      setError(err.message);
+      setError(getApiErrorMessage(err));
     } finally {
       setBusy(false);
     }

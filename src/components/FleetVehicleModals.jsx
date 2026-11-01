@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { Button, Modal, Select, Textarea, TextField } from '../ds.js';
 import { VEHICLE_CLASSES } from '../domain/vehicles.js';
+import { todayValue } from '../ds/components/forms/datePickerDates.js';
 import { useAddFleetFuelLogMutation, useEditFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 
@@ -43,7 +44,7 @@ export function EditFleetVehicleModal({ truck, onClose }) {
             <TextField disabled={busy} label="Chassis / VIN" value={draft.vin} maxLength={30} onChange={set('vin')} />
             <TextField disabled={busy} label="Engine Number" value={draft.engineNumber} maxLength={40} onChange={set('engineNumber')} />
             <Select disabled={busy} label="Ownership" value={draft.ownership} options={['Company Owned', 'Leased', 'Hire Purchase / Financed']} onChange={set('ownership')} />
-            <TextField disabled={busy} label="Purchase Date" type="date" value={draft.purchaseDate} onChange={set('purchaseDate')} />
+            <TextField disabled={busy} label="Purchase Date" type="date" max={todayValue()} value={draft.purchaseDate} onChange={set('purchaseDate')} />
             <TextField disabled={busy} label="Current Location" value={draft.location} maxLength={200} onChange={set('location')} />
             <TextField disabled={busy} label="Odometer Reading (km)" type="number" min="0" step="any" value={draft.odometer} onChange={set('odometer')} />
           </div>
@@ -80,7 +81,7 @@ export function FleetFuelLogModal({ truckId, onClose }) {
       footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button type="submit" form="fleet-fuel-log" disabled={busy || !draft.litres || !draft.amount}>{busy ? 'Saving…' : 'Save Purchase'}</Button></>}>
       <form id="fleet-fuel-log" onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
         <fieldset disabled={busy} style={{ ...fieldGrid, border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-          <TextField disabled={busy} label="Purchase Date" type="date" value={draft.date} onChange={set('date')} />
+          <TextField disabled={busy} label="Purchase Date" type="date" max={todayValue()} value={draft.date} onChange={set('date')} />
           <TextField disabled={busy} label="Litres" required type="number" min="0.01" step="any" value={draft.litres} onChange={set('litres')} />
           <TextField disabled={busy} label="Total Cost (₦)" required type="number" min="0" step="any" value={draft.amount} onChange={set('amount')} />
           <TextField disabled={busy} label="Odometer Reading (km)" type="number" min="0" step="any" value={draft.odometer} onChange={set('odometer')} />

@@ -13,6 +13,7 @@ import { fleetDetailHref } from '../domain/fleetLinks.js';
 import { VEHICLE_PHOTO_SLOTS, VEHICLE_REQUIREMENTS, formatDisplayDate } from '../domain/documents.js';
 import { FileDrop } from '../components/FileDrop.jsx';
 import { PickList, driverOptions } from '../components/AssignModals.jsx';
+import { todayValue } from '../ds/components/forms/datePickerDates.js';
 import styles from './AddVehicle.module.css';
 
 const STEPS = [
@@ -179,7 +180,7 @@ export function AddVehicle() {
                     <Select label="Year of Manufacture" value={draft.year} placeholder="Select year" options={YEARS} onChange={set('year')} />
                     <Select label="Colour" value={draft.color} placeholder="Select colour" options={COLORS} onChange={set('color')} />
                     {!isTrailer && <TextField label="Engine Number" value={draft.engineNumber} onChange={set('engineNumber')} />}
-                    <TextField label="Purchase Date" type="date" value={draft.purchaseDate} onChange={set('purchaseDate')} />
+                    <TextField label="Purchase Date" type="date" max={todayValue()} value={draft.purchaseDate} onChange={set('purchaseDate')} />
                     <Select label="Ownership" value={draft.ownership} options={['Company Owned', 'Leased', 'Hire Purchase / Financed']} onChange={set('ownership')} />
                     <TextField label="Current Location" value={draft.location} onChange={set('location')} placeholder="e.g. Apapa, Lagos" />
                     {errors.year && <span className={styles.error}>{errors.year}</span>}

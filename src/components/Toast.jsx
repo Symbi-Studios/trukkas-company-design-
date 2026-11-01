@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Card, Icon } from '../ds.js';
 
-/** Transient confirmation in the bottom-right corner. `const [toast, show] = useToast();` */
+/** Transient confirmation in the top-right corner. `const [toast, show] = useToast();` */
 export function useToast(duration = 2600) {
   const [message, setMessage] = useState(null);
   useEffect(() => {
@@ -15,7 +15,7 @@ export function useToast(duration = 2600) {
 export function Toast({ message }) {
   if (!message) return null;
   return (
-    <div role="status" style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 200 }}>
+    <div role="status" style={{ position: 'fixed', top: 20, right: 20, zIndex: 200, maxWidth: 'calc(100vw - 40px)' }}>
       <Card style={{ display: 'flex', alignItems: 'center', gap: 8, boxShadow: 'var(--tk-shadow-menu)' }}>
         <Icon name="circle-check" size={16} color="var(--tk-success)" />
         {message}

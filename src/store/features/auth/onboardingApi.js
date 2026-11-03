@@ -236,7 +236,7 @@ export const onboardingApi = baseApi.injectEndpoints({
           twoFactor: {
             available: typeof data?.twoFactor?.available === 'boolean' ? data.twoFactor.available : null,
             enabled: typeof data?.twoFactor?.enabled === 'boolean' ? data.twoFactor.enabled : null,
-            method: data?.twoFactor?.method === 'TOTP' || data?.twoFactor?.method === 'app' ? 'app' : data?.twoFactor?.method === 'sms' ? 'sms' : null,
+            method: data?.twoFactor?.method === 'TOTP' || data?.twoFactor?.method === 'app' ? 'app' : data?.twoFactor?.method === 'SMS' || data?.twoFactor?.method === 'sms' ? 'sms' : null,
             enabledOn: displayDate(data?.twoFactor?.enabledAt),
             backupCodesRemaining: Number.isSafeInteger(data?.twoFactor?.backupCodesRemaining) && data.twoFactor.backupCodesRemaining >= 0 ? data.twoFactor.backupCodesRemaining : null,
           },

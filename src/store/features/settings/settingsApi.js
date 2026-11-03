@@ -250,31 +250,46 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
       invalidatesTags: (_data, error) => error ? [] : ['AuthOnboardingSecurity'],
     }),
     setupSettingsTwoFactor: builder.mutation({
-      async queryFn(_arg, api, _options, baseQuery) {
+      async queryFn(method = 'TOTP', api, _options, baseQuery) {
         const blocked = settingsTwoFactorAccess(api); if (blocked) return blocked;
-        const result = await settingsCompanyQuery(api, baseQuery)({ url: '/profile/two-factor/setup', method: 'POST', body: { method: 'TOTP' } });
+        if (!['TOTP', 'SMS'].includes(method)) return settingsUnavailable('Choose a verification method.');
+        const result = await settingsCompanyQuery(api, baseQuery)({ url: '/profile/two-factor/setup', method: 'POST', body: { method } });
         if (result.error) return result;
         const data = unwrapApiResponseData(result.data);
+        if (method === 'SMS') return data?.method === 'SMS' && text(data.maskedPhone) && epoch(data.codeExpiresAt) !== null && Number.isFinite(data.resendAfterSeconds) && data.resendAfterSeconds >= 0
+          ? { data: { maskedPhone: data.maskedPhone, codeExpiresAt: data.codeExpiresAt, resendAfterSeconds: data.resendAfterSeconds } }
+          : settingsUnavailable('We couldn’t confirm that a code was sent. Please check before trying again.');
         return data?.method === 'TOTP' && text(data.secret) && typeof data.otpauthUrl === 'string' && data.otpauthUrl.startsWith('otpauth://totp/')
           ? { data: { secret: data.secret, otpauthUrl: data.otpauthUrl } }
           : settingsUnavailable('The API did not return a valid authenticator setup key.');
       },
     }),
     enableSettingsTwoFactor: builder.mutation({
-      async queryFn({ code }, api, _options, baseQuery) {
+      async queryFn({ code, method = 'TOTP' }, api, _options, baseQuery) {
         const blocked = settingsTwoFactorAccess(api); if (blocked) return blocked;
         if (typeof code !== 'string' || !/^\d{6}$/.test(code)) return settingsUnavailable('Enter the six-digit authenticator code.');
         const result = await settingsCompanyQuery(api, baseQuery)({ url: '/profile/two-factor/enable', method: 'POST', body: { code } });
         if (result.error) return result;
         const data = unwrapApiResponseData(result.data);
         const codes = data?.backupCodes;
-        if (data?.twoFactor?.enabled !== true || data.twoFactor.method !== 'TOTP' || !Array.isArray(codes)
+        if (data?.twoFactor?.enabled !== true || data.twoFactor.method !== method || !Array.isArray(codes)
           || !codes.length || codes.some((value) => typeof value !== 'string' || !/^[A-Z0-9]{4}-[A-Z0-9]{4}$/i.test(value))) {
           return settingsUnavailable('Two-factor setup was not confirmed with backup codes. Reload security settings before retrying.');
         }
         return { data: { backupCodes: codes } };
       },
       invalidatesTags: ['AuthOnboardingSecurity', 'SettingsTeam'],
+    }),
+    sendSettingsTwoFactorCode: builder.mutation({
+      async queryFn(_arg, api, _options, baseQuery) {
+        const blocked = settingsTwoFactorAccess(api); if (blocked) return blocked;
+        const result = await settingsCompanyQuery(api, baseQuery)({ url: '/profile/two-factor/send-code', method: 'POST' });
+        if (result.error) return result;
+        const data = unwrapApiResponseData(result.data);
+        return text(data?.maskedPhone) && epoch(data.codeExpiresAt) !== null && Number.isFinite(data.resendAfterSeconds) && data.resendAfterSeconds >= 0
+          ? { data: { maskedPhone: data.maskedPhone, resendAfterSeconds: data.resendAfterSeconds } }
+          : settingsUnavailable('We couldn’t confirm that a code was sent. Please check before trying again.');
+      },
     }),
     disableSettingsTwoFactor: builder.mutation({
       async queryFn({ currentPassword, code, backupCode }, api, _options, baseQuery) {
@@ -334,7 +349,7 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
         const data = unwrapApiResponseData(result.data);
         if (!Array.isArray(data?.sessions) || data.sessions.some((row) => !row || typeof row !== 'object' || Array.isArray(row) || !text(row.id)) || new Set(data.sessions.map((row) => row.id)).size !== data.sessions.length) return settingsUnavailable('The API did not return valid sessions.');
         const active = data.sessions.filter((row) => row.status === 'ACTIVE');
-        return { data: active.map((row) => ({ id: text(row.id), device: text(row.device) ?? '—', ip: text(row.ipAddress) ?? '—', location: text(row.location) ?? '—', lastActive: date(row.lastActiveAt), current: active.length === 1 ? true : null })) };
+        return { data: active.map((row) => ({ id: text(row.id), device: text(row.device) ?? '—', ip: text(row.ipAddress) ?? '—', location: text(row.location) ?? '—', lastActive: date(row.lastActiveAt), current: typeof row.isCurrent === 'boolean' ? row.isCurrent : null })) };
       },
       providesTags: ['SettingsSessions'],
     }),
@@ -369,4 +384,4 @@ export const settingsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanySett
   }),
 });
 
-export const { useSaveSettingsBankMutation, useUpdateSettingsBankMutation, useGetCompanySettingsQuery, useUpdateCompanySettingsMutation, useChangeSettingsPasswordMutation, useSaveSettingsPinMutation, useRequestSettingsPinResetMutation, useResetSettingsPinMutation, useGetSettingsSessionsQuery, useGetSettingsNotificationsQuery, useUpdateSettingsNotificationsMutation, useSetupSettingsTwoFactorMutation, useEnableSettingsTwoFactorMutation, useDisableSettingsTwoFactorMutation, useRegenerateSettingsBackupCodesMutation, useUpdateSettingsSignInAlertsMutation, useRevokeSettingsSessionMutation } = settingsApi;
+export const { useSaveSettingsBankMutation, useUpdateSettingsBankMutation, useGetCompanySettingsQuery, useUpdateCompanySettingsMutation, useChangeSettingsPasswordMutation, useSaveSettingsPinMutation, useRequestSettingsPinResetMutation, useResetSettingsPinMutation, useGetSettingsSessionsQuery, useGetSettingsNotificationsQuery, useUpdateSettingsNotificationsMutation, useSetupSettingsTwoFactorMutation, useEnableSettingsTwoFactorMutation, useSendSettingsTwoFactorCodeMutation, useDisableSettingsTwoFactorMutation, useRegenerateSettingsBackupCodesMutation, useUpdateSettingsSignInAlertsMutation, useRevokeSettingsSessionMutation } = settingsApi;

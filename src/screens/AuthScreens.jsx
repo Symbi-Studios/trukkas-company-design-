@@ -10,12 +10,11 @@ import {
   useForgotAccountPasswordMutation,
   useLoginAccountMutation,
   useResetAccountPasswordMutation,
-  useVerifyTwoFactorLoginMutation,
+  useVerifyTwoFactorLoginMutation, useResendTwoFactorLoginCodeMutation,
 } from '../store/features/auth/authApi.js';
 import { clearSession } from '../store/features/auth/authSlice.js';
 import { baseApi } from '../store/api/baseApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
-import { maskPhone } from '../domain/security.js';
 import { CodeInput } from '../components/SecurityInputs.jsx';
 import { CompanyAccountModal } from '../components/CompanyAccountModal.jsx';
 import styles from './AuthScreens.module.css';
@@ -77,6 +76,10 @@ export function LoginScreen() {
   const [code, setCode] = React.useState('');
   const [useBackup, setUseBackup] = React.useState(false);
   const [verifyTwoFactorLogin, { isLoading: verifying }] = useVerifyTwoFactorLoginMutation();
+  const [resendCode, { isLoading: resending }] = useResendTwoFactorLoginCodeMutation();
+  const [resendAt, setResendAt] = React.useState(0);
+  const [clock, setClock] = React.useState(Date.now());
+  React.useEffect(() => { if (resendAt <= clock) return undefined; const timer = setTimeout(() => setClock(Date.now()), 1000); return () => clearTimeout(timer); }, [resendAt, clock]);
 
   React.useEffect(() => {
     if (!challenge) return undefined;
@@ -142,6 +145,14 @@ export function LoginScreen() {
     } finally { verifyingCode.current = false; }
   }
 
+  async function resendSms(event) {
+    event.preventDefault();
+    if (resending || challengeExpired || clock < resendAt) return;
+    setError('');
+    try { const result = await resendCode({ challengeId: challenge.id }).unwrap(); setChallenge((current) => current ? { ...current, maskedPhone: result.maskedPhone, codeSent: true } : current); setCode(''); setClock(Date.now()); setResendAt(Date.now() + result.resendAfterSeconds * 1000); }
+    catch (err) { setError(getApiErrorMessage(err)); }
+  }
+
   if (challenge) {
     return (
       <AuthFrame
@@ -149,7 +160,7 @@ export function LoginScreen() {
         title="Enter your code"
         description={useBackup ? 'Enter one of your 8-character backup codes.'
           : challenge.method === 'app' ? 'Open your authenticator app and enter the 6-digit code for Trukkas.'
-            : `We texted a 6-digit code to ${maskPhone(challenge.phone)}.`}
+            : `${challenge.codeSent === false ? 'Use the code already sent' : 'We texted a 6-digit code'}${challenge.maskedPhone ? ` to ${challenge.maskedPhone}` : ''}.`}
       >
         <Notice message={error} error />
         <form className={styles.form} onSubmit={handleVerify}>
@@ -161,6 +172,7 @@ export function LoginScreen() {
           <Button type="submit" fullWidth disabled={verifying || challengeExpired || !(useBackup ? /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i.test(code.trim()) : /^\d{6}$/.test(code))}>{verifying ? 'Verifying…' : 'Verify & Sign in'}</Button>
         </form>
         <div className={styles.bottomLinks}>
+          {challenge.method === 'sms' && !useBackup && <a href="#" aria-disabled={resending || challengeExpired || clock < resendAt} onClick={resendSms}>{clock < resendAt ? `Resend code in ${Math.ceil((resendAt - clock) / 1000)}s` : resending ? 'Sending…' : 'Resend code'}</a>}
           <a href="#" onClick={(e) => { e.preventDefault(); if (verifyingCode.current) return; setUseBackup((v) => !v); setCode(''); }}>{useBackup ? 'Use verification code' : 'Use a backup code'}</a>
           <a href="#" onClick={(e) => { e.preventDefault(); if (verifyingCode.current) return; setChallenge(null); setChallengeExpired(false); setPassword(''); setError(''); }}>Back to sign in</a>
         </div>

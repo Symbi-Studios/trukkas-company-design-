@@ -76,7 +76,7 @@ export function TeamSettings({ onToast }) {
   const actionPending = useRef(false);
   const members = data?.members ?? [];
   const roles = roleData?.roles ?? [];
-  const canManage = !accessError && !loadError && access?.isOwner === true;
+  const canManage = !accessError && !loadError && access?.canManageTeam === true;
   const busy = updating || removing || resending || savingPin;
   const [inviteOpen, setInviteOpen] = useState(false);
   const [menu, setMenu] = useState(null);
@@ -89,7 +89,7 @@ export function TeamSettings({ onToast }) {
     catch (err) { throw new Error(getApiErrorMessage(err)); }
   }
   async function updateTeamMember(id, changes, pin) {
-    if (!canManage) throw new Error('Only the company owner can manage the team.');
+    if (!canManage) throw new Error('You do not have permission to manage the team.');
     try { return await updateMember({ id, changes, pin }).unwrap(); }
     catch (err) { throw new Error(getApiErrorMessage(err)); }
   }
@@ -189,7 +189,7 @@ export function RolesSettings({ onToast }) {
   const [saveRole, { isLoading: saving }] = useSaveSettingsRoleMutation();
   const [deleteRole, { isLoading: deleting }] = useDeleteSettingsRoleMutation();
   const roles = data?.roles ?? [];
-  const canManage = !accessError && !loadError && access?.isOwner === true;
+  const canManage = !accessError && !loadError && access?.canManageRoles === true;
   const busy = saving || deleting || savingPin;
   const [selectedId, setSelectedId] = useState('');
   const [draft, setDraft] = useState(null);
@@ -212,7 +212,7 @@ export function RolesSettings({ onToast }) {
     try { await persistRole(draft); } catch (err) { setError(getApiErrorMessage(err)); }
   }
   async function persistRole(values, pin) {
-    if (!canManage) throw new Error('Only the company owner can manage roles.');
+    if (!canManage) throw new Error('You do not have permission to manage roles.');
     try {
       const role = await saveRole({ ...values, pin }).unwrap();
       setSelectedId(role.id); setPendingRole(null); onToast(`${role.name} role saved.`);

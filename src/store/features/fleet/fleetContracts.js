@@ -110,7 +110,7 @@ export function truckView(source, detail = false) {
       notes: text(source.notes) ?? '',
       specs: Object.fromEntries(Object.entries(specificationFields).map(([key, label]) => [key, key === 'fuelType' ? (fuelLabel(source.fuelType ?? specs?.[label] ?? specs?.[key]) === '—' ? '' : fuelLabel(source.fuelType ?? specs?.[label] ?? specs?.[key])) : text(specs?.[label]) ?? text(specs?.[key]) ?? ''])),
     } : null,
-    lastActive: timestamp(source.lastActivityAt),
+    lastActive: timestamp(source.lastOperationalActivityAt),
     averageFuelConsumption: fuelConsumptionLabel(detail ? source.fuelConsumption : null),
     apiBacked: true, id: source.id, plate: text(source.plateNumber) ?? '—',
     status, wireStatus: text(source.status), onTrip: source.availability === 'ON_TRIP' || !!text(source.currentJob?.id),

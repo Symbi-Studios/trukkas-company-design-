@@ -1,5 +1,6 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
-import { settingsAccess, settingsCompanyQuery, settingsUnavailable } from './settingsApi.js';
+import { settingsCompanyQuery, settingsUnavailable } from './settingsApi.js';
+import { profileApi } from '../profile/profileApi.js';
 
 const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
 const collection = (value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && !Array.isArray(row)) ? value : null;
@@ -13,6 +14,14 @@ const roleView = (row) => ({
   permissions: keys(row.permissions), memberCount: Number.isSafeInteger(row.memberCount) && row.memberCount >= 0 ? row.memberCount : null,
 });
 const tags = ['SettingsTeam', 'ProfileAccess'];
+
+function teamAccess(api, permission) {
+  const account = api.getState().auth.account;
+  const result = profileApi.endpoints.getMyProfileAccess.select()(api.getState());
+  const access = result.data;
+  return !account || result.isError || access?.companyId !== account.id || access?.userId !== (account.actualUserId ?? account.id) || access?.[permission] !== true
+    ? settingsUnavailable('You do not have permission to manage this section.') : null;
+}
 
 function permissionBindings(supportedKeys) {
   if (!supportedKeys) return null;
@@ -30,9 +39,6 @@ function permissionBindings(supportedKeys) {
     'documents.manage': ['documents.upload'],
     'settings.manage': ['settings.edit'],
   })) bindings[key] = permissions.every((permission) => supportedKeys.includes(permission)) ? permissions : null;
-  // Team and role administration is explicitly owner-only, with no delegable key.
-  bindings['team.manage'] = null;
-  bindings['roles.manage'] = null;
   // Payouts now uses the documented wallet withdrawal flow as approved.
   return bindings;
 }
@@ -106,7 +112,7 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
     inviteSettingsMember: builder.mutation({
       async queryFn({ name, email, phone, roleId, pin }, api, _options, baseQuery) {
         baseQuery = settingsCompanyQuery(api, baseQuery);
-        const blocked = settingsAccess(api, true); if (blocked) return blocked;
+        const blocked = teamAccess(api, 'canManageTeam'); if (blocked) return blocked;
         if (!text(email) || !/^\S+@\S+\.\S+$/.test(email.trim()) || !text(roleId)) return settingsUnavailable('Enter a valid email and choose a role.');
         const roleResult = settingsTeamApi.endpoints.getSettingsRoles.select()(api.getState());
         if (roleResult.isError || !roleResult.data?.roles.some((role) => role.id === roleId)) return settingsUnavailable('Load and choose a confirmed company role before inviting a member.');
@@ -131,7 +137,7 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
     updateSettingsMember: builder.mutation({
       async queryFn({ id, changes, pin }, api, _options, baseQuery) {
         baseQuery = settingsCompanyQuery(api, baseQuery);
-        const blocked = settingsAccess(api, true); if (blocked) return blocked;
+        const blocked = teamAccess(api, 'canManageTeam'); if (blocked) return blocked;
         const team = settingsTeamApi.endpoints.getSettingsTeam.select()(api.getState());
         const members = team.data?.members;
         if (team.isError || !members?.some((member) => member.id === id && member.kind === 'member')) return settingsUnavailable('Choose a confirmed team member. Pending invitations can be resent or cancelled.');
@@ -165,7 +171,7 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
     removeSettingsMember: builder.mutation({
       async queryFn({ id, kind }, api, _options, baseQuery) {
         baseQuery = settingsCompanyQuery(api, baseQuery);
-        const blocked = settingsAccess(api, true); if (blocked) return blocked;
+        const blocked = teamAccess(api, 'canManageTeam'); if (blocked) return blocked;
         if (!text(id) || !['member', 'invite'].includes(kind)) return settingsUnavailable('Choose a valid member or invitation.');
         const path = `/team/${kind === 'invite' ? 'invites' : 'members'}`;
         const result = await baseQuery({ url: `${path}/${encodeURIComponent(id)}`, method: 'DELETE' });
@@ -180,7 +186,7 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
     resendSettingsInvite: builder.mutation({
       async queryFn(id, api, _options, baseQuery) {
         baseQuery = settingsCompanyQuery(api, baseQuery);
-        const blocked = settingsAccess(api, true); if (blocked) return blocked;
+        const blocked = teamAccess(api, 'canManageTeam'); if (blocked) return blocked;
         if (!text(id)) return settingsUnavailable('Choose a valid invitation.');
         const result = await baseQuery({ url: `/team/invites/${encodeURIComponent(id)}/resend`, method: 'POST' });
         if (result.error) return result;
@@ -192,7 +198,7 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
     saveSettingsRole: builder.mutation({
       async queryFn({ pin, ...draft }, api, _options, baseQuery) {
         baseQuery = settingsCompanyQuery(api, baseQuery);
-        const blocked = settingsAccess(api, true); if (blocked) return blocked;
+        const blocked = teamAccess(api, 'canManageRoles'); if (blocked) return blocked;
         const roleResult = settingsTeamApi.endpoints.getSettingsRoles.select()(api.getState());
         const cached = roleResult.data;
         if (roleResult.isError || !cached?.roles) return settingsUnavailable('Load the company role list before saving a role.');
@@ -238,7 +244,7 @@ export const settingsTeamApi = baseApi.enhanceEndpoints({ addTagTypes: ['Setting
     deleteSettingsRole: builder.mutation({
       async queryFn(id, api, _options, baseQuery) {
         baseQuery = settingsCompanyQuery(api, baseQuery);
-        const blocked = settingsAccess(api, true); if (blocked) return blocked;
+        const blocked = teamAccess(api, 'canManageRoles'); if (blocked) return blocked;
         const roles = settingsTeamApi.endpoints.getSettingsRoles.select()(api.getState());
         if (roles.isError) return settingsUnavailable('Load the company role list before deleting a role.');
         const role = roles.data?.roles.find((row) => row.id === id);

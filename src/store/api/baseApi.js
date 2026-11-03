@@ -8,7 +8,7 @@ const baseUrl = configuredBaseUrl.replace(/\/+$/, '');
 const apiLoggingDisabled = String(process.env.NEXT_PUBLIC_API_LOGGING ?? '').trim().toLowerCase() === 'false';
 const apiLoggingEnabled = process.env.NODE_ENV !== 'production' && !apiLoggingDisabled;
 const publicEndpoints = new Set([
-  'loginAccount', 'verifyTwoFactorLogin', 'addCompanyAccount', 'signUpAccount', 'refreshAccount', 'forgotAccountPassword', 'resetAccountPassword',
+  'loginAccount', 'verifyTwoFactorLogin', 'resendTwoFactorLoginCode', 'addCompanyAccount', 'signUpAccount', 'refreshAccount', 'forgotAccountPassword', 'resetAccountPassword',
   'checkAccountEmail', 'startAccountRegistration', 'resendAccountCode', 'verifyAccountPhone',
   'acceptAccountInvite', 'redeemCompanyInvite',
 ]);
@@ -37,7 +37,14 @@ let requestSequence = 0;
 
 const privateLogField = /^q$|^account$|account(?:no|number)$|^sentTo$|authorization|cookie|token|password|secret|credential|identifier|challenge|backupcode|otp|^code$|pin|email|phone|licen[cs]e|^number$|name|address|destination|^origin$|latitude|longitude|coordinates|location|description|details|dateofbirth|\bdob\b|nin|bvn|bio|avatar|photo|content|message|attachment|^body$|^subject$|^topic$|reason|comment|^reply$|instruction|notes?|documentnumber|^url$/i;
 function bodyForLog(body, seen = new WeakSet()) {
-  return body;
+  if (body == null || typeof body === 'number' || typeof body === 'boolean') return body;
+  if (typeof body === 'string') return '[REDACTED]';
+  if (typeof body !== 'object') return '[REDACTED]';
+  if (seen.has(body)) return '[Circular]';
+  seen.add(body);
+  if (Array.isArray(body)) return body.map((value) => bodyForLog(value, seen));
+  if (body instanceof FormData || body instanceof Blob || body instanceof URLSearchParams) return '[REDACTED]';
+  return Object.fromEntries(Object.entries(body).map(([key, value]) => [key, privateLogField.test(key) ? '[REDACTED]' : bodyForLog(value, seen)]));
 }
 
 function requestUrlForLog(args) {

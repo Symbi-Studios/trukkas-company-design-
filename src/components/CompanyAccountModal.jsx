@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Button, Modal, TextField } from '../ds.js';
-import { authFailureCode, useAddCompanyAccountMutation } from '../store/features/auth/authApi.js';
+import { authFailureCode, useAddCompanyAccountMutation, useResendTwoFactorLoginCodeMutation } from '../store/features/auth/authApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { CodeInput } from './SecurityInputs.jsx';
 import styles from '../screens/AuthScreens.module.css';
@@ -15,6 +15,10 @@ export function CompanyAccountModal({ email, initialPassword = '', availableRole
   const [useBackup, setUseBackup] = useState(false);
   const [error, setError] = useState('');
   const [addCompanyAccount, { isLoading: busy }] = useAddCompanyAccountMutation();
+  const [resendCode, { isLoading: resending }] = useResendTwoFactorLoginCodeMutation();
+  const [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { if (resendAt <= now) return undefined; const timer = setTimeout(() => setNow(Date.now()), 1000); return () => clearTimeout(timer); }, [resendAt, now]);
   const submitting = useRef(false);
 
   useEffect(() => {
@@ -65,10 +69,11 @@ export function CompanyAccountModal({ email, initialPassword = '', availableRole
         <TextField label="Email address" type="email" value={email} readOnly autoComplete="username" />
         {challenge ? (
           <>
-            <p className="tk-meta">{useBackup ? 'Enter one of your 8-character backup codes.' : 'Open your authenticator app and enter the 6-digit code for Trukkas.'}</p>
+            <p className="tk-meta">{useBackup ? 'Enter one of your 8-character backup codes.' : challenge.method === 'sms' ? `Enter the 6-digit code sent${challenge.maskedPhone ? ` to ${challenge.maskedPhone}` : ' to your phone'}.` : 'Open your authenticator app and enter the 6-digit code for Trukkas.'}</p>
             {useBackup ? <TextField label="Backup code" autoFocus autoComplete="one-time-code" value={code} disabled={busy} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="XXXX-XXXX" />
               : <CodeInput autoFocus value={code} onChange={setCode} onComplete={(value) => submit(null, value)} disabled={busy} />}
             <Button variant="ghost" disabled={busy} onClick={() => { setUseBackup((value) => !value); setCode(''); }}>{useBackup ? 'Use verification code' : 'Use a backup code'}</Button>
+            {challenge.method === 'sms' && !useBackup && <Button variant="ghost" disabled={busy || resending || now < resendAt} onClick={async () => { try { setError(''); const result = await resendCode({ challengeId: challenge.id }).unwrap(); setChallenge((current) => current ? { ...current, maskedPhone: result.maskedPhone } : current); setCode(''); setNow(Date.now()); setResendAt(Date.now() + result.resendAfterSeconds * 1000); } catch (err) { setError(getApiErrorMessage(err)); } }}>{now < resendAt ? `Resend code in ${Math.ceil((resendAt - now) / 1000)}s` : resending ? 'Sending…' : 'Resend code'}</Button>}
           </>
         ) : (
           <>

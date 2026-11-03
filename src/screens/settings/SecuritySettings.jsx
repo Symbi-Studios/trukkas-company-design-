@@ -1,10 +1,10 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Badge, Banner, Button, ChoiceCard, EmptyState, Icon, Modal, SectionCard, SkeletonRow, Switch, TextField } from '../../ds.js';
 import { useGetOnboardingSecurityQuery } from '../../store/features/auth/onboardingApi.js';
 import {
   useChangeSettingsPasswordMutation, useGetSettingsSessionsQuery, useSetupSettingsTwoFactorMutation,
-  useEnableSettingsTwoFactorMutation, useDisableSettingsTwoFactorMutation, useRegenerateSettingsBackupCodesMutation,
+  useEnableSettingsTwoFactorMutation, useSendSettingsTwoFactorCodeMutation, useDisableSettingsTwoFactorMutation, useRegenerateSettingsBackupCodesMutation,
   useUpdateSettingsSignInAlertsMutation, useRevokeSettingsSessionMutation, useGetSettingsNotificationsQuery,
 } from '../../store/features/settings/settingsApi.js';
 import { useGetMyProfileAccessQuery } from '../../store/features/profile/profileApi.js';
@@ -77,6 +77,10 @@ function PasswordCard({ email, updatedOn, onToast, canEdit }) {
 
 function TwoFactorSetupModal({ open, onClose, email, onEnabled, canEdit }) {
   const [stage, setStage] = useState('choose');
+  const [method, setMethod] = useState('TOTP');
+  const [smsPhone, setSmsPhone] = useState('');
+  const [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(Date.now());
   const [secret, setSecret] = useState('');
   const [otpauthUrl, setOtpauthUrl] = useState('');
   const [code, setCode] = useState('');
@@ -86,9 +90,10 @@ function TwoFactorSetupModal({ open, onClose, email, onEnabled, canEdit }) {
   const setupPending = useRef(false);
   const [beginSetup, { reset: resetSetup }] = useSetupSettingsTwoFactorMutation();
   const [enableTwoFactor, { reset: resetEnable }] = useEnableSettingsTwoFactorMutation();
+  useEffect(() => { if (!open || resendAt <= now) return undefined; const timer = setTimeout(() => setNow(Date.now()), 1000); return () => clearTimeout(timer); }, [open, resendAt, now]);
 
   function reset() {
-    setStage('choose'); setSecret(''); setOtpauthUrl(''); setCode(''); setCodes([]); setError('');
+    setStage('choose'); setMethod('TOTP'); setSmsPhone(''); setResendAt(0); setSecret(''); setOtpauthUrl(''); setCode(''); setCodes([]); setError('');
     resetSetup(); resetEnable();
   }
   async function next() {
@@ -96,8 +101,10 @@ function TwoFactorSetupModal({ open, onClose, email, onEnabled, canEdit }) {
     setupPending.current = true;
     setBusy(true); setError('');
     try {
-      const result = await beginSetup().unwrap();
-      setSecret(result.secret); setOtpauthUrl(result.otpauthUrl); setStage('verify');
+      const result = await beginSetup(method).unwrap();
+      if (method === 'SMS') { setSmsPhone(result.maskedPhone); setNow(Date.now()); setResendAt(Date.now() + result.resendAfterSeconds * 1000); setCode(''); }
+      else { setSecret(result.secret); setOtpauthUrl(result.otpauthUrl); }
+      setStage('verify');
     } catch (err) { setError(getApiErrorMessage(err)); }
     finally { resetSetup(); setupPending.current = false; setBusy(false); }
   }
@@ -106,7 +113,7 @@ function TwoFactorSetupModal({ open, onClose, email, onEnabled, canEdit }) {
     setupPending.current = true;
     setBusy(true); setError('');
     try {
-      const result = await enableTwoFactor({ code: value }).unwrap();
+      const result = await enableTwoFactor({ code: value, method }).unwrap();
       setCodes(result.backupCodes); setStage('codes');
     } catch (err) { setError(getApiErrorMessage(err)); setCode(''); }
     finally { resetEnable(); setupPending.current = false; setBusy(false); }
@@ -123,13 +130,13 @@ function TwoFactorSetupModal({ open, onClose, email, onEnabled, canEdit }) {
       }>
       {stage === 'choose' && (
         <div style={{ display: 'grid', gap: 10 }}>
-          <ChoiceCard icon="smartphone" title="Authenticator app (recommended)" description="Google Authenticator, Microsoft Authenticator, 1Password or Authy generate a new code every 30 seconds." selected onSelect={() => {}} disabled={!canEdit} />
-          <ChoiceCard icon="message-square" title="Text message (SMS)" description="SMS-based two-factor authentication is not supported for company accounts." disabled />
+          <ChoiceCard icon="smartphone" title="Authenticator app (recommended)" description="Google Authenticator, Microsoft Authenticator, 1Password or Authy generate a new code every 30 seconds." selected={method === 'TOTP'} onSelect={() => setMethod('TOTP')} disabled={!canEdit || busy} />
+          <ChoiceCard icon="message-square" title="Text message (SMS)" description="Receive a verification code by text message." selected={method === 'SMS'} onSelect={() => setMethod('SMS')} disabled={!canEdit || busy} />
         </div>
       )}
       {stage === 'verify' && (
         <div style={{ display: 'grid', gap: 14 }}>
-          <ol className={styles.steps}>
+          {method === 'TOTP' ? <><ol className={styles.steps}>
             <li>Open your authenticator app and choose <strong>Add account → Enter a setup key</strong>.</li>
             <li>Enter the key below (time-based). On a phone you can tap “Open in authenticator”.</li>
             <li>Type the 6-digit code the app shows.</li>
@@ -138,13 +145,13 @@ function TwoFactorSetupModal({ open, onClose, email, onEnabled, canEdit }) {
             <span>{formatSecret(secret)}</span>
             <Button size="sm" variant="outline" icon="copy" onClick={() => navigator.clipboard?.writeText(secret)}>Copy</Button>
           </div>
-          <a href={otpauthUrl} style={{ color: 'var(--tk-blue)', font: '600 13px/18px var(--tk-font-sans)' }}>Open in authenticator app</a>
+          <a href={otpauthUrl} style={{ color: 'var(--tk-blue)', font: '600 13px/18px var(--tk-font-sans)' }}>Open in authenticator app</a></> : <><p>Enter the 6-digit code sent to {smsPhone}.</p><Button size="sm" variant="outline" disabled={busy || now < resendAt} onClick={next}>{now < resendAt ? `Resend code in ${Math.ceil((resendAt - now) / 1000)}s` : 'Resend code'}</Button></>}
           <CodeInput autoFocus value={code} onChange={setCode} onComplete={(v) => verify(v)} error={error} disabled={busy} />
         </div>
       )}
       {stage === 'codes' && (
         <div style={{ display: 'grid', gap: 12 }}>
-          <Banner tone="success" title="Two-factor authentication is on">Use a backup code if you lose access to your authenticator app. Each code works once.</Banner>
+          <Banner tone="success" title="Two-factor authentication is on">Use a backup code if you lose access to your verification method. Each code works once.</Banner>
           <BackupCodes codes={codes} email={email} />
         </div>
       )}
@@ -166,12 +173,17 @@ function TwoFactorCard({ security, email, canEdit, onToast }) {
   const proofPending = useRef(false);
   const [disableTwoFactor, { isLoading: disabling }] = useDisableSettingsTwoFactorMutation();
   const [regenerateCodes, { isLoading: regenerating, reset: resetRegenerate }] = useRegenerateSettingsBackupCodesMutation();
+  const [sendCode, { isLoading: sendingCode }] = useSendSettingsTwoFactorCodeMutation();
+  const [smsNotice, setSmsNotice] = useState('');
+  const [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { if (!proofOpen || resendAt <= now) return undefined; const timer = setTimeout(() => setNow(Date.now()), 1000); return () => clearTimeout(timer); }, [proofOpen, resendAt, now]);
   const remaining = tf.backupCodesRemaining ?? '—';
   const busy = disabling || regenerating;
   const validProof = /^\d{6}$/.test(proof) || /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i.test(proof.trim());
 
   function openProof(action) {
-    setProofAction(action); setPassword(''); setProof(''); setError(''); setProofOpen(true);
+    setProofAction(action); setPassword(''); setProof(''); setError(''); setSmsNotice(''); setNow(Date.now()); setProofOpen(true);
   }
   function closeProof() {
     setProofOpen(false); setPassword(''); setProof(''); setError(''); resetRegenerate();
@@ -194,6 +206,12 @@ function TwoFactorCard({ security, email, canEdit, onToast }) {
     finally { proofPending.current = false; }
   }
   function closeCodes() { setCodesOpen(false); setNewCodes([]); }
+  async function requestCode() {
+    if (sendingCode || now < resendAt) return;
+    setError('');
+    try { const result = await sendCode().unwrap(); setSmsNotice(`Code sent to ${result.maskedPhone}.`); setNow(Date.now()); setResendAt(Date.now() + result.resendAfterSeconds * 1000); }
+    catch (err) { setError(getApiErrorMessage(err)); }
+  }
 
   return (
     <SectionCard title="Two-Factor Authentication (2FA)" description="Require a one-time code in addition to your password."
@@ -202,7 +220,7 @@ function TwoFactorCard({ security, email, canEdit, onToast }) {
         <div>
           <div className={styles.row}>
             <span className={styles.iconTile} data-tone="green"><Icon name={tf.method === 'app' ? 'smartphone' : 'message-square'} size={18} /></span>
-            <span className={styles.rowMain}><strong>{tf.method === 'app' ? 'Authenticator app' : '—'}</strong><small>Enabled {tf.enabledOn}</small></span>
+            <span className={styles.rowMain}><strong>{tf.method === 'app' ? 'Authenticator app' : tf.method === 'sms' ? 'Text message (SMS)' : '—'}</strong><small>Enabled {tf.enabledOn}</small></span>
             <Button variant="danger" size="sm" disabled={!canEdit || tf.available !== true} onClick={() => openProof('disable')}>Turn Off</Button>
           </div>
           <div className={styles.row}>
@@ -222,10 +240,11 @@ function TwoFactorCard({ security, email, canEdit, onToast }) {
       <TwoFactorSetupModal open={setupOpen} onClose={() => setSetupOpen(false)} email={email} canEdit={canEdit} onEnabled={() => onToast('Two-factor authentication enabled.')} />
       <Modal open={proofOpen} onClose={() => { if (!proofPending.current) closeProof(); }} width={420}
         title={proofAction === 'disable' ? 'Turn off 2FA?' : 'Regenerate backup codes'}
-        description={proofAction === 'disable' ? 'Confirm with your password and an authenticator or backup code.' : 'Confirm with your password and an authenticator or backup code. Old backup codes will stop working.'}
+        description={proofAction === 'disable' ? 'Confirm with your password and a verification or backup code.' : 'Confirm with your password and a verification or backup code. Old backup codes will stop working.'}
         footer={<><Button variant="outline" disabled={busy} onClick={closeProof}>Cancel</Button><Button variant={proofAction === 'disable' ? 'danger' : 'primary'} disabled={!canEdit || busy || !password || !validProof} onClick={confirmProof}>{busy ? 'Saving…' : proofAction === 'disable' ? 'Turn Off 2FA' : 'Regenerate Codes'}</Button></>}>
         <div style={{ display: 'grid', gap: 12 }}>
           <TextField label="Password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          {tf.method === 'sms' && <><Button size="sm" variant="outline" disabled={sendingCode || now < resendAt} onClick={requestCode}>{now < resendAt ? `Resend code in ${Math.ceil((resendAt - now) / 1000)}s` : 'Send verification code'}</Button>{smsNotice && <span className="tk-meta">{smsNotice}</span>}</>}
           <TextField label="6-digit code or backup code" autoComplete="off" value={proof} onChange={(event) => setProof(event.target.value.toUpperCase())} error={error || undefined} />
         </div>
       </Modal>

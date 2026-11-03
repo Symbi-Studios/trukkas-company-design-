@@ -69,11 +69,11 @@ const existingRegistration = (result) => authFailureCode(result.error) === 'EMAI
 function loginChallenge(response, purpose) {
   const data = unwrapApiResponseData(response);
   if (data?.twoFactorRequired !== true) return null;
-  if (typeof data.challengeId !== 'string' || !data.challengeId.trim() || data.method !== 'TOTP'
+  if (typeof data.challengeId !== 'string' || !data.challengeId.trim() || !['TOTP', 'SMS'].includes(data.method)
     || timestamp(data.expiresAt) === null || timestamp(data.expiresAt) <= Date.now()) {
     return unavailable('The API did not return a valid sign-in challenge. Please sign in again.');
   }
-  return { data: { twoFactorRequired: true, challenge: { id: data.challengeId, method: 'app', expiresAt: data.expiresAt, purpose } } };
+  return { data: { twoFactorRequired: true, challenge: { id: data.challengeId, method: data.method === 'SMS' ? 'sms' : 'app', maskedPhone: typeof data.maskedPhone === 'string' ? data.maskedPhone : null, codeSent: typeof data.codeSent === 'boolean' ? data.codeSent : null, expiresAt: data.expiresAt, purpose } } };
 }
 
 function twoFactorBody({ challengeId, code, backupCode }) {
@@ -225,6 +225,17 @@ export const authApi = baseApi.injectEndpoints({
         return result.error ? result : sessionFromResponse(result.data, baseQuery, true);
       },
       onQueryStarted: storeSession,
+    }),
+    resendTwoFactorLoginCode: builder.mutation({
+      async queryFn({ challengeId }, _api, _options, baseQuery) {
+        if (typeof challengeId !== 'string' || !challengeId.trim()) return unavailable('Sign in again to request a new code.');
+        const result = await baseQuery(post('/auth/2fa/resend', { challengeId }));
+        if (result.error) return result;
+        const data = unwrapApiResponseData(result.data);
+        return typeof data?.maskedPhone === 'string' && timestamp(data.codeExpiresAt) !== null && Number.isFinite(data.resendAfterSeconds) && data.resendAfterSeconds >= 0
+          ? { data: { maskedPhone: data.maskedPhone, resendAfterSeconds: data.resendAfterSeconds } }
+          : unavailable('We couldn’t confirm that a code was sent. Please check before trying again.');
+      },
     }),
     addCompanyAccount: builder.mutation({
       async queryFn({ email, password, challengeId, challengePurpose, code, backupCode }, _api, _options, baseQuery) {
@@ -501,7 +512,7 @@ export const authApi = baseApi.injectEndpoints({
 });
 
 export const {
-  useLoginAccountMutation, useVerifyTwoFactorLoginMutation, useAddCompanyAccountMutation, useCheckAccountEmailMutation,
+  useLoginAccountMutation, useVerifyTwoFactorLoginMutation, useResendTwoFactorLoginCodeMutation, useAddCompanyAccountMutation, useCheckAccountEmailMutation,
   useStartAccountRegistrationMutation, useResendAccountCodeMutation, useVerifyAccountPhoneMutation,
   useSignUpAccountMutation, useSaveOnboardingCompanyMutation, useFinishCompanyOnboardingMutation, useRefreshAccountMutation,
   useLazyGetOnboardingStatusQuery, useRetryCompanyVerificationMutation,

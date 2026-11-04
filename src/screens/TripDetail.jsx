@@ -240,9 +240,9 @@ function CostsSection({ trip, job, onToast }) {
   const [draft, setDraft] = useState({ category: TRIP_COST_CATEGORIES[0], amount: '', description: '' });
   const [addCost, { isLoading: saving }] = useAddCompanyTripCostMutation();
   const submitting = useRef(false);
-  const revenue = trip.revenue;
+  const revenue = trip.marginRevenue;
   const total = trip.costTotal;
-  const margin = null;
+  const margin = trip.margin;
   async function submit(event) {
     event.preventDefault();
     const amount = Number(draft.amount);
@@ -260,7 +260,7 @@ function CostsSection({ trip, job, onToast }) {
       <div className={styles.costStats}>
         <StatCard icon="banknote" tint="green" label="Trip Revenue" value={amountLabel(revenue)} caption="Agreed rate for this truck" />
         <StatCard icon="receipt" tint="amber" label="Total Costs" value={amountLabel(total)} caption={`${trip.costs?.length ?? '—'} entries`} />
-        <StatCard icon="trending-up" tint={margin === null || margin >= 0 ? 'blue' : 'red'} label="Net Margin" value={amountLabel(margin)} caption={margin !== null && revenue > 0 ? `${Math.round((margin / revenue) * 100)}% of revenue` : '—'} />
+        <StatCard icon="trending-up" tint={margin == null || margin >= 0 ? 'blue' : 'red'} label="Net Margin" value={amountLabel(margin)} caption={`${trip.marginPercent != null ? `${trip.marginPercent}% of revenue` : '—'}${trip.marginFinal === false ? ' · Not final' : ''}`} />
       </div>
       <SectionCard title="Trip Costs" pad="none">
         {trip.costs === null ? <span className="tk-meta">—</span> : trip.costs.length === 0 ? <div style={{ padding: 24 }}><EmptyState icon="receipt" title="No costs logged" description="Log fuel, tolls, allowances and other trip expenses." /></div> : (

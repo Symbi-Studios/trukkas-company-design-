@@ -101,6 +101,13 @@ export function truckView(source, detail = false) {
   const status = source.availability === 'ON_TRIP' && source.status === 'ACTIVE' ? 'On Trip'
     : ({ PENDING_REVIEW: 'Pending Review', ACTIVE: 'Active', INACTIVE: 'Inactive', MAINTENANCE: 'In Maintenance', REJECTED: 'Rejected', APPROVED: 'Approved' })[source.status] ?? '—';
   return {
+    totalEarnings: detail && source.stats?.currency === 'NGN' && source.stats?.period === 'ALL_TIME' ? number(source.stats.totalEarned) : null,
+    netEarned: detail && source.stats?.currency === 'NGN' && source.stats?.period === 'ALL_TIME' ? number(source.stats.netEarned) : null,
+    maintenanceCost: detail && source.stats?.currency === 'NGN' && source.stats?.period === 'ALL_TIME' ? number(source.stats.maintenanceCost) : null,
+    maintenanceWithoutCost: detail && source.stats?.currency === 'NGN' && source.stats?.period === 'ALL_TIME' ? count(source.stats.maintenanceWithoutCost) : null,
+    netAfterMaintenance: detail && source.stats?.currency === 'NGN' && source.stats?.period === 'ALL_TIME' && typeof source.stats.netAfterMaintenance === 'number' && Number.isFinite(source.stats.netAfterMaintenance) ? source.stats.netAfterMaintenance : null,
+    earningsSeries: detail && source.earnings?.currency === 'NGN' && source.earnings?.period === 'ALL_TIME' && source.earnings?.monthly?.timezone === 'Africa/Lagos' && source.earnings?.monthly?.months === 12 && Array.isArray(source.earnings.monthly.series) && source.earnings.monthly.series.length === 12 && source.earnings.monthly.series.every((row) => /^\d{4}-(0[1-9]|1[0-2])$/.test(row?.month ?? '') && number(row?.gross) !== null)
+      ? { labels: source.earnings.monthly.series.map((row) => row.month), points: source.earnings.monthly.series.map((row) => row.gross) } : null,
     editDraft: detail ? {
       plate: text(source.plateNumber) ?? '', make: text(source.make) ?? '', model: text(source.model) ?? '',
       year: text(source.year) ?? '', color: text(source.color) ?? '', vin: text(source.vin) ?? '', engineNumber: text(source.engineNumber) ?? '',
@@ -196,12 +203,13 @@ export function maintenanceView(source) {
 
 export function fleetTripView(source) {
   if (!text(source?.id)) return null;
+  const earnings = object(source.money?.earnings);
   return {
     id: source.id, number: text(source.tripNumber) ?? '—',
     status: ({ DRIVER_ASSIGNED: 'Assigned', DRIVER_EN_ROUTE: 'Assigned', DRIVER_ARRIVED: 'Assigned', PICKUP_COMPLETED: 'Picked Up', IN_TRANSIT: 'In Transit', CARGO_ARRIVED: 'At Destination', DEMURRAGE_IN_PROGRESS: 'At Destination', OFFLOADING: 'At Destination', OFFLOAD_COMPLETED: 'At Destination', CONTAINER_RETURNED: 'At Destination', COMPLETED: 'Completed', CANCELLED: 'Cancelled', DISPUTED: 'Disputed' })[source.status] ?? '—',
     route: text(source.origin) && text(source.destination) ? `${source.origin.trim()} → ${source.destination.trim()}` : '—',
     cargoType: text(source.cargo?.description) ?? '—', pickupDate: dateLabel(source.pickupDate),
-    budget: null,
+    budget: earnings?.currency === 'NGN' ? number(earnings.gross) : null,
   };
 }
 

@@ -5,22 +5,19 @@ import { Button, Card, DataTable, EmptyState, SkeletonRow, StatCard } from '../d
 import { FleetFuelLogModal } from '../components/FleetVehicleModals.jsx';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
-import { useGetFleetFuelLogsQuery, useGetFleetMaintenanceQuery, useGetFleetTripsQuery } from '../store/features/fleet/fleetApi.js';
+import { useGetFleetFuelLogsQuery } from '../store/features/fleet/fleetApi.js';
 import { formatNaira } from '../mock/format.js';
 import { VehicleDetailFrame } from './VehicleDetailFrame.jsx';
 
 export function VehicleFuelCosts() {
   const { truck } = useFleetVehicle();
-  const { currentData: maintenanceData, error: maintenanceError } = useGetFleetMaintenanceQuery(truck?.id, { skip: !truck });
-  const maintenance = maintenanceError ? undefined : maintenanceData?.records;
   const [fuelOpen, setFuelOpen] = useState(false);
   const { currentData: fuelData, error: fuelError, isLoading: fuelLoading } = useGetFleetFuelLogsQuery(truck?.id, { skip: !truck, refetchOnMountOrArgChange: true });
   const fuel = fuelError ? undefined : fuelData;
   const litres = (value) => typeof value === 'number' ? value.toLocaleString() + ' L' : '—';
-  const { currentData: tripData, error: tripsError } = useGetFleetTripsQuery(truck?.id, { skip: !truck });
-  const trips = tripsError ? undefined : tripData;
-  const totalMaintenanceCost = null;
-  const totalEarnings = null;
+  const totalMaintenanceCost = truck?.maintenanceCost ?? null;
+  const totalEarnings = truck?.netEarned ?? null;
+  const incomplete = truck?.maintenanceWithoutCost;
   const money = (value) => typeof value === 'number' && Number.isFinite(value) ? formatNaira(value) : '—';
 
   if (!truck) return <VehicleDetailFrame tab="costs" title="Vehicle not found"><EmptyState icon="fuel" title="Not found" /></VehicleDetailFrame>;
@@ -42,7 +39,7 @@ export function VehicleFuelCosts() {
       <section className="tk-money-stats" data-fit style={{ gap: 12, marginBottom: 20 }}>
         <StatCard icon="wrench" label="Total Maintenance Cost" value={money(totalMaintenanceCost)} labelPosition="bottom" />
         <StatCard icon="banknote" tint="green" label="Total Trip Earnings" value={money(totalEarnings)} labelPosition="bottom" />
-        <StatCard icon="gauge" tint="purple" label="Net (Earnings − Maintenance)" value={money(totalEarnings === null || totalMaintenanceCost === null ? null : totalEarnings - totalMaintenanceCost)} labelPosition="bottom" />
+        <StatCard icon="gauge" tint="purple" label="Net (Earnings − Maintenance)" value={money(truck?.netAfterMaintenance)} caption={incomplete === null || incomplete === undefined ? '—' : incomplete > 0 ? 'Incomplete: some maintenance costs are missing' : undefined} labelPosition="bottom" />
       </section>
       <section className="tk-money-stats" data-fit style={{ gap: 12, marginBottom: 20 }}>
         <StatCard icon="fuel" label="Fuel Purchased" value={litres(fuel?.totalLitres)} labelPosition="bottom" />

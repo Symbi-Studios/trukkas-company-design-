@@ -31,6 +31,7 @@ export function companyDriverDetailView(source) {
     status: availabilityLabels[source.availability] ?? (onTrip ? 'On Trip' : source.truck === null ? 'Unassigned' : '—'),
     joined: dateLabel(source.joinedAt), address: text(source.address) ?? '—',
     tripsCompleted: count(source.stats?.completedTrips) ?? '—',
+    earnings: source.stats?.currency === 'NGN' && source.stats?.period === 'ALL_TIME' ? number(source.stats.revenueGenerated) : null,
     onTimeRate: source.performance?.windowDays === 90 ? percent(source.performance.onTimePercent) : null,
     incidents: source.performance?.windowDays === 90 ? count(source.performance.incidentCount) : null,
     safetyScore: source.performance?.windowDays === 90 ? percent(source.performance.safetyScore) : null,

@@ -46,8 +46,8 @@ export function VehicleTripsHistory() {
   const completed = trips?.filter((t) => t.status === 'Completed');
   const cancelled = knownStatuses ? trips.filter((t) => t.status === 'Cancelled').length : '—';
   const ongoing = knownStatuses ? trips.filter((t) => !['Completed', 'Cancelled', 'Disputed'].includes(t.status)).length : '—';
-  const totalEarnings = null;
-  const series = null;
+  const totalEarnings = truck?.totalEarnings ?? null;
+  const series = truck?.earningsSeries ?? null;
   const money = (value) => typeof value === 'number' && Number.isFinite(value) ? formatNaira(value) : '—';
   const routeCounts = Object.values((trips ?? []).filter((trip) => trip.route !== '—').reduce((acc, t) => {
     if (!acc[t.route]) acc[t.route] = { route: t.route, count: 0 };
@@ -76,7 +76,7 @@ export function VehicleTripsHistory() {
           <Card style={{ display: 'grid', gap: 10 }}>
             <h3 className="tk-title" style={{ margin: 0, fontSize: 14 }}>Total Earnings</h3>
             <span style={{ font: '700 26px/1 var(--tk-font-sans)', color: 'var(--tk-ink-900)' }}>{money(totalEarnings)}</span>
-            <BarChart height={110} labels={series?.labels ?? []} series={series ? [{ name: 'Earnings', color: 'var(--tk-blue)', points: series.points }] : []} format={series ? (value) => value : () => '—'} />
+            <BarChart height={110} labels={series?.labels ?? []} series={series ? [{ name: 'Earnings', color: 'var(--tk-blue)', points: series.points }] : []} format={series ? money : () => '—'} />
           </Card>
           <Card style={{ display: 'grid', gap: 8 }}>
             <h3 className="tk-title" style={{ margin: 0, fontSize: 14 }}>Top Routes</h3>

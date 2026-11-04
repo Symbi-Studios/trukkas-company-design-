@@ -38,7 +38,7 @@ export function VehicleMaintenance() {
   const completed = knownStatuses ? records.filter((r) => r.status === 'Completed').length : null;
   const upcoming = knownStatuses ? records.filter((r) => r.status === 'Upcoming').length : null;
   const overdue = knownStatuses ? records.filter((r) => r.status === 'Overdue').length : null;
-  const totalCost = null;
+  const totalCost = error ? null : maintenanceData?.completedCost ?? null;
   const next = error ? null : maintenanceData?.nextDue;
   const money = (value) => typeof value === 'number' && Number.isFinite(value) ? formatNaira(value) : '—';
   const percent = (value) => value === null ? '—' : `${records.length ? Math.round(value / records.length * 100) : 0}%`;

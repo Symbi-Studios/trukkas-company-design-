@@ -43,7 +43,7 @@ export function VehicleDetail() {
   const trips = tripsError ? undefined : tripData;
   const onTrip = truck?.onTrip || trips?.some((trip) => !['Completed', 'Cancelled', 'Disputed', '—'].includes(trip.status));
   const changesLocked = !trips || onTrip || !truck?.driverKnown;
-  const totalEarnings = null;
+  const totalEarnings = truck?.totalEarnings ?? null;
   async function saveSetting(fields) {
     if (updating.current) return false;
     updating.current = true;

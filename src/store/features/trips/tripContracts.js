@@ -201,6 +201,10 @@ export function tripView(source, isDetail = false, jobDetails = null) {
     notes: notes?.map((note) => ({ id: text(note.id), author: text(note.authorName) ?? '—', body: text(note.body) ?? '—', time: timestampLabel(note.createdAt) })) ?? null,
     costs, costTotal: costsPayload?.currency === 'NGN' ? number(costsPayload.total) : null,
     messages: null, revenue,
+    margin: source.money?.margin?.currency === 'NGN' && typeof source.money.margin.netMargin === 'number' && Number.isFinite(source.money.margin.netMargin) ? source.money.margin.netMargin : null,
+    marginPercent: source.money?.margin?.currency === 'NGN' && typeof source.money.margin.marginPercent === 'number' && Number.isFinite(source.money.margin.marginPercent) ? source.money.margin.marginPercent : null,
+    marginRevenue: source.money?.margin?.currency === 'NGN' ? number(source.money.margin.revenue) : null,
+    marginFinal: source.money?.margin?.currency === 'NGN' ? boolean(source.money.margin.final) : null,
     cancellationRequested: boolean(source.cancellationRequested),
     podSubmitted,
     actions: {

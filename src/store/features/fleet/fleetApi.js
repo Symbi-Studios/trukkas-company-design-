@@ -432,14 +432,18 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
         const blocked = maintenanceAccess(api); if (blocked) return blocked;
         baseQuery = maintenanceQuery(api, baseQuery);
         if (truckId !== undefined && !text(truckId)) return unavailable('This vehicle has no API ID.');
-        let nextDue = null;
+        let nextDue = null, completedCost = null;
         const result = await allPages(baseQuery, api, '/maintenance', 'maintenance', text(truckId) ? { truckId } : {}, (data, page) => {
-          if (page === 1) nextDue = maintenanceDueView(data.nextDue);
+          if (page === 1) {
+            nextDue = maintenanceDueView(data.nextDue);
+            const value = data.costTotals?.completedCost;
+            completedCost = data.costTotals?.currency === 'NGN' && data.costTotals?.completedWithoutCost === 0 && typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+          }
         });
         if (result.error) return result;
         if (truckId && result.data.some((item) => item.truck?.id !== truckId)) return unavailable('The API returned maintenance for another truck.');
         if (truckId && nextDue && nextDue.truckId !== truckId) return unavailable('The API returned a next service for another truck.');
-        return { data: { records: result.data.map(maintenanceView), nextDue } };
+        return { data: { records: result.data.map(maintenanceView), nextDue, completedCost } };
       },
       providesTags: ['CompanyMaintenance'],
     }),

@@ -1,4 +1,5 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
+import { validMoneyAmount } from '../../../domain/money.js';
 import { getApiErrorMessage } from '../../api/getApiErrorMessage.js';
 import { assignedFleetDriverView, count, dateLabel, driverView, fleetFuelLogsView, fleetFuelView, fleetSummaryView, fleetActivityView, fleetDocumentTypes, fleetDocumentView, fleetEditedSpecifications, fleetSpecificationsBody, fleetTripView, maintenanceDueView, maintenanceTypeToWire, maintenanceView, ownershipToWire, rows, safeUrl, text, truckView, vehicleClassToWire } from './fleetContracts.js';
 
@@ -319,6 +320,7 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
         baseQuery = fleetQuery(api, baseQuery);
         if (!text(truckId)) return unavailable('This vehicle has no API ID.');
         const litres = maintenanceCost(draft?.litres), amount = maintenanceCost(draft?.amount), odometerKm = maintenanceCost(draft?.odometer);
+        if (!validMoneyAmount(draft?.amount)) return unavailable('Enter a cost with at most two decimal places.');
         if (!Number.isFinite(litres) || litres <= 0 || amount === null || !Number.isFinite(amount) || amount < 0) return unavailable('Enter litres above zero and a total cost of zero or more.');
         if (draft.date && (!validDate(draft.date) || draft.date > new Date().toISOString().slice(0, 10))) return unavailable('Enter a valid fuel purchase date that is not in the future.');
         if (odometerKm !== null && (!Number.isFinite(odometerKm) || odometerKm < 0)) return unavailable('Enter a valid odometer reading.');
@@ -452,6 +454,7 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
         const due = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00Z`) : null;
         if (!due || !Number.isFinite(due.getTime()) || due.toISOString().slice(0, 10) !== date) return unavailable('Enter a valid scheduled date.');
         const cost = maintenanceCost(estimatedCost);
+        if (cost !== null && !validMoneyAmount(estimatedCost)) return unavailable('Enter a cost with at most two decimal places.');
         if (cost !== null && (!Number.isFinite(cost) || cost < 0)) return unavailable('Enter a valid estimated cost.');
         const result = await baseQuery({ url: '/maintenance', method: 'POST', body: { truckId, type, description: description.trim(), dueDate: date, ...(cost === null ? {} : { estimatedCost: cost }) } });
         if (result.error) return result;
@@ -468,6 +471,7 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
         const body = {};
         for (const [key, value] of Object.entries({ actualCost, odometerKm })) {
           const parsed = maintenanceCost(value);
+          if (key === 'actualCost' && parsed !== null && !validMoneyAmount(value)) return unavailable('Enter a cost with at most two decimal places.');
           if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0)) return unavailable('Enter a cost and odometer reading of zero or more.');
           if (parsed !== null) body[key] = parsed;
         }
@@ -504,6 +508,7 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
         const type = maintenanceTypeToWire(serviceType);
         if (!type || !text(description) || description.trim().length > 1000 || !validDate(date)) return unavailable('Choose a service type, a description of up to 1000 characters and a valid scheduled date.');
         const cost = maintenanceCost(estimatedCost);
+        if (cost !== null && !validMoneyAmount(estimatedCost)) return unavailable('Enter a cost with at most two decimal places.');
         if (cost !== null && (!Number.isFinite(cost) || cost < 0)) return unavailable('Enter a valid estimated cost.');
         const current = await baseQuery(`/maintenance/${encodeURIComponent(id)}`);
         if (current.error) return current;

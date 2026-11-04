@@ -5,7 +5,6 @@ import { useNavigate } from '../router.js';
 import { ActivityFeed, Avatar, Badge, Button, Card, EmptyState, Icon, LabelValue, Modal, SectionCard, TextField } from '../ds.js';
 import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
 import { useGetFleetAssignedDriverQuery, useGetFleetTripsQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
-import { total } from '../store/features/fleet/fleetContracts.js';
 import { fleetDetailHref } from '../domain/fleetLinks.js';
 import { driverDetailHref } from '../domain/driverLinks.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
@@ -44,7 +43,7 @@ export function VehicleDetail() {
   const trips = tripsError ? undefined : tripData;
   const onTrip = truck?.onTrip || trips?.some((trip) => !['Completed', 'Cancelled', 'Disputed', '—'].includes(trip.status));
   const changesLocked = !trips || onTrip || !truck?.driverKnown;
-  const totalEarnings = total(trips, 'budget');
+  const totalEarnings = null;
   async function saveSetting(fields) {
     if (updating.current) return false;
     updating.current = true;

@@ -83,7 +83,7 @@ export function FleetFuelLogModal({ truckId, onClose }) {
         <fieldset disabled={busy} style={{ ...fieldGrid, border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           <TextField disabled={busy} label="Purchase Date" type="date" max={todayValue()} value={draft.date} onChange={set('date')} />
           <TextField disabled={busy} label="Litres" required type="number" min="0.01" step="any" value={draft.litres} onChange={set('litres')} />
-          <TextField disabled={busy} label="Total Cost (₦)" required type="number" min="0" step="any" value={draft.amount} onChange={set('amount')} />
+          <TextField disabled={busy} label="Total Cost (₦)" required type="number" min="0" step="0.01" value={draft.amount} onChange={set('amount')} />
           <TextField disabled={busy} label="Odometer Reading (km)" type="number" min="0" step="any" value={draft.odometer} onChange={set('odometer')} />
           <TextField disabled={busy} label="Fuel Station" value={draft.station} onChange={set('station')} />
           <Select disabled={busy} label="Fuel Type" value={draft.fuelType} options={['Diesel', 'Petrol', 'CNG', 'LNG', 'Electric']} onChange={set('fuelType')} />

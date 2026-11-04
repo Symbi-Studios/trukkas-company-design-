@@ -6,7 +6,6 @@ import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
 import { useGetFleetMaintenanceQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
 import { MaintenanceModal } from '../components/MaintenanceModal.jsx';
 import { MaintenanceActionModal, MaintenanceExportButton } from '../components/MaintenanceActions.jsx';
-import { total } from '../store/features/fleet/fleetContracts.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { Toast, useToast } from '../components/Toast.jsx';
 import { formatNaira } from '../mock/format.js';
@@ -39,7 +38,7 @@ export function VehicleMaintenance() {
   const completed = knownStatuses ? records.filter((r) => r.status === 'Completed').length : null;
   const upcoming = knownStatuses ? records.filter((r) => r.status === 'Upcoming').length : null;
   const overdue = knownStatuses ? records.filter((r) => r.status === 'Overdue').length : null;
-  const totalCost = knownStatuses ? total(records.filter((record) => record.status === 'Completed'), 'cost') : null;
+  const totalCost = null;
   const next = error ? null : maintenanceData?.nextDue;
   const money = (value) => typeof value === 'number' && Number.isFinite(value) ? formatNaira(value) : '—';
   const percent = (value) => value === null ? '—' : `${records.length ? Math.round(value / records.length * 100) : 0}%`;

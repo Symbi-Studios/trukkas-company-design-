@@ -196,33 +196,13 @@ export function maintenanceView(source) {
 
 export function fleetTripView(source) {
   if (!text(source?.id)) return null;
-  const earnings = object(source.money?.earnings);
-  const releasedAmount = (payment) => !object(payment) || number(payment.amount) === null ? null : payment.paidAt === null ? 0 : instant(payment.paidAt) ? payment.amount : null;
-  const mobilization = releasedAmount(earnings?.mobilization), final = releasedAmount(earnings?.final);
-  const released = earnings?.currency === 'NGN' && earnings.serviceFee === 0 && mobilization !== null && final !== null ? mobilization + final : null;
   return {
     id: source.id, number: text(source.tripNumber) ?? '—',
     status: ({ DRIVER_ASSIGNED: 'Assigned', DRIVER_EN_ROUTE: 'Assigned', DRIVER_ARRIVED: 'Assigned', PICKUP_COMPLETED: 'Picked Up', IN_TRANSIT: 'In Transit', CARGO_ARRIVED: 'At Destination', DEMURRAGE_IN_PROGRESS: 'At Destination', OFFLOADING: 'At Destination', OFFLOAD_COMPLETED: 'At Destination', CONTAINER_RETURNED: 'At Destination', COMPLETED: 'Completed', CANCELLED: 'Cancelled', DISPUTED: 'Disputed' })[source.status] ?? '—',
     route: text(source.origin) && text(source.destination) ? `${source.origin.trim()} → ${source.destination.trim()}` : '—',
     cargoType: text(source.cargo?.description) ?? '—', pickupDate: dateLabel(source.pickupDate),
-    budget: released,
-    payments: released === null ? null : [earnings.mobilization, earnings.final].filter((payment) => instant(payment.paidAt)).map((payment) => ({ amount: payment.amount, paidAt: payment.paidAt })),
+    budget: null,
   };
-}
-
-export const total = (collection, field) => !Array.isArray(collection) || collection.some((row) => number(row[field]) === null) ? null : collection.reduce((sum, row) => sum + row[field], 0);
-
-export function fleetEarningsSeries(trips) {
-  if (!Array.isArray(trips) || trips.some((trip) => !Array.isArray(trip.payments))) return null;
-  const monthKey = (date) => {
-    const parts = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', timeZone: 'Africa/Lagos' }).formatToParts(date);
-    return `${parts.find((part) => part.type === 'year').value}-${parts.find((part) => part.type === 'month').value}`;
-  };
-  const [year, month] = monthKey(new Date()).split('-').map(Number);
-  const months = Array.from({ length: 6 }, (_, index) => new Date(Date.UTC(year, month - 6 + index, 1)));
-  const keys = months.map(monthKey);
-  const payments = trips.flatMap((trip) => trip.payments);
-  return { labels: months.map((date) => new Intl.DateTimeFormat('en-NG', { month: 'short', timeZone: 'Africa/Lagos' }).format(date)), points: keys.map((key) => payments.filter((payment) => monthKey(new Date(payment.paidAt)) === key).reduce((sum, payment) => sum + payment.amount, 0)) };
 }
 
 export function fleetSummaryView(source) {

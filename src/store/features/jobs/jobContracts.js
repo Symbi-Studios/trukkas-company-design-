@@ -117,9 +117,7 @@ export function earningsView(source, job) {
   const earnings = object(source?.money?.earnings);
   if (!earnings || earnings.currency !== 'NGN') return null;
   const gross = number(earnings.gross), fee = number(earnings.serviceFee), net = number(earnings.net);
-  const releasedAmount = (payment) => !object(payment) || number(payment.amount) === null ? null : payment.paidAt === null ? 0 : instant(payment.paidAt) ? payment.amount : null;
-  const mobilization = releasedAmount(earnings.mobilization), final = releasedAmount(earnings.final);
-  const released = fee === 0 && mobilization !== null && final !== null ? mobilization + final : null;
+  const released = null;
   return { totals: { gross, fee, net }, released, rows: [{ trip: { id: job.id, number: job.number, truckPlate: job.truckPlate, deliveryDate: '—' }, gross, payout: { status: text(earnings.payoutStatus) ?? '—' } }], status: text(earnings.payoutStatus), complete: gross !== null && fee !== null && net !== null };
 }
 

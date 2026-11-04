@@ -5,7 +5,6 @@ import { useNavigate } from '../router.js';
 import { Badge, BarChart, Button, Card, DataTable, EmptyState, SearchField, Select, SkeletonRow } from '../ds.js';
 import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
 import { useGetFleetTripsQuery, useLazyExportFleetTripsQuery } from '../store/features/fleet/fleetApi.js';
-import { fleetEarningsSeries, total } from '../store/features/fleet/fleetContracts.js';
 import { tripDetailHref } from '../domain/tripLinks.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { Toast, useToast } from '../components/Toast.jsx';
@@ -47,8 +46,8 @@ export function VehicleTripsHistory() {
   const completed = trips?.filter((t) => t.status === 'Completed');
   const cancelled = knownStatuses ? trips.filter((t) => t.status === 'Cancelled').length : '—';
   const ongoing = knownStatuses ? trips.filter((t) => !['Completed', 'Cancelled', 'Disputed'].includes(t.status)).length : '—';
-  const totalEarnings = total(trips, 'budget');
-  const series = fleetEarningsSeries(trips);
+  const totalEarnings = null;
+  const series = null;
   const money = (value) => typeof value === 'number' && Number.isFinite(value) ? formatNaira(value) : '—';
   const routeCounts = Object.values((trips ?? []).filter((trip) => trip.route !== '—').reduce((acc, t) => {
     if (!acc[t.route]) acc[t.route] = { route: t.route, count: 0 };

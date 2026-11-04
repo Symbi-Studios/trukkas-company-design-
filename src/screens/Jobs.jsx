@@ -277,7 +277,7 @@ function BidModal({ job, open, onClose, onSubmit }) {
     >
       <form id="bid-form" onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
         <TextField
-          label="Bid Amount for the Job (₦)" type="number" min={MIN_BID_AMOUNT} required disabled={busy}
+          label="Bid Amount for the Job (₦)" type="number" min={MIN_BID_AMOUNT} step="0.01" required disabled={busy}
           value={amount} onChange={(e) => setAmount(e.target.value)} error={error || undefined}
           hint={`Suggested range: ${low === null ? '—' : formatNaira(low)} – ${high === null ? '—' : formatNaira(high)}`}
         />

@@ -53,7 +53,7 @@ export function MaintenanceActionModal({ record, action, onClose, onDone }) {
         {action === 'complete' && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: 14 }}>
-              <TextField label="Actual Cost (₦, optional)" type="number" min="0" step="any" value={draft.actualCost} onChange={set('actualCost')} disabled={busy} hint="Enter the final amount paid." />
+              <TextField label="Actual Cost (₦, optional)" type="number" min="0" step="0.01" value={draft.actualCost} onChange={set('actualCost')} disabled={busy} hint="Enter the final amount paid." />
               <TextField label="Odometer (km, optional)" type="number" min="0" step="any" value={draft.odometerKm} onChange={set('odometerKm')} disabled={busy} />
             </div>
             <Textarea label="Completion Notes (optional)" rows={4} maxLength={2000} value={draft.notes} onChange={set('notes')} disabled={busy} />

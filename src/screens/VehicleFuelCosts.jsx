@@ -6,7 +6,6 @@ import { FleetFuelLogModal } from '../components/FleetVehicleModals.jsx';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle.js';
 import { useGetFleetFuelLogsQuery, useGetFleetMaintenanceQuery, useGetFleetTripsQuery } from '../store/features/fleet/fleetApi.js';
-import { total } from '../store/features/fleet/fleetContracts.js';
 import { formatNaira } from '../mock/format.js';
 import { VehicleDetailFrame } from './VehicleDetailFrame.jsx';
 
@@ -20,8 +19,8 @@ export function VehicleFuelCosts() {
   const litres = (value) => typeof value === 'number' ? value.toLocaleString() + ' L' : '—';
   const { currentData: tripData, error: tripsError } = useGetFleetTripsQuery(truck?.id, { skip: !truck });
   const trips = tripsError ? undefined : tripData;
-  const totalMaintenanceCost = maintenance?.every((record) => record.status !== '—') ? total(maintenance.filter((record) => record.status === 'Completed'), 'cost') : null;
-  const totalEarnings = total(trips, 'budget');
+  const totalMaintenanceCost = null;
+  const totalEarnings = null;
   const money = (value) => typeof value === 'number' && Number.isFinite(value) ? formatNaira(value) : '—';
 
   if (!truck) return <VehicleDetailFrame tab="costs" title="Vehicle not found"><EmptyState icon="fuel" title="Not found" /></VehicleDetailFrame>;

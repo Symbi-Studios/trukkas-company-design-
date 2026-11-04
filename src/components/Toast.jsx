@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Card, Icon } from '../ds.js';
 
 /** Transient confirmation in the top-right corner. `const [toast, show] = useToast();` */
-export function useToast(duration = 2600) {
+export function useToast(duration = 5000) {
   const [message, setMessage] = useState(null);
   useEffect(() => {
     if (!message) return undefined;

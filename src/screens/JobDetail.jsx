@@ -81,7 +81,7 @@ function BidCard({ job, onToast }) {
       <form onSubmit={submit} className={styles.bidForm}>
         <div className={styles.bidRow}>
           <TextField
-            label="Bid Amount for the Job (₦)" type="number" min={MIN_BID_AMOUNT} required disabled={busy}
+            label="Bid Amount for the Job (₦)" type="number" min={MIN_BID_AMOUNT} step="0.01" required disabled={busy}
             value={amount} onChange={(e) => setAmount(e.target.value)} error={error || undefined}
           />
           <span className={styles.range}>

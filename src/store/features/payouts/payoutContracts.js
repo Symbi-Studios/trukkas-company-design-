@@ -6,7 +6,7 @@ export function amount(value) {
   return Number.isFinite(number) && number >= 0 && number <= Number.MAX_SAFE_INTEGER ? number : null;
 }
 export const payoutAmountLabel = (value) => typeof value === 'number' && Number.isFinite(value)
-  ? `${value < 0 ? '-' : ''}₦${Math.abs(value).toLocaleString('en-NG')}` : '—';
+  ? `${value < 0 ? '-' : ''}₦${Math.abs(value).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
 const timestamp = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value)) ? value : null;
 const date = (value) => timestamp(value) ? new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeZone: 'Africa/Lagos' }).format(new Date(value)) : '—';
 export const PAYOUT_TRANSACTION_TYPES = ['ESCROW_RELEASE', 'MOBILIZATION', 'FINAL_PAYMENT', 'WITHDRAWAL'];

@@ -45,7 +45,7 @@ export function MaintenanceModal({ open, onClose, trucks, truckId, record = null
         <Select label="Service Type" required disabled={busy} value={draft.serviceType} options={MAINTENANCE_SERVICE_TYPES} onChange={(e) => setDraft({ ...draft, serviceType: e.target.value })} />
         <TextField label="Description" disabled={busy} maxLength={1000} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
         <TextField label="Scheduled Date" disabled={busy} type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} />
-        <TextField label="Estimated Cost (₦)" disabled={busy} type="number" min="0" step="any" value={draft.estimatedCost} onChange={(e) => setDraft({ ...draft, estimatedCost: e.target.value })} />
+        <TextField label="Estimated Cost (₦)" disabled={busy} type="number" min="0" step="0.01" value={draft.estimatedCost} onChange={(e) => setDraft({ ...draft, estimatedCost: e.target.value })} />
         {(error || loadError) && <span role="alert" className="tk-meta" style={{ color: 'var(--tk-danger)' }}>{error || loadError}</span>}
       </form>
     </Modal>

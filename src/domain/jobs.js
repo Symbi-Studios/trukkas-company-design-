@@ -1,6 +1,7 @@
 // Pure helpers for the job marketplace and the company's won jobs. A job is the
 // forwarder's booking; the haulage runs as trips (see ./trips.js) — one per
 // dispatched truck, up to `job.trucksRequired`.
+import { validMoneyAmount } from './money.js';
 export const JOB_CATEGORIES = ['Container', 'Break-bulk', 'General Cargo'];
 export const MIN_BID_AMOUNT = 1000;
 
@@ -9,6 +10,7 @@ export function getBidValidationError(amount, message = '') {
   if (!Number.isFinite(value) || value > Number.MAX_SAFE_INTEGER || value < MIN_BID_AMOUNT) {
     return 'Enter a valid bid amount of at least ₦1,000.';
   }
+  if (!validMoneyAmount(amount)) return 'Enter an amount with at most two decimal places.';
   if (typeof message !== 'string' || message.length > 500) return 'Enter a message of 500 characters or fewer.';
   return null;
 }

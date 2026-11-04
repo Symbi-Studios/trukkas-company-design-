@@ -85,7 +85,7 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
     rating: driver.rating ?? (reviewsError ? null : feedback?.rating), reviewCount: driver.reviewCount !== '—' ? driver.reviewCount : !reviewsError ? feedback?.reviewCount ?? '—' : '—',
     tripsCompleted: driver.tripsCompleted !== '—' ? driver.tripsCompleted : knownTrips ? completed.length : '—', completionRate: closed ? Math.round(completed.length / closed * 100) : null,
     onTimeRate: driver.onTimeRate, safetyScore: driver.safetyScore, incidents: driver.incidents ?? '—',
-    distanceKm: sumCompleted((trip) => trip.distanceKm), earnings: sumCompleted((trip) => trip.revenue),
+    distanceKm: sumCompleted((trip) => trip.distanceKm), earnings: null,
     activeTrip: !tripsError ? trips?.find((trip) => trip.open) ?? null : null,
   };
   const activity = !tripsError ? (trips ?? []).flatMap((trip) => trip.activity ?? []).sort((a, b) => Date.parse(b.at) - Date.parse(a.at)) : [];

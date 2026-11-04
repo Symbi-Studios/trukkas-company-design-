@@ -22,7 +22,7 @@ export function Support() {
   const navigate = useNavigate();
   const { data, error, isLoading } = useGetSupportTicketsQuery(undefined, { refetchOnMountOrArgChange: true });
   const tickets = data ?? [];
-  const [toast, showToast] = useToast(4000);
+  const [toast, showToast] = useToast();
   useEffect(() => {
     if (pendingFlash) { showToast(pendingFlash); pendingFlash = null; }
   }, [showToast]);

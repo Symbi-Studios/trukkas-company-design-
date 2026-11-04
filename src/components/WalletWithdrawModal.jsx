@@ -4,6 +4,7 @@ import { useGetOnboardingSecurityQuery, useSaveOnboardingPinMutation } from '../
 import { useGetWithdrawalFeeQuery, useRequestWalletWithdrawalMutation } from '../store/features/wallet/walletApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { formatNaira } from '../mock/format.js';
+import { validMoneyAmount } from '../domain/money.js';
 import { PinPrompt } from './SecurityInputs.jsx';
 import { useGetMyProfileAccessQuery } from '../store/features/profile/profileApi.js';
 
@@ -32,7 +33,7 @@ export function WalletWithdrawModal({ onClose, onDone, available, bank, attempt,
   const value = Number(amount);
   const bankKey = bank ? JSON.stringify([bank.bankCode, bank.bankName, bank.last4, bank.accountName]) : null;
   const retrying = attempt.current?.companyId === companyId && attempt.current.amount === value && attempt.current.bankKey === bankKey;
-  const validAmount = Number.isFinite(value) && value >= 1000 && value <= Number.MAX_SAFE_INTEGER && (retrying || (typeof available === 'number' && value <= available));
+  const validAmount = validMoneyAmount(amount) && Number.isFinite(value) && value >= 1000 && value <= Number.MAX_SAFE_INTEGER && (retrying || (typeof available === 'number' && value <= available));
   const { currentData: fee, error: feeError, isFetching: feeLoading } = useGetWithdrawalFeeQuery(value, { skip: step === 'amount' || !validAmount, refetchOnMountOrArgChange: true });
   const ready = canWithdraw && validAmount && bank && fee && !feeError && !feeLoading && !securityError && !securityLoading && typeof security?.pin?.set === 'boolean';
   function submit(event) {
@@ -40,6 +41,7 @@ export function WalletWithdrawModal({ onClose, onDone, available, bank, attempt,
     setError('');
     if (!canWithdraw) { setError('You don’t have permission to request a payout.'); return; }
     if (!Number.isFinite(value) || value < 1000 || value > Number.MAX_SAFE_INTEGER) { setError('Enter a withdrawal amount of at least ₦1,000.'); return; }
+    if (!validMoneyAmount(amount)) { setError('Enter an amount with at most two decimal places.'); return; }
     if (attempt.current && !retrying) { setError('Retry the previous withdrawal amount and bank account before starting another request.'); return; }
     if (!retrying && (typeof available !== 'number' || !Number.isFinite(available))) { setError('Your available balance could not be confirmed. Please reload.'); return; }
     if (!retrying && value > available) { setError('Amount exceeds your available balance.'); return; }

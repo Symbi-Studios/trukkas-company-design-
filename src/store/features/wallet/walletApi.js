@@ -1,4 +1,5 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
+import { validMoneyAmount } from '../../../domain/money.js';
 import { count, rows, text } from '../jobs/jobContracts.js';
 import { walletEarningsView, walletJobView, walletTransactionView, walletView, withdrawalFeeView, withdrawalResultView } from './walletContracts.js';
 
@@ -117,6 +118,7 @@ export const walletApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyWallet
         const blocked = signedIn(api); if (blocked) return blocked;
         baseQuery = companyQuery(api, baseQuery);
         if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 1000 || amount > Number.MAX_SAFE_INTEGER) return unavailable('Enter a withdrawal amount of at least ₦1,000.');
+        if (!validMoneyAmount(amount)) return unavailable('Enter an amount with at most two decimal places.');
         const result = await baseQuery({ url: '/wallets/withdraw/fee', params: { amount } });
         if (result.error) return result;
         const fee = withdrawalFeeView(unwrapApiResponseData(result.data), amount);
@@ -129,6 +131,7 @@ export const walletApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyWallet
         const blocked = signedIn(api); if (blocked) return blocked;
         baseQuery = companyQuery(api, baseQuery);
         if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 1000 || amount > Number.MAX_SAFE_INTEGER) return unavailable('Enter a withdrawal amount of at least ₦1,000.');
+        if (!validMoneyAmount(amount)) return unavailable('Enter an amount with at most two decimal places.');
         if (typeof transactionPin !== 'string' || !/^\d{4}$/.test(transactionPin)) return unavailable('Enter your 4-digit transaction PIN.');
         if (typeof idempotencyKey !== 'string' || !/^[a-zA-Z0-9_-]{8,128}$/.test(idempotencyKey)) return unavailable('The withdrawal request could not be identified. Please reopen the form.');
         const accessResult = await baseQuery('/team/me');

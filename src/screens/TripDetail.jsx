@@ -242,7 +242,7 @@ function CostsSection({ trip, job, onToast }) {
   const submitting = useRef(false);
   const revenue = trip.revenue;
   const total = trip.costTotal;
-  const margin = revenue !== null && total !== null ? revenue - total : null;
+  const margin = null;
   async function submit(event) {
     event.preventDefault();
     const amount = Number(draft.amount);
@@ -274,7 +274,7 @@ function CostsSection({ trip, job, onToast }) {
         {isOpenTrip(trip) && (
           <form onSubmit={submit} className={styles.costForm}>
             <Select label="Category" disabled={saving} value={draft.category} options={TRIP_COST_CATEGORIES} onChange={(e) => setDraft({ ...draft, category: e.target.value })} />
-            <TextField label="Amount (₦)" disabled={saving} type="number" min="0" required value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} />
+            <TextField label="Amount (₦)" disabled={saving} type="number" min="0" step="0.01" required value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} />
             <TextField label="Description" disabled={saving} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="e.g. Diesel top-up at Lokoja" />
             <Button type="submit" icon="plus" disabled={saving || !Number.isFinite(Number(draft.amount)) || Number(draft.amount) <= 0}>{saving ? 'Adding…' : 'Add Cost'}</Button>
           </form>

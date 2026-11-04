@@ -1,4 +1,5 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
+import { validMoneyAmount } from '../../../domain/money.js';
 import { count, object, safeUrl, text, timestampLabel, tripCollectionView, tripCostCategoryToWire, tripMessageViews, tripStatusLabel, tripView } from './tripContracts.js';
 
 const unavailable = (error) => ({ error: { status: 'CUSTOM_ERROR', error } });
@@ -157,6 +158,7 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         const trip = loadedTrip(api, tripId, true);
         const wireCategory = tripCostCategoryToWire(category);
         if (!trip || !wireCategory || typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) return unavailable('Choose a trip cost category and enter an amount greater than zero.');
+        if (!validMoneyAmount(amount)) return unavailable('Enter an amount with at most two decimal places.');
         const body = { category: wireCategory, amount, currency: 'NGN' };
         if (text(description)) body.description = text(description);
         const result = await baseQuery({ url: `/company/trips/${encodeURIComponent(tripId)}/costs`, method: 'POST', body });

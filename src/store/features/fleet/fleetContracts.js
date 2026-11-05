@@ -159,7 +159,7 @@ export function driverView(source) {
   const rating = number(source.rating?.average);
   return {
     id: source.id, active: source.status === 'ACTIVE', name: text(source.name) ?? '—',
-    phone: text(source.phone) ?? '—', photo: safeUrl(source.avatarUrl),
+    phone: text(source.phone) ?? '—', email: text(source.email), photo: safeUrl(source.avatarUrl),
     kyc: source.kycStatus === 'VERIFIED' ? 'Verified' : text(source.kycStatus) ? 'KYC Pending' : '—',
     licenseClass: text(source.license?.class) ?? '—', licenseNumber: text(source.license?.number) ?? '—', licenseExpiry: dateLabel(source.license?.expiresAt),
     rating: rating !== null && rating <= 5 ? rating : null,

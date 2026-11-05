@@ -49,7 +49,7 @@ function Field({ children, span }) {
 export function AddVehicle() {
   const navigate = useNavigate();
   const { currentData: loadedTrucks, error: trucksError } = useGetFleetQuery();
-  const { currentData: loadedDrivers, error: driversError } = useGetFleetDriversQuery();
+  const { currentData: loadedDrivers, error: driversError, isLoading: driversLoading } = useGetFleetDriversQuery();
   const trucks = trucksError ? [] : loadedTrucks ?? [];
   const drivers = useMemo(() => driversError ? [] : (loadedDrivers ?? []).filter((driver) => driver.active), [loadedDrivers, driversError]);
   const { currentData: loadedTrips, error: tripsError } = useGetCompanyTripsQuery();
@@ -259,10 +259,10 @@ export function AddVehicle() {
                 <>
                   <p className={styles.lead}>Assign one of your onboarded drivers to this truck now, or skip and assign later from the truck page.</p>
                   <div className={styles.driverTools}>
-                    <SearchField placeholder="Search drivers by name, phone, licence..." value={driverQuery} onChange={(e) => setDriverQuery(e.target.value)} />
-                    <Button variant={draft.driverId ? 'outline' : 'secondary'} onClick={() => set('driverId')(null)}>{draft.driverId ? 'Clear selection' : 'Assign later'}</Button>
+                    <SearchField placeholder="Search drivers by name, email, phone, licence..." value={driverQuery} onChange={(e) => setDriverQuery(e.target.value)} />
+                    {draft.driverId && <Button variant="outline" onClick={() => set('driverId')(null)}>Clear selection</Button>}
                   </div>
-                  <PickList items={driverItems} selected={draft.driverId} onSelect={(id) => set('driverId')(id)} empty="No drivers match. Onboard drivers from the Drivers page." />
+                  {driversLoading ? <p className="tk-meta">Loading drivers…</p> : driversError ? <p role="alert" className="tk-meta">{getApiErrorMessage(driversError)}</p> : <PickList items={driverItems} selected={draft.driverId} onSelect={(id) => set('driverId')(id)} empty="No drivers match. Onboard drivers from the Drivers page." />}
                 </>
               )}
 

@@ -36,7 +36,7 @@ export function PickList({ items, selected, onSelect, empty }) {
 export function driverOptions(drivers, trips, { excludeId, query = '' } = {}) {
   return drivers
     .filter((d) => d.id !== excludeId)
-    .filter((d) => !query || [d.name, d.phone, d.licenseNumber].some((v) => String(v).toLowerCase().includes(query.toLowerCase())))
+    .filter((d) => !query.trim() || [d.name, d.phone, d.email, d.licenseNumber].some((v) => typeof v === 'string' && v.toLowerCase().includes(query.trim().toLowerCase())))
     .map((d) => {
       const onTrip = trips.some((t) => t.driverId === d.id && isOpenTrip(t));
       return {

@@ -13,6 +13,8 @@ import { receiptView } from '../store/features/jobs/jobContracts.js';
 import { jobDetailHref } from '../domain/jobLinks.js';
 import { tripDetailHref } from '../domain/tripLinks.js';
 import { useGetCompanyTripsQuery } from '../store/features/trips/tripsApi.js';
+import { useGetFleetEligibilityQuery } from '../store/features/fleet/fleetApi.js';
+import { TruckRestrictionBanner, blockedMessage } from '../components/MaintenanceCompliance.jsx';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import {
   MIN_BID_AMOUNT, closesInTone, getBidValidationError, hasCargoPhotos, isMarketplaceJob, jobStatusTone, jobTitle,
@@ -179,6 +181,9 @@ function DispatchCard({ job, summary, onDispatch }) {
 function DispatchModal({ job, open, onClose, onDone }) {
   const { currentData: loadedDrivers, error: optionsError, isFetching: optionsLoading } = useGetJobDispatchOptionsQuery(undefined, { skip: !open, refetchOnMountOrArgChange: true });
   const [dispatchDriver] = useDispatchJobDriverMutation();
+  // Trucks with an active maintenance restriction cannot be dispatched. The
+  // backend enforces this too; the picker only explains it up front.
+  const { currentData: eligibility } = useGetFleetEligibilityQuery(undefined, { skip: !open, refetchOnMountOrArgChange: true });
   const [plate, setPlate] = useState('');
   const [driverId, setDriverId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -187,6 +192,8 @@ function DispatchModal({ job, open, onClose, onDone }) {
   const drivers = optionsError ? [] : loadedDrivers ?? [];
   const freeDrivers = drivers.filter((driver) => !plate || driver.truckId === plate);
   const freeTrucks = [...new Map(drivers.map((driver) => [driver.truckId, { ...driver, plate: driver.truckId, label: driver.plate }])).values()];
+  const blockedView = (truckId) => eligibility?.[truckId]?.eligible === false ? eligibility[truckId] : null;
+  const selectedBlock = plate ? blockedView(plate) : null;
 
   useEffect(() => { if (open) { setPlate(''); setDriverId(''); setError(''); } }, [open]);
 
@@ -199,6 +206,7 @@ function DispatchModal({ job, open, onClose, onDone }) {
     event.preventDefault();
     if (submitting.current) return;
     if (optionsLoading || optionsError || !drivers.some((driver) => driver.id === driverId && driver.truckId === plate)) { setError('Select a truck and a driver.'); return; }
+    if (selectedBlock) { setError(blockedMessage(selectedBlock)); return; }
     submitting.current = true;
     setBusy(true);
     setError('');
@@ -217,13 +225,13 @@ function DispatchModal({ job, open, onClose, onDone }) {
     <Modal
       open={open} onClose={() => { if (!submitting.current) onClose(); }} title="Dispatch Truck" width={500}
       description={`${jobTitle(job)} · ${job.origin} → ${job.destination}`}
-      footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button form="dispatch-form" type="submit" icon="truck" disabled={busy || optionsLoading || !!optionsError || !plate || !driverId}>{busy ? 'Dispatching…' : 'Create Trip'}</Button></>}
+      footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button form="dispatch-form" type="submit" icon="truck" disabled={busy || optionsLoading || !!optionsError || !plate || !driverId || !!selectedBlock}>{busy ? 'Dispatching…' : 'Create Trip'}</Button></>}
     >
       <form id="dispatch-form" onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
         <span className="tk-meta">This job runs as one trip on the selected driver’s assigned truck, with its own timeline, documents and costs.</span>
         <Select
           label="Truck" value={plate} placeholder={freeTrucks.length ? 'Select an available truck' : 'No trucks available'} disabled={busy}
-          options={freeTrucks.map((t) => ({ value: t.plate, label: `${t.label} · ${t.makeModel} · ${t.location}` }))}
+          options={freeTrucks.map((t) => ({ value: t.plate, label: blockedView(t.plate) ? `${t.label} · Unavailable: maintenance required` : `${t.label} · ${t.makeModel} · ${t.location}`, disabled: !!blockedView(t.plate) }))}
           onChange={(e) => pickTruck(e.target.value)}
         />
         <Select
@@ -231,6 +239,7 @@ function DispatchModal({ job, open, onClose, onDone }) {
           options={freeDrivers.map((d) => ({ value: d.id, label: `${d.name} · ${d.licenseClass}` }))}
           onChange={(e) => setDriverId(e.target.value)}
         />
+        <TruckRestrictionBanner view={selectedBlock} />
         {(error || optionsError) && <span style={{ color: 'var(--tk-danger)', font: '500 13px/18px var(--tk-font-sans)' }}>{error || getApiErrorMessage(optionsError)}</span>}
       </form>
     </Modal>

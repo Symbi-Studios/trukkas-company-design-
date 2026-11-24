@@ -1,0 +1,13 @@
+.form { display: grid; gap: 14px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 14px; }
+.fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; }
+.fieldset legend { padding: 0; margin-bottom: 8px; font: 600 13px/18px var(--tk-font-sans); color: var(--tk-ink-700); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--tk-line-strong); background: var(--tk-surface); color: var(--tk-ink-700); font: 500 12px var(--tk-font-sans); cursor: pointer; transition: var(--tk-transition); }
+.chip:hover { border-color: var(--tk-blue); }
+.chip.on { border-color: var(--tk-blue); background: var(--tk-surface-cool, var(--tk-blue-soft)); color: var(--tk-blue); }
+.chip:disabled { opacity: .5; cursor: not-allowed; }
+.twoCol { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 14px; }
+.note { margin: 0; font: 400 13px/19px var(--tk-font-sans); color: var(--tk-ink-500); }
+.section { display: grid; gap: 12px; padding-top: 4px; }
+.sectionTitle { font: 600 13px/18px var(--tk-font-sans); color: var(--tk-ink-900); }

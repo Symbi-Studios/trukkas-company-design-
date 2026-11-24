@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Icon, Modal, SearchField, SkeletonRow } from '../ds.js';
-import { useAssignFleetDriverMutation, useGetFleetDriversQuery, useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
+import { useAssignFleetDriverMutation, useGetFleetDriversQuery, useGetFleetEligibilityQuery, useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
 import { useGetCompanyTripsQuery } from '../store/features/trips/tripsApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { PickList } from './AssignModals.jsx';
@@ -17,6 +17,7 @@ export function DriverAssignTruckModal({ driver, open, onClose, onDone }) {
   const [error, setError] = useState('');
   const submitting = useRef(false);
   useEffect(() => { if (open) { setSelected(null); setQuery(''); setError(''); } }, [open, driver?.id]);
+  const { currentData: eligibility } = useGetFleetEligibilityQuery(undefined, { skip: !open });
   const confirmedDriver = driversError ? null : drivers?.find((item) => item.id === driver?.id);
 
   const items = (trucks ?? [])
@@ -29,7 +30,8 @@ export function DriverAssignTruckModal({ driver, open, onClose, onDone }) {
         media: <span className={styles.truckIcon}><Icon name="truck" size={18} /></span>,
         badge: <Badge tone={truck.status === 'Approved' || truck.status === 'Active' ? 'success' : truck.status === 'On Trip' ? 'info' : truck.status === 'In Maintenance' ? 'warning' : 'neutral'}>{truck.status}</Badge>,
         blocked: onTrip ? 'On an active trip — change drivers after it completes.' : null,
-        warning: !onTrip && truck.driver && truck.driver !== '—' ? `Currently driven by ${truck.driver}; they will be unassigned.` : null,
+        warning: !onTrip && eligibility?.[truck.id]?.eligible === false && eligibility[truck.id].reasonCode !== 'NOT_ACTIVE' ? 'Blocked from new jobs until its maintenance is cleared.'
+          : !onTrip && truck.driver && truck.driver !== '—' ? `Currently driven by ${truck.driver}; they will be unassigned.` : null,
       };
     }).sort((a, b) => Number(!!a.blocked) - Number(!!b.blocked) || Number(!!a.warning) - Number(!!b.warning));
 

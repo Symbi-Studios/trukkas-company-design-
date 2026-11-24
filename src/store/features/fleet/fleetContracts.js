@@ -172,6 +172,32 @@ export function driverView(source) {
 
 const maintenanceTypes = { PREVENTIVE: 'Preventive', REPAIR: 'Repair', INSPECTION: 'Inspection', BREAKDOWN: 'Breakdown' };
 export const MAINTENANCE_SERVICE_TYPES = Object.values(maintenanceTypes);
+// Company-facing record labels. REQUESTED waits on Trukkas approval; SUBMITTED
+// (proposed) waits on Trukkas verification before any restriction clears.
+export const MAINTENANCE_STATUS_LABELS = { REQUESTED: 'Awaiting Approval', SCHEDULED: 'Scheduled', IN_PROGRESS: 'In Progress', SUBMITTED: 'Awaiting Verification', VERIFIED: 'Verified', COMPLETED: 'Completed', CANCELLED: 'Cancelled', REJECTED: 'Declined' };
+export const MAINTENANCE_STATUS_TONE = { 'Awaiting Approval': 'info', Scheduled: 'info', 'In Progress': 'warning', 'Awaiting Verification': 'orange', Verified: 'success', Completed: 'success', Overdue: 'danger', Cancelled: 'neutral', Declined: 'danger' };
+
+export function eligibilityView(source) {
+  if (!object(source) || !text(source.id)) return null;
+  const restrictedAt = instant(source.restrictedAt);
+  return {
+    truckId: source.id, plate: text(source.plateNumber) ?? '—', eligible: typeof source.eligibleForJobs === 'boolean' ? source.eligibleForJobs : null,
+    reasonCode: text(source.ineligibility?.reason), message: text(source.ineligibility?.message),
+    restricted: Boolean(restrictedAt), restrictedAt: restrictedAt ? dateLabel(source.restrictedAt) : null, restrictionReason: text(source.restrictionReason),
+  };
+}
+
+export function requirementView(source) {
+  if (!object(source) || !text(source.ruleId)) return null;
+  const signed = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
+  return {
+    id: `${source.truck?.id ?? ''}:${source.ruleId}`, ruleId: source.ruleId, ruleName: text(source.ruleName) ?? '—', category: text(source.category), mandatory: source.mandatory === true,
+    status: text(source.status), truckId: text(source.truck?.id), truckPlate: text(source.truck?.plateNumber) ?? '—',
+    dueKm: number(source.dueKm), dueDate: dateLabel(source.dueDate), remainingKm: signed(source.remainingKm), remainingDays: Number.isSafeInteger(source.remainingDays) ? source.remainingDays : null,
+    lastServiceDate: dateLabel(source.lastServiceDate), intervalKm: number(source.intervalKm), intervalDays: count(source.intervalDays),
+    openRecordId: text(source.openRecord?.id),
+  };
+}
 export const maintenanceTypeToWire = (value) => Object.entries(maintenanceTypes).find(([wire, label]) => value === wire || value === label)?.[0] ?? null;
 const maintenanceDateInput = (value) => {
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return dateLabel(value) === '—' ? '' : value;
@@ -191,9 +217,13 @@ export function maintenanceView(source) {
   const overdue = source.isOverdue === true || source.displayStatus === 'OVERDUE';
   return {
     id: source.id, reference: text(source.reference) ?? '—', truckId: text(source.truck?.id), truckPlate: text(source.truck?.plateNumber) ?? '—',
-    wireStatus: text(source.status), status: overdue && ['REQUESTED', 'SCHEDULED', 'IN_PROGRESS'].includes(source.status) ? 'Overdue' : ({ REQUESTED: 'Requested', SCHEDULED: 'Upcoming', IN_PROGRESS: 'In Progress', COMPLETED: 'Completed', CANCELLED: 'Cancelled', REJECTED: 'Rejected' })[source.status] ?? '—',
+    wireStatus: text(source.status), status: overdue && ['REQUESTED', 'SCHEDULED', 'IN_PROGRESS'].includes(source.status) ? 'Overdue' : MAINTENANCE_STATUS_LABELS[source.status] ?? '—',
+    serviceCenter: text(source.serviceCenter?.name) ?? '', serviceCenterLocation: text(source.serviceCenter?.location) ?? '',
+    notes: text(source.notes) ?? '', rejectionReason: text(source.rejectionReason), returnReason: text(source.verification?.returnReason),
+    categories: Array.isArray(source.serviceItems) ? source.serviceItems.map((item) => text(item?.label)).filter(Boolean) : [],
+    daysUntilDue: Number.isSafeInteger(source.daysUntilDue) ? source.daysUntilDue : null,
     date: dateLabel(source.dueDate), dueAt: text(source.dueDate), dateInput: maintenanceDateInput(source.dueDate), serviceType: text(source.typeLabel) ?? maintenanceTypes[source.type] ?? '—', serviceCategory: maintenanceTypes[source.type] ?? '', description: text(source.description) ?? '—',
-    canEdit: ['REQUESTED', 'SCHEDULED'].includes(source.status), canComplete: ['SCHEDULED', 'IN_PROGRESS'].includes(source.status),
+    canEdit: ['REQUESTED', 'SCHEDULED'].includes(source.status), canComplete: ['SCHEDULED', 'IN_PROGRESS'].includes(source.status), awaitingTrukkas: ['REQUESTED', 'SUBMITTED'].includes(source.status),
     canStart: source.status === 'SCHEDULED', canCancel: ['REQUESTED', 'SCHEDULED'].includes(source.status),
     estimatedCost: source.currency === 'NGN' ? number(source.estimatedCost) : null,
     odometer: number(source.odometerKm), cost: source.currency === 'NGN' ? number(source.actualCost) : null,

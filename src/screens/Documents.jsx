@@ -6,7 +6,7 @@ import {
   Avatar, Badge, Banner, Button, Card, DataTable, EmptyState, Icon, LabelValue, PageHeader, ProgressBar, SearchField, SectionCard, SkeletonRow, StatCard, Tabs,
 } from '../ds.js';
 import { useGetCompanyDocumentLibraryQuery, useGetDocumentCompanyQuery, useGetDocumentVehiclesQuery, useGetDocumentDriversQuery, useUploadCompanyComplianceDocumentMutation } from '../store/features/documents/documentsApi.js';
-import { COMPANY_DOCUMENT_REQUIREMENTS, companyDocumentTypes, documentCompliance, documentExpiryTotals, EMPTY_DOCUMENT_COMPANY } from '../store/features/documents/documentContracts.js';
+import { companyDocumentTypes, companyRequirementsFrom, documentCompliance, documentExpiryTotals, EMPTY_DOCUMENT_COMPANY, EXPIRING_SOON_DAYS } from '../store/features/documents/documentContracts.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { documentDetailHref } from '../domain/documentLinks.js';
 import { fleetDetailHref } from '../domain/fleetLinks.js';
@@ -61,6 +61,8 @@ export function Documents() {
   }, []);
 
   const companyDocs = !companyDocsError ? library?.documents : null;
+  // GET /company-documents decides which company documents are required (decided 24 Nov 2026).
+  const COMPANY_DOCUMENT_REQUIREMENTS = companyRequirementsFrom(library);
   const companyCompliance = !companyDocsError && library?.compliance
     ? library.compliance : documentCompliance(COMPANY_DOCUMENT_REQUIREMENTS, companyDocs, Object.keys(companyDocumentTypes), library?.missingTypes ?? []);
   const vehicleRows = !vehicleError ? vehicleData ?? [] : [];
@@ -86,7 +88,7 @@ export function Documents() {
         <StatCard icon="building-2" tint={companyCompliance.summary.complete ? 'green' : 'amber'} label="Business Verification" value={`${companyCompliance.summary.requiredMet ?? '—'}/${companyCompliance.summary.requiredTotal}`} caption={companyCompliance.summary.complete ? 'All required documents in place' : 'Required documents in place'} />
         <StatCard icon="truck" label="Compliant Vehicles" value={`${compliantCount(!vehicleError ? vehicleData : null)}/${!vehicleError ? vehicleData?.length ?? '—' : '—'}`} caption="All required papers valid" />
         <StatCard icon="users-round" tint="purple" label="Compliant Drivers" value={`${compliantCount(!driverError && driverData ? driverRows : null)}/${!driverError ? driverData?.length ?? '—' : '—'}`} caption="All required papers valid" />
-        <StatCard icon="clock-alert" tint="amber" label="Expiring Soon" value={expiring ?? '—'} caption="Within 60 days" />
+        <StatCard icon="clock-alert" tint="amber" label="Expiring Soon" value={expiring ?? '—'} caption={`Within ${EXPIRING_SOON_DAYS} days`} />
         <StatCard icon="circle-x" tint="red" label="Expired" value={expired ?? '—'} caption="Renew to stay dispatchable" />
       </section>
 

@@ -47,7 +47,7 @@ export function Trips() {
 
   const phaseCount = (phase) => availableTrips && trips.every((trip) => trip.phase !== null && (phase !== 'Upcoming' || trip.phase !== 'Upcoming' || trip.driverAssigned !== null))
     ? trips.filter((trip) => matchesPhase(trip, phase)).length : '—';
-  const counts = { all: availableTrips ? trips.length : '—', Upcoming: phaseCount('Upcoming'), Active: phaseCount('Active'), Completed: phaseCount('Completed'), Cancelled: phaseCount('Cancelled') };
+  const counts = { all: availableTrips ? trips.length : '—', Upcoming: phaseCount('Upcoming'), Active: phaseCount('Active'), Completed: phaseCount('Completed'), Cancelled: phaseCount('Cancelled'), Disputed: phaseCount('Disputed') };
   const months = [...new Set(trips.map((t) => t.pickupMonth).filter(Boolean))];
 
   const filtered = useMemo(() => {

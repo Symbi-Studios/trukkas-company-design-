@@ -32,12 +32,13 @@ export const VEHICLE_REQUIREMENTS = [
   { type: 'Safety', label: 'Safety / ADR Certificate', required: false, file: true, expires: true, hint: 'Required for hazardous cargo.' },
 ];
 
+// Decided 24 Nov 2026: drivers need only a licence and NIN until ops asks for more; the rest stay optional.
 export const DRIVER_REQUIREMENTS = [
   { type: "Driver's License", label: "Driver's Licence", required: true, file: true, expires: true, number: 'Licence Number' },
   { type: 'NIN', label: 'National Identification Number (NIN)', required: true, file: false, number: 'NIN', sensitive: true },
-  { type: 'Passport Photo', label: 'Passport Photograph', required: true, file: true, accept: 'image/*' },
-  { type: 'Medical Fitness', label: 'Medical Fitness Certificate', required: true, file: true, expires: true },
-  { type: 'Guarantor Form', label: 'Guarantor Form', required: true, file: true, hint: 'Signed guarantor form with the guarantor’s ID.' },
+  { type: 'Passport Photo', label: 'Passport Photograph', required: false, file: true, accept: 'image/*' },
+  { type: 'Medical Fitness', label: 'Medical Fitness Certificate', required: false, file: true, expires: true },
+  { type: 'Guarantor Form', label: 'Guarantor Form', required: false, file: true, hint: 'Signed guarantor form with the guarantor’s ID.' },
   { type: 'Proof of Address', label: 'Proof of Address', required: false, file: true },
   { type: 'Police Clearance', label: 'Police Clearance Report', required: false, file: true },
   { type: 'Defensive Driving', label: 'Defensive Driving Certificate', required: false, file: true, expires: true },
@@ -115,7 +116,7 @@ export function statusFromExpiry(expiry, now = new Date()) {
   if (Number.isNaN(date.getTime())) return 'Pending Review';
   const days = (date.getTime() - now.getTime()) / 86_400_000;
   if (days < 0) return 'Expired';
-  if (days <= 60) return 'Expiring Soon';
+  if (days <= 30) return 'Expiring Soon'; // matches the API's EXPIRING_SOON window
   return 'Pending Review';
 }
 

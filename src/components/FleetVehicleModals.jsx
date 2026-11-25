@@ -1,6 +1,8 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { EquipmentFields } from './EquipmentFields.jsx';
+import { EMPTY_EQUIPMENT } from '../store/features/reference/referenceApi.js';
 import { Button, Modal, Select, Textarea, TextField } from '../ds.js';
 import { VEHICLE_CLASSES } from '../domain/vehicles.js';
 import { todayValue } from '../ds/components/forms/datePickerDates.js';
@@ -48,6 +50,13 @@ export function EditFleetVehicleModal({ truck, onClose }) {
             <TextField disabled={busy} label="Current Location" value={draft.location} maxLength={200} onChange={set('location')} />
             <TextField disabled={busy} label="Odometer Reading (km)" type="number" min="0" step="any" value={draft.odometer} onChange={set('odometer')} />
           </div>
+          {draft.vehicleClass !== 'Trailer' && (
+            <>
+              <h3 className="tk-title" style={{ fontSize: 15, margin: '20px 0 4px' }}>What does this truck carry?</h3>
+              <p className="tk-meta" style={{ margin: '0 0 12px' }}>Jobs are matched on this. Changing it can send the truck back to Trukkas for review.</p>
+              <EquipmentFields value={draft.equipment ?? EMPTY_EQUIPMENT} onChange={(equipment) => setDraft((value) => ({ ...value, equipment }))} disabled={busy} lockedKind={original.current.equipment?.kind || null} />
+            </>
+          )}
           <h3 className="tk-title" style={{ fontSize: 15, margin: '20px 0 12px' }}>Specifications</h3>
           <div style={fieldGrid}>
             {SPEC_FIELDS.filter(([key]) => draft.vehicleClass !== 'Trailer' || ['axleConfig', 'gvw', 'loadCapacity', 'axles'].includes(key)).map(([key, label]) => (

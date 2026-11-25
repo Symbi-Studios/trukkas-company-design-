@@ -6,7 +6,8 @@ import {
   ActivityFeed, Badge, Button, Card, DataTable, DonutChart, DropdownMenu, EmptyState, Icon, LegendList,
   PageHeader, SearchField, SkeletonRow, StatCard,
 } from '../ds.js';
-import { useGetFleetQuery, useGetFleetSummaryQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
+import { useGetFleetEligibilityQuery, useGetFleetQuery, useGetFleetSummaryQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi.js';
+import { blockedMessage } from '../components/MaintenanceCompliance.jsx';
 import { fleetSummaryView } from '../store/features/fleet/fleetContracts.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
 import { fleetDetailHref } from '../domain/fleetLinks.js';
@@ -45,6 +46,7 @@ export function Fleet() {
   const [tab, setTab] = useState('All Vehicles');
   const [query, setQuery] = useState('');
   const [rowMenu, setRowMenu] = useState(null);
+  const { currentData: eligibility } = useGetFleetEligibilityQuery(undefined, { refetchOnMountOrArgChange: true });
 
   useEffect(() => {
     const onSearch = (event) => setQuery(event.detail || '');
@@ -117,8 +119,14 @@ export function Fleet() {
                     </Link>
                   ),
                 },
-                { key: 'type', header: 'Type', render: (t) => t.type },
-                { key: 'reg', header: 'Registration No.', render: (t) => t.plate },
+                // Jobs are matched on equipment; the list DTO may carry names only, so judge by the label truckView builds.
+                { key: 'type', header: 'Equipment', render: (t) => t.vehicleClass !== 'Trailer' && !t.equipment?.kind && t.type === t.vehicleClass
+                  ? <span style={{ display: 'grid', gap: 2 }}><Badge tone="warning">Not set</Badge><small className="tk-meta">Needed for job matching</small></span> : t.type },
+                { key: 'eligible', header: 'Can Take Jobs', render: (t) => {
+                  const view = eligibility?.[t.id];
+                  if (!view || typeof view.eligible !== 'boolean') return '—';
+                  return view.eligible ? <Badge tone="success">Yes</Badge> : <span style={{ display: 'grid', gap: 2, maxWidth: 220 }}><Badge tone="danger">No</Badge><small className="tk-meta">{blockedMessage(view)}</small></span>;
+                } },
                 { key: 'status', header: 'Status', render: (t) => <Badge tone={vehicleStatusTone(t.status)} dot>{t.status}</Badge> },
                 { key: 'driver', header: 'Driver', render: (t) => t.driver || '—' },
                 { key: 'lastActive', header: 'Last Active', render: (t) => t.lastActive },
@@ -131,7 +139,7 @@ export function Fleet() {
                           <DropdownMenu width={200} items={[
                             { label: 'View Details', icon: 'eye', onClick: () => { setRowMenu(null); navigate(fleetDetailHref(t.id)); } },
                             { label: 'View Documents', icon: 'file-text', onClick: () => { setRowMenu(null); navigate(fleetDetailHref(t.id, 'documents')); } },
-                            { label: 'Mark for Maintenance', icon: 'wrench', onClick: () => { setRowMenu(null); setMaintenanceTruck(t); } },
+                            { label: 'Request Maintenance', icon: 'wrench', onClick: () => { setRowMenu(null); setMaintenanceTruck(t); } },
                             { divider: true },
                             { label: t.status === 'Inactive' ? 'Activate Truck' : 'Deactivate Truck', icon: 'power', tone: 'danger', onClick: () => changeStatus(t) },
                           ]} />

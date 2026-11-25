@@ -43,12 +43,12 @@ export function EarningsWallet() {
 
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
-      <PageHeader title="Earnings & Wallet" description="Track your wallet balance, pending payouts, and monthly earnings." actions={<><Button variant="outline" icon="hand-coins" onClick={() => navigate('/payouts')}>Request Payout</Button><Button icon="banknote" onClick={() => setWithdrawOpen(true)}>Withdraw Funds</Button></>} />
+      <PageHeader title="Earnings & Wallet" description="Job payments are held in escrow and released to your wallet: 30% at pickup, 70% after proof of delivery." actions={<Button icon="banknote" onClick={() => setWithdrawOpen(true)}>Withdraw to Bank</Button>} />
       <section className="tk-money-stats">
         <StatCard icon="wallet" tint="green" label="Wallet Balance" value={metric(walletLoading, walletError ? null : wallet.available)} caption="Available balance" />
-        <StatCard icon="hourglass" tint="amber" label="Pending Payout" value={metric(earningsLoading, earningsError ? null : earnings.pendingPayout)} caption="In review" />
-        <StatCard icon="banknote" tint="blue" label="Earnings This Month" value={metric(earningsLoading, earningsError ? null : earnings.earningsThisMonth)} delta={earningsError || earnings.change === null ? '—' : `${Math.abs(earnings.change)}%`} direction={earnings.change !== null && earnings.change < 0 ? 'down' : 'up'} caption="vs last month" />
-        <StatCard icon="calendar" label="Earnings Last Month" value={metric(earningsLoading, earningsError ? null : earnings.earningsLastMonth)} caption={`${earningsError ? '—' : earnings.completedThisMonth ?? '—'} trips this month`} />
+        <StatCard icon="lock-keyhole" tint="purple" label="Held in Escrow" value={metric(earningsLoading, earningsError ? null : earnings.heldInEscrow)} caption={`${earningsError ? '—' : earnings.heldJobs ?? '—'} active job(s) · released as trips progress`} />
+        <StatCard icon="hourglass" tint="amber" label="Pending Withdrawal" value={metric(earningsLoading, earningsError ? null : earnings.pendingPayout)} caption="Being sent to your bank" />
+        <StatCard icon="banknote" tint="blue" label="Earnings This Month" value={metric(earningsLoading, earningsError ? null : earnings.earningsThisMonth)} delta={earningsError || earnings.change === null ? '—' : `${Math.abs(earnings.change)}%`} direction={earnings.change !== null && earnings.change < 0 ? 'down' : 'up'} caption={`vs ${earningsError ? '—' : earnings.earningsLastMonth === null ? '—' : formatNaira(earnings.earningsLastMonth)} last month`} />
       </section>
       <Card>
         <h3 className="tk-title" style={{ margin: '0 0 12px' }}>Earnings vs Expenses</h3>
@@ -68,7 +68,12 @@ export function EarningsWallet() {
             { key: 'job', header: 'Job', render: ({ job }) => <span style={{ display: 'grid' }}><strong style={{ color: 'var(--tk-ink-900)' }}>{jobTitle(job)}</strong><span className="tk-meta">{job.number} · {job.poster.name}</span></span> },
             { key: 'trips', header: 'Trips Delivered', render: (row) => `${row.delivered ?? '—'} of ${row.required ?? '—'}` },
             { key: 'gross', header: 'Gross', align: 'right', render: ({ earnings }) => money(earnings?.totals.gross) },
-            { key: 'net', header: 'Net Earnings', align: 'right', render: ({ earnings }) => <strong>{money(earnings?.totals.net)}</strong> },
+            { key: 'net', header: 'Released / Held', align: 'right', render: ({ earnings }) => (
+              <span style={{ display: 'grid', justifyItems: 'end' }}>
+                <strong>{money(earnings?.released)}</strong>
+                <small className="tk-meta">{earnings?.released == null || earnings?.totals.gross == null ? '—' : `${money(Math.max(0, earnings.totals.gross - earnings.released))} held`}</small>
+              </span>
+            ) },
             { key: 'status', header: 'Payout', render: ({ earnings }) => <Badge tone={earnings?.status === 'PAID' ? 'success' : 'neutral'}>{earnings?.status ?? '—'}</Badge> },
             { key: 'receipt', header: 'Receipt', align: 'center', width: 80, render: (r) => <IconButton icon="receipt" tone="outline" size={30} disabled={!r.earnings?.complete} label={`Earnings receipt for ${r.job.id}`} onClick={(e) => { e.stopPropagation(); setReceipt(walletJobReceipt(r, company)); }} /> },
           ]}

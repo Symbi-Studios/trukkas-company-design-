@@ -114,7 +114,7 @@ export function truckView(source, detail = false) {
       vehicleClass: classes[source.vehicleClass] ?? '', ownership: ownershipLabels[source.ownership] ?? '',
       purchaseDate: dateLabel(source.purchaseDate) === '—' ? '' : source.purchaseDate.slice(0, 10),
       location: text(source.currentLocationNote?.location) ?? '', odometer: number(source.odometerKm) === null ? '' : String(source.odometerKm),
-      notes: text(source.notes) ?? '',
+      notes: text(source.notes) ?? '', equipment: equipmentView(source, specs),
       specs: Object.fromEntries(Object.entries(specificationFields).map(([key, label]) => [key, key === 'fuelType' ? (fuelLabel(source.fuelType ?? specs?.[label] ?? specs?.[key]) === '—' ? '' : fuelLabel(source.fuelType ?? specs?.[label] ?? specs?.[key])) : text(specs?.[label]) ?? text(specs?.[key]) ?? ''])),
     } : null,
     lastActive: timestamp(source.lastOperationalActivityAt),
@@ -139,7 +139,19 @@ export function truckView(source, detail = false) {
       fuelType: detail ? fuelLabel(source.fuelType ?? specs?.['Fuel Type'] ?? specs?.fuelType) : '—',
     },
     photos: Array.isArray(source.photos) ? source.photos.map(safeUrl).filter(Boolean).map((url) => ({ url, label: '—' })) : null,
+    equipment: equipmentView(source, specs),
   };
+}
+
+/** Equipment as an edit draft: a container truck (type, size, tonnes) or a bulk truck (truck type). */
+function equipmentView(source, specs) {
+  const id = (key, nested) => text(source[key]) ?? text(object(source[nested])?.id) ?? text(object(specs?.[nested])?.id);
+  const truckTypeId = id('truckTypeId', 'truckType');
+  const containerTypeId = id('containerTypeId', 'containerType'), containerSizeId = id('containerSizeId', 'containerSize');
+  const weight = text(source.containerWeight) ?? text(specs?.containerWeight) ?? (number(source.containerWeight) !== null ? String(source.containerWeight) : '');
+  if (truckTypeId) return { kind: 'bulk', truckTypeId, containerTypeId: '', containerSizeId: '', containerWeight: '' };
+  if (containerTypeId || containerSizeId) return { kind: 'container', truckTypeId: '', containerTypeId: containerTypeId ?? '', containerSizeId: containerSizeId ?? '', containerWeight: weight ?? '' };
+  return { kind: '', truckTypeId: '', containerTypeId: '', containerSizeId: '', containerWeight: '' };
 }
 
 export function assignedFleetDriverView(source) {

@@ -14,13 +14,16 @@ export function walletView(source) {
   return { available: wallet?.currency === 'NGN' ? decimal(wallet.available) : null };
 }
 
-export const EMPTY_WALLET_EARNINGS = { pendingPayout: null, earningsThisMonth: null, earningsLastMonth: null, completedThisMonth: null, change: null, monthlyTrend: null };
+export const EMPTY_WALLET_EARNINGS = { heldInEscrow: null, heldJobs: null, pendingPayout: null, earningsThisMonth: null, earningsLastMonth: null, completedThisMonth: null, change: null, monthlyTrend: null };
 export function walletEarningsView(source) {
   const monthly = object(source?.monthly), series = rows(monthly?.series);
   const valid = monthly?.currency === 'NGN';
   const validSeries = valid && series && series.every((item) => month(item.month) && number(item.earnings) !== null && number(item.expenses) !== null)
     && new Set(series.map((item) => item.month)).size === series.length && series.every((item, index) => index === 0 || item.month > series[index - 1].month);
   return {
+    // Still in escrow for awarded jobs (net of the 30% mobilisation already released and refunds).
+    heldInEscrow: source?.lifetime?.currency === 'NGN' ? number(source.lifetime.unpaidEarnings) : null,
+    heldJobs: source?.lifetime?.currency === 'NGN' ? count(source.lifetime.unpaidJobs) : null,
     pendingPayout: number(source?.wallet?.pendingWithdrawals),
     earningsThisMonth: valid && month(monthly.currentMonth?.month) ? number(monthly.currentMonth.earnings) : null,
     earningsLastMonth: valid && month(monthly.previousMonth?.month) ? number(monthly.previousMonth.earnings) : null,

@@ -64,7 +64,7 @@ export function Maintenance() {
       <PageHeader
         title="Fleet Maintenance"
         description="Trukkas maintenance rules show when each truck is due. Trucks with overdue mandatory maintenance can’t take new jobs until the service is completed and cleared."
-        actions={<><MaintenanceExportButton search={query} status={statusFilter} disabled={!maintenance} onToast={showToast} /><Button icon="plus" onClick={() => setSchedule({})}>Schedule Maintenance</Button></>}
+        actions={<><MaintenanceExportButton search={query} status={statusFilter} disabled={!maintenance} onToast={showToast} /><Button icon="plus" onClick={() => setSchedule({})}>Request Maintenance</Button></>}
       />
       <BlockedTrucks eligibility={eligibility} error={eligibilityError} onSchedule={scheduleFor} onOpen={(view) => navigate(fleetDetailHref(view.truckId, 'maintenance'))} />
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>

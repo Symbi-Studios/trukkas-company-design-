@@ -199,6 +199,7 @@ export function CompanyShell({ children }) {
           health={null}
           onNotifications={() => router.push("/notifications")}
           onViewProfile={() => router.push("/profile")}
+          onFeedback={() => router.push("/support/feedback?send=1")}
           avatarSrc={account.photoUrl || undefined}
           onLogout={handleLogout}
           user={account.name || account.email || "Trukkas Company"}

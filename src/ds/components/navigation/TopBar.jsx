@@ -12,7 +12,7 @@ import { DropdownMenu } from '../feedback/DropdownMenu.jsx';
 export function TopBar({ onMenu, searchPlaceholder = 'Search jobs, trucks, companies, exporters...',
                          health = 'System Health', notifications = 0, user, role, style,
                          searchValue, onSearch, searchResults, onSearchSelect,
-                         onNotifications, onViewProfile, onLogout, avatarSrc }) {
+                         onNotifications, onViewProfile, onFeedback, onLogout, avatarSrc }) {
   const [accountOpen, setAccountOpen] = React.useState(false);
   const accountRef = React.useRef(null);
   const [searchOpen, setSearchOpen] = React.useState(false);
@@ -172,6 +172,7 @@ export function TopBar({ onMenu, searchPlaceholder = 'Search jobs, trucks, compa
             <DropdownMenu width={224} items={[
               { section: 'Account' },
               { label: 'View profile', icon: 'user-round', onClick: () => { setAccountOpen(false); onViewProfile?.(); } },
+              ...(onFeedback ? [{ label: 'Send feedback', icon: 'message-square-heart', onClick: () => { setAccountOpen(false); onFeedback(); } }] : []),
               { divider: true },
               { label: 'Log out', icon: 'log-out', tone: 'danger', onClick: () => { setAccountOpen(false); onLogout?.(); } },
             ]} />

@@ -1,0 +1,57 @@
+// @ts-nocheck -- legacy module: complete TypeScript typing during migration.
+// Workspace-wide search behind the top-bar dropdown: matches the typed text
+// against jobs, trips, vehicles, drivers and payouts and returns a few hits per
+// group, each with the page it opens.
+import { jobTitle } from './jobs';
+import { shortPlace } from './trips';
+import { plateSlug } from './vehicles';
+import { tripDetailHref } from './tripLinks';
+import { jobDetailHref } from './jobLinks';
+import { fleetDetailHref } from './fleetLinks';
+import { driverDetailHref } from './driverLinks';
+import { payoutDetailHref } from './payoutLinks';
+
+const route = (job) => (job ? `${shortPlace(job.origin)} → ${shortPlace(job.destination)}` : '');
+
+export function searchWorkspace(query, { jobs = [], trips = [], trucks = [], drivers = [], payouts = [] }, perGroup = 4) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const hit = (...values) => values.some((v) => String(v ?? '').toLowerCase().includes(q));
+  const jobById = new Map(jobs.map((job) => [job.id, job]));
+
+  const groups = [
+    {
+      section: 'Jobs',
+      items: jobs
+        .filter((job) => hit(job.number, job.id, jobTitle(job), job.cargoType, job.origin, job.destination))
+        .map((job) => ({ key: job.id, icon: 'briefcase', label: jobTitle(job), meta: `${job.number ?? job.id} · ${route(job)}`, tag: job.status === 'Quoted' ? 'Bid Placed' : job.status, to: jobDetailHref(job.id) })),
+    },
+    {
+      section: 'Trips',
+      items: trips
+        .filter((trip) => hit(trip.number, trip.id, trip.jobId, trip.truckPlate, trip.driverName, route(trip.apiBacked ? trip.job : jobById.get(trip.jobId))))
+        .map((trip) => ({ key: trip.id, icon: 'route', label: trip.number ?? trip.id, meta: [route(trip.apiBacked ? trip.job : jobById.get(trip.jobId)), trip.truckPlate, trip.driverName].filter(Boolean).join(' · '), tag: trip.status, to: tripDetailHref(trip.id) })),
+    },
+    {
+      section: 'Vehicles',
+      items: trucks
+        .filter((truck) => hit(truck.plate, truck.makeModel, truck.type, truck.vin))
+        .map((truck) => ({ key: truck.id ?? truck.plate, icon: 'truck', label: truck.plate, meta: [truck.makeModel, truck.type].filter(Boolean).join(' · '), tag: truck.status, to: truck.apiBacked ? fleetDetailHref(truck.id) : `/fleet/${plateSlug(truck.plate)}` })),
+    },
+    {
+      section: 'Drivers',
+      items: drivers
+        .filter((driver) => hit(driver.name, driver.phone, driver.licenseNumber, driver.truckPlate))
+        .map((driver) => ({ key: driver.id, icon: 'user-round', label: driver.name, meta: [driver.licenseNumber, driver.truckPlate].filter(Boolean).join(' · '), tag: driver.status, to: driverDetailHref(driver.id) })),
+    },
+    {
+      section: 'Payouts',
+      items: payouts
+        .filter((payout) => hit(payout.id, payout.reference, payout.tripId, payout.jobId, ...(payout.items ?? []).flatMap((item) => [item.tripId, item.jobId])))
+        .map((payout) => ({ key: payout.id, icon: 'banknote', label: payout.id, meta: [payout.tripId, payout.reference].filter(Boolean).join(' · '), tag: payout.status, to: payoutDetailHref(payout.id) })),
+    },
+  ];
+  return groups
+    .filter((group) => group.items.length > 0)
+    .map((group) => ({ section: group.section, total: group.items.length, items: group.items.slice(0, perGroup) }));
+}

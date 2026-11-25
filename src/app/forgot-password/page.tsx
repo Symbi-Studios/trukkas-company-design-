@@ -1,0 +1,7 @@
+import { ForgotPasswordScreen } from '../../screens/AuthScreens';
+
+export const metadata = { title: 'Forgot password' };
+
+export default function ForgotPasswordPage() {
+  return <ForgotPasswordScreen />;
+}

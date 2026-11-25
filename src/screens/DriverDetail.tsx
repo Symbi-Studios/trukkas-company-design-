@@ -1,0 +1,283 @@
+// @ts-nocheck -- legacy module: complete TypeScript typing during migration.
+'use client';
+
+import { useRef, useState } from 'react';
+import { useNavigate, useParams } from '../router';
+import {
+  Avatar, Badge, Button, Card, DataTable, EmptyState, EntityHeaderCard, Icon, PageHeader, ProgressBar,
+  SectionCard, SkeletonRow, StatCard, Tabs, Timeline,
+} from '../ds';
+import { useGetCompanyDriverQuery, useGetDriverReviewsQuery, useGetDriverTripsQuery, useSetCompanyDriverAvailabilityMutation } from '../store/features/drivers/driversApi';
+import { useGetFleetQuery } from '../store/features/fleet/fleetApi';
+import { useGetDriverDocumentLibraryQuery, useUploadDriverComplianceDocumentMutation } from '../store/features/documents/documentsApi';
+import { getApiErrorMessage } from '../store/api/getApiErrorMessage';
+import { formatNaira } from '../mock/format';
+import { jobTitle } from '../domain/jobs';
+import { tripHealth, tripHealthTone } from '../domain/trips';
+import { tripDetailHref } from '../domain/tripLinks';
+import { fleetDetailHref } from '../domain/fleetLinks';
+import { jobDetailHref } from '../domain/jobLinks';
+import { DRIVER_REQUIREMENTS } from '../domain/documents';
+import { DRIVER_STATUS_TONE } from '../domain/drivers';
+import { vehicleStatusTone } from '../domain/vehicles';
+import { DriverAssignTruckModal } from '../components/DriverAssignTruckModal';
+import { FleetRemoveDriverModal } from '../components/FleetAssignModals';
+import { RemoveCompanyDriverModal } from '../components/DriverInvitationModals';
+import { ComplianceChecklist, UploadDocumentModal } from '../components/DocumentCompliance';
+import { Toast, useToast } from '../components/Toast';
+import styles from './DriverDetail.module.css';
+
+const TABS = [
+  { value: 'overview', label: 'Overview' },
+  { value: 'trips', label: 'Trips' },
+  { value: 'activity', label: 'Activity' },
+  { value: 'ratings', label: 'Ratings & Feedback' },
+  { value: 'documents', label: 'Documents' },
+];
+
+function Stars({ rating, size = 13 }) {
+  return (
+    <span className={styles.stars} aria-label={rating == null ? '—' : `${rating} out of 5`}>
+      {[1, 2, 3, 4, 5].map((n) => <Icon key={n} name="star" filled size={size} color={rating != null && n <= Math.round(rating) ? 'var(--tk-warning)' : 'var(--tk-line-strong)'} />)}
+    </span>
+  );
+}
+
+export function DriverDetail({ driverId: queryDriverId }: { driverId?: string } = {}) {
+  const { driverId: routeDriverId } = useParams();
+  const driverId = queryDriverId ?? routeDriverId;
+  const navigate = useNavigate();
+  const { currentData: driver, error: driverError, isLoading: driverLoading } = useGetCompanyDriverQuery(driverId, { skip: !driverId, refetchOnMountOrArgChange: true });
+  const { currentData: trucks, error: truckError, isLoading: truckLoading } = useGetFleetQuery(undefined, { skip: !driver, refetchOnMountOrArgChange: true });
+  const { currentData: trips, error: tripsError, isLoading: tripsLoading } = useGetDriverTripsQuery(driverId, { skip: !driver, refetchOnMountOrArgChange: true });
+  const { currentData: feedback, error: reviewsError, isLoading: reviewsLoading } = useGetDriverReviewsQuery(driverId, { skip: !driver, refetchOnMountOrArgChange: true });
+  const { currentData: documentLibrary, error: documentsError, isLoading: documentsLoading } = useGetDriverDocumentLibraryQuery(driverId, { skip: !driver || !!driverError, refetchOnMountOrArgChange: true });
+  const [uploadDocument] = useUploadDriverComplianceDocumentMutation();
+  const [setAvailability, { isLoading: changingAvailability }] = useSetCompanyDriverAvailabilityMutation();
+  const changingDuty = useRef(false);
+  const truck = trucks?.find((item) => item.id === driver?.truckId);
+  const [tab, setTab] = useState('overview');
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removeCompanyOpen, setRemoveCompanyOpen] = useState(false);
+  const [uploadType, setUploadType] = useState(null);
+  const [toast, showToast] = useToast();
+
+  const reviews = !reviewsError ? feedback?.reviews ?? [] : [];
+  const docs = !documentsError ? documentLibrary?.documents ?? [] : [];
+
+  if (driverLoading) return <SkeletonRow variant="detail" />;
+  if (driverError) return <EmptyState icon="user" title={getApiErrorMessage(driverError)} action={<Button variant="outline" onClick={() => navigate('/drivers')}>Back to Drivers</Button>} />;
+
+  if (!driver) {
+    return (
+      <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
+        <PageHeader title="Driver not found" />
+        <Button variant="outline" onClick={() => navigate('/drivers')}>Back to Drivers</Button>
+      </div>
+    );
+  }
+
+  const completed = trips?.filter((trip) => trip.status === 'Completed');
+  const knownTrips = trips && !tripsError && trips.every((trip) => trip.status !== '—');
+  const closed = knownTrips ? trips.filter((trip) => trip.status === 'Completed' || trip.status === 'Cancelled').length : 0;
+  const sumCompleted = (value) => !knownTrips || completed.some((trip) => value(trip) == null) ? null : completed.reduce((sum, trip) => sum + value(trip), 0);
+  const perf = {
+    rating: driver.rating ?? (reviewsError ? null : feedback?.rating), reviewCount: driver.reviewCount !== '—' ? driver.reviewCount : !reviewsError ? feedback?.reviewCount ?? '—' : '—',
+    tripsCompleted: driver.tripsCompleted !== '—' ? driver.tripsCompleted : knownTrips ? completed.length : '—', completionRate: closed ? Math.round(completed.length / closed * 100) : null,
+    onTimeRate: driver.onTimeRate, safetyScore: driver.safetyScore, incidents: driver.incidents ?? '—',
+    distanceKm: sumCompleted((trip) => trip.distanceKm), earnings: driver.earnings,
+    activeTrip: !tripsError ? trips?.find((trip) => trip.open) ?? null : null,
+  };
+  const activity = !tripsError ? (trips ?? []).flatMap((trip) => trip.activity ?? []).sort((a, b) => Date.parse(b.at) - Date.parse(a.at)) : [];
+  const breakdown = !reviewsError && feedback ? feedback.breakdown : [5, 4, 3, 2, 1].map((stars) => ({ stars, count: '—', pct: 0 }));
+  const locked = !!perf.activeTrip;
+  const status = locked ? 'On Trip' : driver.status;
+  const assignmentBlocked = locked || !knownTrips || !driver.active;
+  async function changeAvailability(availability) {
+    if (changingDuty.current || changingAvailability) return;
+    changingDuty.current = true;
+    try { await setAvailability({ id: driver.id, availability }).unwrap(); showToast(availability === 'AVAILABLE' ? 'Driver marked available.' : 'Driver marked off duty.'); }
+    catch (error) { showToast(getApiErrorMessage(error)); }
+    finally { changingDuty.current = false; }
+  }
+
+  const truckActions = (
+    <>
+      <Button variant="secondary" icon={driver.truckPlate ? 'repeat' : 'truck'} disabled={assignmentBlocked} onClick={() => setAssignOpen(true)}>
+        {driver.truckPlate ? 'Reassign Truck' : 'Assign to Truck'}
+      </Button>
+      {driver.truckPlate && <Button variant="danger" icon="user-minus" disabled={assignmentBlocked || truck?.driverId !== driver.id || !!truckError} onClick={() => setRemoveOpen(true)}>Remove from Truck</Button>}
+    </>
+  );
+
+  return (
+    <div className={styles.page}>
+      <PageHeader
+        crumbs={[{ label: 'Drivers', onClick: () => navigate('/drivers') }, driver.name]}
+        title={driver.name}
+        description={/* `${driver.id} · ` */ `Joined ${driver.joined}`}
+        actions={<Button variant="outline" icon="arrow-left" onClick={() => navigate('/drivers')}>Back to Drivers</Button>}
+      />
+      <EntityHeaderCard
+        name={driver.name}
+        avatar={<Avatar name={driver.name} src={driver.photo || undefined} size={64} />}
+        subtitle={`${driver.address} · ${driver.email}`}
+        badges={<><Badge tone={DRIVER_STATUS_TONE[status]} dot>{status}</Badge><Badge tone={driver.kyc === 'Verified' ? 'success' : driver.kyc === '—' ? 'neutral' : 'warning'}>KYC {driver.kyc}</Badge></>}
+        facts={[
+          { label: 'Phone', value: driver.phone },
+          { label: 'Licence No.', value: driver.licenseNumber },
+          { label: 'Licence Class', value: driver.licenseClass },
+          { label: 'Licence Expiry', value: driver.licenseExpiry },
+          { label: 'Assigned Truck', value: driver.truckPlate || (driver.truckKnown ? 'Unassigned' : '—') },
+          { label: 'Rating', value: `★ ${perf.rating?.toFixed(1) ?? '—'} (${perf.reviewCount})` },
+        ]}
+        actions={
+          <>
+            {truckActions}
+            {driver.status === 'Off Duty'
+              ? <Button variant="outline" disabled={changingAvailability || !driver.active} onClick={() => changeAvailability('AVAILABLE')}>Mark Available</Button>
+              : !locked && <Button variant="outline" disabled={changingAvailability || !driver.active || status === 'On Trip'} onClick={() => changeAvailability('OFF_DUTY')}>Mark Off Duty</Button>}
+            <Button variant="danger" icon="user-minus" disabled={locked || driver.status === 'On Trip' || changingAvailability} onClick={() => setRemoveCompanyOpen(true)}>Remove from Company</Button>
+          </>
+        }
+      />
+      {locked && (
+        <Card tone="cool" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Icon name="lock" size={16} color="var(--tk-blue)" />
+          <span className="tk-meta">Truck assignment is locked while {driver.name.split(' ')[0]} is on <button type="button" className={styles.link} onClick={() => navigate(tripDetailHref(perf.activeTrip.id))}>{perf.activeTrip.number}</button>.</span>
+        </Card>
+      )}
+
+      <Card pad="none">
+        <div style={{ padding: '0 var(--tk-card-pad)' }}>
+          <Tabs value={tab} onChange={setTab} items={TABS.map((t) => ({ ...t, count: t.value === 'trips' ? !tripsError && trips ? trips.length : '—' : t.value === 'ratings' ? !reviewsError && feedback ? reviews.length : '—' : undefined }))} />
+        </div>
+        <div className={styles.body}>
+          {tab === 'overview' && (
+            <div className={styles.overview}>
+              <section className={styles.kpis}>
+                <StatCard icon="star" tint="amber" label="Average Rating" value={perf.rating?.toFixed(1) ?? '—'} caption={`${perf.reviewCount} reviews`} />
+                <StatCard icon="clock-3" tint="green" label="On-time Delivery" value={perf.onTimeRate != null ? `${perf.onTimeRate}%` : '—'} caption="Last 90 days" />
+                <StatCard icon="shield-check" tint="blue" label="Safety Score" value={perf.safetyScore != null ? `${perf.safetyScore}/100` : '—'} caption={`${perf.incidents} incident(s) reported`} />
+                <StatCard icon="route" tint="purple" label="Trips Completed" value={perf.tripsCompleted} caption={perf.completionRate != null ? `${perf.completionRate}% completion rate` : 'All time'} />
+                <StatCard icon="map" tint="teal" label="Distance Driven" value={perf.distanceKm == null ? '—' : `${perf.distanceKm.toLocaleString()} km`} caption="Trips on Trukkas" />
+                <StatCard icon="banknote" tint="green" label="Earnings Generated" value={perf.earnings == null ? '—' : formatNaira(perf.earnings)} caption="Delivered trips" />
+              </section>
+              <div className={styles.twoUp}>
+                <SectionCard title="Assigned Truck">
+                  {truckLoading ? <SkeletonRow variant="list" rows={1} /> : truckError ? <EmptyState icon="truck" title={getApiErrorMessage(truckError)} /> : truck ? (
+                    <div style={{ display: 'grid', gap: 12 }}>
+                      <div className={styles.truckRow}>
+                        {truck.photos?.[0]?.url
+                          ? <img src={truck.photos[0].url} alt="" className={styles.truckImg} />
+                          : <span className={styles.truckTile}><Icon name="truck" size={26} /></span>}
+                        <span><strong>{truck.plate}</strong><small>{truck.makeModel}</small><small>{truck.location}</small></span>
+                        <Badge tone={vehicleStatusTone(truck.status)} dot>{truck.status}</Badge>
+                      </div>
+                      <div className={styles.actionRow}>
+                        <Button variant="secondary" size="sm" icon="eye" onClick={() => navigate(fleetDetailHref(truck.id))}>View Truck</Button>
+                        {truckActions}
+                      </div>
+                    </div>
+                  ) : !driver.truckKnown || driver.truckId ? <span className="tk-meta">—</span> : (
+                    <EmptyState icon="truck" title="No truck assigned" description="Assign this driver to a truck so they can be dispatched on trips." action={<Button icon="truck" disabled={assignmentBlocked} onClick={() => setAssignOpen(true)}>Assign to Truck</Button>} style={{ padding: 16 }} />
+                  )}
+                </SectionCard>
+                <SectionCard title="Recent Activity" action={<button type="button" className={styles.link} onClick={() => setTab('activity')}>View all</button>}>
+                  {activity.length === 0 ? <span className="tk-meta">—</span> : (
+                    <Timeline items={activity.slice(0, 4).map((a) => ({ title: a.title, time: a.time, description: a.description, state: a.tone === 'danger' ? 'danger' : a.tone === 'warning' ? 'warning' : 'done', icon: 'check' }))} />
+                  )}
+                </SectionCard>
+              </div>
+              {reviews[0] && (
+                <SectionCard title="Latest Feedback" action={<button type="button" className={styles.link} onClick={() => setTab('ratings')}>All feedback</button>}>
+                  <ReviewRow review={reviews[0]} onJob={(id) => navigate(jobDetailHref(id))} />
+                </SectionCard>
+              )}
+            </div>
+          )}
+
+          {tab === 'trips' && (tripsLoading ? <SkeletonRow columns={7} /> : tripsError ? <EmptyState icon="route" title={getApiErrorMessage(tripsError)} /> : trips?.length ? (
+            <DataTable rows={trips} rowKey={(t) => t.id} onRowClick={(t) => navigate(tripDetailHref(t.id))} columns={[
+              { key: 'id', header: 'Trip', render: (t) => <span className={styles.twoLine}><strong>{t.number}</strong><small>{t.jobId}</small></span> },
+              { key: 'cargo', header: 'Cargo', render: (t) => jobTitle(t.job) },
+              { key: 'route', header: 'Route', render: (t) => `${t.job?.origin?.split(',')[0] ?? '—'} → ${t.job?.destination?.split(',')[0] ?? '—'}` },
+              { key: 'truck', header: 'Truck', render: (t) => t.truckPlate },
+              { key: 'dates', header: 'Dates', render: (t) => `${t.pickupDate} → ${t.deliveryDate}` },
+              { key: 'earnings', header: 'Earnings', align: 'right', render: (t) => t.revenue == null ? '—' : formatNaira(t.revenue) },
+              { key: 'status', header: 'Status', render: (t) => <Badge tone={tripHealthTone(tripHealth(t))} dot>{tripHealth(t)}</Badge> },
+            ]} />
+          ) : <EmptyState icon="route" title="No trips yet" description="Trips appear once this driver is dispatched on a job." />)}
+
+          {tab === 'activity' && (activity.length
+            ? <Timeline items={activity.map((a) => ({ title: a.title, time: a.time, description: a.description, state: a.tone === 'danger' ? 'danger' : a.tone === 'warning' ? 'warning' : 'done', icon: 'check' }))} />
+            : <span className="tk-meta">—</span>)}
+
+          {tab === 'ratings' && (
+            <div className={styles.ratings}>
+              <Card tone="sunk" className={styles.ratingSummary}>
+                <span className={styles.bigRating}>{perf.rating?.toFixed(1) ?? '—'}</span>
+                <Stars rating={perf.rating} size={16} />
+                <span className="tk-meta">{perf.reviewCount} ratings from forwarders</span>
+                <div className={styles.breakdown}>
+                  {breakdown.map((row) => (
+                    <div key={row.stars}>
+                      <span>{row.stars} ★</span>
+                      <ProgressBar value={row.pct} height={8} color={row.stars >= 4 ? 'var(--tk-success)' : row.stars === 3 ? 'var(--tk-warning)' : 'var(--tk-danger)'} />
+                      <small>{row.count}</small>
+                    </div>
+                  ))}
+                </div>
+                <span className="tk-meta">Breakdown of the {!reviewsError && feedback ? reviews.length : '—'} written review(s) below.</span>
+              </Card>
+              <div className={styles.reviewList}>
+                {reviewsLoading ? <SkeletonRow variant="review" rows={2} /> : reviewsError ? <EmptyState icon="message-square" title={getApiErrorMessage(reviewsError)} /> : reviews.length === 0
+                  ? <EmptyState icon="message-square" title="No written feedback yet" description="Forwarders can rate a driver after each delivery." />
+                  : reviews.map((r) => <ReviewRow key={r.id} review={r} onJob={(id) => navigate(jobDetailHref(id))} />)}
+              </div>
+            </div>
+          )}
+
+          {tab === 'documents' && (
+            documentsLoading ? <SkeletonRow variant="list" rows={5} /> : documentsError ? <EmptyState icon="file-text" title={getApiErrorMessage(documentsError)} /> : <ComplianceChecklist
+              title="Driver Documents" description="Required to dispatch this driver on trips. Trip paperwork lives on each trip."
+              requirements={DRIVER_REQUIREMENTS} docs={docs}
+              compliance={documentLibrary} unavailable={!documentLibrary} unavailableTypes={documentLibrary?.unavailableTypes ?? []}
+              onUpload={(req) => setUploadType(req.type)} onOpen={(doc) => doc.url ? window.open(doc.url, '_blank', 'noopener,noreferrer') : showToast('This document is unavailable to open right now.')}
+              style={{ boxShadow: 'none', border: 0 }}
+            />
+          )}
+        </div>
+      </Card>
+
+      <DriverAssignTruckModal driver={driver} open={assignOpen} onClose={() => setAssignOpen(false)} onDone={(plate) => { setAssignOpen(false); showToast(`${driver.name} assigned to ${plate}.`); }} />
+      <FleetRemoveDriverModal truck={truck} open={removeOpen} onClose={() => setRemoveOpen(false)} onDone={() => { setRemoveOpen(false); showToast(`${driver.name} removed from ${truck?.plate}.`); }} />
+      <RemoveCompanyDriverModal driver={driver} open={removeCompanyOpen} onClose={() => setRemoveCompanyOpen(false)} onDone={() => navigate('/drivers')} />
+      <UploadDocumentModal
+        open={!!uploadType} onClose={() => setUploadType(null)} ownerType="driver" ownerId={driver.id} ownerLabel={driver.name}
+        requirements={DRIVER_REQUIREMENTS} initialType={uploadType}
+        submitDocument={async (draft) => {
+          try { return await uploadDocument(draft).unwrap(); }
+          catch (error) { throw new Error(getApiErrorMessage(error)); }
+        }}
+        onDone={(doc) => { setUploadType(null); showToast(`${doc.name} submitted for review.`); }}
+      />
+      <Toast message={toast} />
+    </div>
+  );
+}
+
+function ReviewRow({ review, onJob }) {
+  return (
+    <div className={styles.review}>
+      <div className={styles.reviewHead}>
+        <Stars rating={review.rating} />
+        <strong>{review.poster}</strong>
+        <span className="tk-meta">{review.date}</span>
+      </div>
+      <p>“{review.comment}”</p>
+      {review.jobId && <button type="button" className={styles.link} onClick={() => onJob(review.jobId)}>{review.jobNumber}</button>}
+    </div>
+  );
+}

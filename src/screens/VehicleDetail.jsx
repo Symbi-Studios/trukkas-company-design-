@@ -115,7 +115,7 @@ export function VehicleDetail() {
                 </div>
               )}
             </div>
-            <Button fullWidth variant="outline" icon="wrench" disabled={saving} onClick={() => setMaintenanceOpen(true)}>Mark for Maintenance</Button>
+            <Button fullWidth variant="outline" icon="wrench" disabled={saving} onClick={() => setMaintenanceOpen(true)}>Request Maintenance</Button>
             <Button fullWidth variant="outline" icon="file-text" onClick={() => navigate(fleetDetailHref(truck.id, 'documents'))}>View Documents</Button>
             <Button fullWidth variant="danger" icon="power" disabled={saving} onClick={() => saveSetting({ status: truck.status === 'Inactive' ? 'Active' : 'Inactive' })}>{truck.status === 'Inactive' ? 'Activate Truck' : 'Deactivate Truck'}</Button>
           </Card>

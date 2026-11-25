@@ -54,7 +54,7 @@ export function MaintenanceModal({ open, onClose, trucks, truckId, record = null
 
   const ready = !busy && !loading && !loadError && selectedVehicleAvailable && draft.truckId && draft.serviceType && draft.description.trim() && draft.date;
   return (
-    <Modal open={open} onClose={() => { if (!submitting.current) onClose(); }} title={record ? 'Edit Maintenance' : 'Schedule Maintenance'}
+    <Modal open={open} onClose={() => { if (!submitting.current) onClose(); }} title={record ? 'Edit Maintenance' : 'Request Maintenance'}
       description={record ? `${record.reference} · ${record.truckPlate}` : 'Trukkas reviews each request and confirms the schedule.'} width={width}
       footer={<><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button form={formId} type="submit" disabled={!ready}>{busy ? (record ? 'Saving…' : 'Sending…') : record ? 'Save Changes' : 'Send Request'}</Button></>}>
       <form id={formId} onSubmit={submit} className={styles.form}>

@@ -48,6 +48,54 @@ function documentView(doc) {
   };
 }
 
+/**
+ * Where a trip really is: the backend's job status (plus driver and POD state)
+ * as a stage, the phase it belongs to, who acts next and what that means for
+ * the money held in escrow. The 5 coarse stages above stay for tabs and counts.
+ */
+export const TRIP_PHASES = ['Dispatch', 'Pickup', 'Transit', 'Delivery', 'Return', 'Done'];
+const STAGE_RULES = {
+  AWAITING_DISPATCH: ['Dispatch', 'Awaiting dispatch', 'You', 'Choose a driver for this job.', 'warning'],
+  AWAITING_DRIVER: ['Dispatch', 'Awaiting driver to accept', 'Driver', 'The driver confirms the job in the driver app. If they decline, assign someone else.', 'purple'],
+  DRIVER_EN_ROUTE: ['Pickup', 'En route to terminal', 'Driver', 'Driving to the pickup terminal.', 'info'],
+  DRIVER_ARRIVED: ['Pickup', 'At terminal', 'Driver', 'Loading the cargo and confirming pickup.', 'info'],
+  PICKUP_COMPLETED: ['Pickup', 'Picked up', 'Driver', 'Leaving the terminal.', 'info'],
+  IN_TRANSIT: ['Transit', 'In transit', 'Driver', 'Driving to the delivery point.', 'info'],
+  CARGO_ARRIVED: ['Delivery', 'Arrived · waiting for unlock code', 'Forwarder', 'The forwarder settles any demurrage and releases the unlock code.', 'warning'],
+  DEMURRAGE_IN_PROGRESS: ['Delivery', 'Demurrage running', 'Forwarder', 'The forwarder must settle demurrage before offloading can start.', 'danger'],
+  OFFLOADING: ['Delivery', 'Offloading', 'Driver', 'Offloading the cargo.', 'info'],
+  OFFLOAD_COMPLETED: ['Delivery', 'Offloaded · proof of delivery due', 'Driver', 'The driver submits proof of delivery.', 'info'],
+  POD_SUBMITTED: ['Delivery', 'Proof of delivery submitted', 'Forwarder', 'The forwarder reviews the proof of delivery.', 'info'],
+  POD_REJECTED: ['Delivery', 'Proof of delivery rejected', 'Driver', 'The driver resubmits proof of delivery.', 'danger'],
+  CONTAINER_RETURNED: ['Return', 'Container returned · awaiting confirmation', 'Forwarder', 'The forwarder confirms the empty container is back at the depot.', 'info'],
+  COMPLETED: ['Done', 'Completed', null, null, 'success'],
+  CANCELLED: ['Done', 'Cancelled', null, null, 'danger'],
+  DISPUTED: ['Done', 'Disputed', 'Trukkas support', 'Support is reviewing this trip. Escrow is frozen until it’s resolved.', 'danger'],
+};
+
+export function tripStageView(source, driverAssigned) {
+  const status = text(source?.status);
+  const pod = object(source?.pod);
+  let key = status;
+  if (status === 'DRIVER_ASSIGNED') key = driverAssigned === false ? 'AWAITING_DISPATCH' : driverAssigned ? 'AWAITING_DRIVER' : null;
+  if (status === 'OFFLOAD_COMPLETED' && pod) key = text(pod.rejectedAt) ? 'POD_REJECTED' : text(pod.submittedAt) ? 'POD_SUBMITTED' : key;
+  const rule = key && STAGE_RULES[key];
+  if (!rule) return null;
+  const [phase, labelText, actor, next, tone] = rule;
+  const earnings = object(object(source.money)?.earnings);
+  const amount = (part) => earnings?.currency === 'NGN' && object(earnings[part]) && number(earnings[part].amount) !== null ? earnings[part].amount : null;
+  const paid = (part) => object(earnings?.[part]) ? instant(earnings[part].paidAt) ? true : earnings[part].paidAt === null ? false : null : null;
+  const mobilization = amount('mobilization'), final = amount('final');
+  const money = earnings?.currency === 'NGN' && mobilization !== null && final !== null && paid('mobilization') !== null && paid('final') !== null ? {
+    mobilization, final, mobilizationPaid: paid('mobilization'), finalPaid: paid('final'),
+    mobilizationPaidOn: dateLabel(earnings.mobilization.paidAt), finalPaidOn: dateLabel(earnings.final.paidAt),
+    released: (paid('mobilization') ? mobilization : 0) + (paid('final') ? final : 0),
+    held: (paid('mobilization') ? 0 : mobilization) + (paid('final') ? 0 : final),
+    payoutStatus: text(earnings.payoutStatus),
+  } : null;
+  return { key, phase, phaseIndex: TRIP_PHASES.indexOf(phase), label: labelText, actor, next, tone, money };
+}
+
 function proofOfDeliveryDocument(value) {
   const pod = object(value);
   if (!pod || (!text(pod.photoUrl) && !text(pod.submittedAt) && !text(pod.rejectedAt))) return null;
@@ -206,6 +254,7 @@ export function tripView(source, isDetail = false, jobDetails = null) {
     marginRevenue: source.money?.margin?.currency === 'NGN' ? number(source.money.margin.revenue) : null,
     marginFinal: source.money?.margin?.currency === 'NGN' ? boolean(source.money.margin.final) : null,
     cancellationRequested: boolean(source.cancellationRequested),
+    stage: tripStageView(source, driverAssigned),
     podSubmitted,
     actions: {
       arrival: source.status === 'DRIVER_EN_ROUTE',

@@ -14,6 +14,8 @@ import { VEHICLE_PHOTO_SLOTS, VEHICLE_REQUIREMENTS, formatDisplayDate } from '..
 import { FileDrop } from '../components/FileDrop.jsx';
 import { PickList, driverOptions } from '../components/AssignModals.jsx';
 import { todayValue } from '../ds/components/forms/datePickerDates.js';
+import { EquipmentFields } from '../components/EquipmentFields.jsx';
+import { EMPTY_EQUIPMENT, equipmentBody, useGetEquipmentOptionsQuery } from '../store/features/reference/referenceApi.js';
 import styles from './AddVehicle.module.css';
 
 const STEPS = [
@@ -26,7 +28,8 @@ const STEPS = [
 ];
 
 const MAKES = ['Mercedes-Benz', 'Volvo', 'MAN', 'DAF', 'Scania', 'Iveco', 'Sinotruk (HOWO)', 'Shacman', 'FAW', 'Mack', 'Renault', 'Isuzu'];
-const YEARS = Array.from({ length: 32 }, (_, i) => String(new Date().getFullYear() - i));
+// The API accepts 1999 to the current year.
+const YEARS = Array.from({ length: new Date().getFullYear() - 1998 }, (_, i) => String(new Date().getFullYear() - i));
 const COLORS = ['White', 'Blue', 'Red', 'Silver', 'Black', 'Yellow', 'Green', 'Orange', 'Other'];
 const CLASS_LABEL = { Head: 'Truck (Head)', Trailer: 'Trailer', Tanker: 'Tanker', Specialized: 'Specialized', Other: 'Other' };
 
@@ -39,6 +42,7 @@ const EMPTY = {
   },
   docs: Object.fromEntries(VEHICLE_REQUIREMENTS.map((r) => [r.type, { files: [], expiry: '' }])),
   photos: Object.fromEntries(VEHICLE_PHOTO_SLOTS.map((slot) => [slot, []])),
+  equipment: EMPTY_EQUIPMENT,
   driverId: null,
 };
 
@@ -66,6 +70,10 @@ export function AddVehicle() {
   const [submitError, setSubmitError] = useState('');
 
   const isTrailer = draft.vehicleClass === 'Trailer';
+  const { data: equipmentOptions } = useGetEquipmentOptionsQuery();
+  const nameOf = (list, id) => equipmentOptions?.[list]?.find((o) => o.value === id)?.label;
+  const equipmentLabel = draft.equipment.kind === 'bulk' ? nameOf('truckTypes', draft.equipment.truckTypeId) ?? '—'
+    : draft.equipment.kind === 'container' ? [nameOf('containerSizes', draft.equipment.containerSizeId), nameOf('containerTypes', draft.equipment.containerTypeId), draft.equipment.containerWeight && `${draft.equipment.containerWeight} t`].filter(Boolean).join(' · ') || '—' : '—';
   const steps = STEPS.filter((s) => !(isTrailer && s.key === 'driver'));
   const current = steps[Math.min(step, steps.length - 1)];
   const set = (key) => (e) => setDraft((d) => ({ ...d, [key]: e?.target ? e.target.value : e }));
@@ -89,7 +97,7 @@ export function AddVehicle() {
       if (!draft.make.trim()) next.make = 'Make is required.';
       if (!draft.model.trim()) next.model = 'Model is required.';
       if (!draft.year) next.year = 'Year of manufacture is required.';
-      if (!draft.vin.trim()) next.vin = 'Chassis / VIN is required.';
+      if (!isTrailer && !equipmentBody(draft.equipment)) next.equipment = 'Choose what this truck carries. Jobs are matched on it.';
     }
     if (key === 'documents') {
       VEHICLE_REQUIREMENTS.forEach((r) => {
@@ -172,9 +180,15 @@ export function AddVehicle() {
                       ))}
                     </div>
                   </div>
+                  {!isTrailer && (
+                    <div>
+                      <span className={styles.label}>What does this truck carry?</span>
+                      <EquipmentFields value={draft.equipment} onChange={(equipment) => setDraft((d) => ({ ...d, equipment }))} error={errors.equipment} />
+                    </div>
+                  )}
                   <div className={styles.grid}>
                     <TextField label="Registration (Plate) Number" required value={draft.plate} onChange={set('plate')} placeholder="e.g. LSD 555 XY" error={errors.plate} />
-                    <TextField label="Chassis / VIN Number" required value={draft.vin} onChange={set('vin')} placeholder="17-character VIN" error={errors.vin} />
+                    <TextField label="Chassis / VIN Number" value={draft.vin} onChange={set('vin')} error={errors.vin} />
                     <TextField label="Make" required value={draft.make} onChange={set('make')} list="vehicle-makes" placeholder="e.g. Mercedes-Benz" error={errors.make} />
                     <TextField label="Model" required value={draft.model} onChange={set('model')} placeholder="e.g. Actros 2645" error={errors.model} />
                     <Select label="Year of Manufacture" value={draft.year} placeholder="Select year" options={YEARS} onChange={set('year')} />
@@ -276,6 +290,7 @@ export function AddVehicle() {
                   )}
                   <ReviewSection title="Vehicle Details" onEdit={() => goTo(0)} rows={[
                     ['Vehicle Type', CLASS_LABEL[draft.vehicleClass]],
+                    ...(!isTrailer ? [['Equipment', equipmentLabel]] : []),
                     ['Registration No.', draft.plate.toUpperCase() || '—'], ['Chassis / VIN', draft.vin.toUpperCase() || '—'],
                     ['Make & Model', `${draft.make} ${draft.model}`.trim() || '—'], ['Year of Manufacture', draft.year || '—'],
                     ['Colour', draft.color || '—'], ['Ownership', draft.ownership], ['Purchase Date', draft.purchaseDate ? formatDisplayDate(draft.purchaseDate) : '—'],

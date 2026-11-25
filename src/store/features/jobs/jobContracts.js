@@ -26,8 +26,38 @@ export const emptyPoster = { name: '—', verified: null, rating: null, jobsPost
 
 export function bidView(bid) {
   if (!text(bid?.id)) return null;
-  return { id: bid.id, amount: decimal(bid.amount), message: text(bid.message), submittedAt: stamp(bid.createdAt), expiresAt: text(bid.expiresAt), canWithdraw: bool(bid.actions?.canWithdraw), status: text(bid.status) };
+  return { id: bid.id, amount: decimal(bid.amount), message: text(bid.message), submittedAt: stamp(bid.createdAt), expiresAt: text(bid.expiresAt), expiresLabel: instant(bid.expiresAt) ? new Intl.DateTimeFormat('en-NG', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lagos' }).format(instant(bid.expiresAt)) : null, canWithdraw: bool(bid.actions?.canWithdraw), status: text(bid.status) };
 }
+
+const DOC_STATUS = { APPROVED: 'Approved', PENDING: 'In review', REJECTED: 'Rejected', UPLOADED: 'Uploaded' };
+const docState = (doc) => object(doc) ? DOC_STATUS[doc.status] ?? 'Uploaded' : doc === null ? 'Not uploaded' : null;
+function assignmentView(item) {
+  const a = object(item?.assignment);
+  return a && text(a.driverId) ? { driverId: a.driverId, driverName: text(a.driverName) ?? '—', truckId: text(a.truckId), plate: text(a.plateNumber) ?? '—' } : null;
+}
+/** One row per container (or bulk rack): what it is, who carries it, and its release documents. */
+function loadItems(job) {
+  const containers = rows(job.containers);
+  if (containers?.length) return containers.map((item, index) => ({
+    kind: 'container', id: text(item.id), label: text(item.containerNumber) ?? `Container ${index + 1}`,
+    spec: [text(item.containerSize?.name) ?? text(item.size), text(item.containerType?.name) ?? text(item.type)].filter(Boolean).join(' ') || '—',
+    tonnes: decimal(item.goodsTonnage) ?? decimal(item.tonnage), assignment: assignmentView(item),
+    docs: [['TDO', docState(item.tdoDocument)], ['Gate pass', docState(item.customGatePass)], ['Exit note', docState(item.exitNote)]].filter(([, state]) => state),
+  }));
+  const racks = rows(job.racks);
+  if (racks?.length) return racks.map((item, index) => ({
+    kind: 'rack', id: text(item.id), label: text(item.rackNumber) ?? `Rack ${count(item.position) ?? index + 1}`,
+    spec: text(item.truckType?.name) ?? '—', tonnes: decimal(item.weight), assignment: assignmentView(item),
+    docs: [['TDO', docState(item.tdoDocument)], ['Gate pass', docState(item.customGatePass)], ['Exit note', docState(item.exitNote)]].filter(([, state]) => state),
+  }));
+  return containers || racks ? [] : null;
+}
+const placeName = (port, terminal) => [text(port?.name), text(terminal?.name)].filter(Boolean).join(' · ') || null;
+const durationLabel = (minutes) => {
+  if (!(number(minutes) > 0)) return null;
+  const hours = Math.round(minutes / 60);
+  return hours < 1 ? `${Math.round(minutes)} min` : hours < 24 ? `~${hours} h` : `~${Math.round(hours / 24)} day${Math.round(hours / 24) === 1 ? '' : 's'}`;
+};
 
 export function jobView(value, context = 'detail', bid = null) {
   const job = object(value);
@@ -78,7 +108,7 @@ export function jobView(value, context = 'detail', bid = null) {
     origin: origin ?? '—', destination: destination ?? '—', routeCoordinates: { origin: coordinates(job.route?.origin), destination: coordinates(job.route?.destination) },
     category, categories, cargoType: cargoDescription ?? category, equipment: equipment?.length ? equipment.join(', ') : '—',
     quantity: containers ? containers.length : '—', weightKg: tons === null ? null : tons * 1000,
-    pickupDate: dateLabel(terms?.pickupDate ?? job.tdoDate), deliveryDate: dateLabel(terms?.deliveryDate), tripType: label(terms?.tripType, types), insurance: text(job.insurance) ?? '—', paymentTerms: text(terms?.payment?.structure) ?? '—',
+    pickupDate: dateLabel(terms?.pickupDate ?? job.tdoDate), deliveryDate: dateLabel(terms?.deliveryDate), tripType: label(terms?.tripType, types), insurance: text(job.insurance) ?? '—', paymentTerms: 'Escrow · 30% at pickup, 70% on completion',
     cargoValue: job.cargoCurrency === 'NGN' ? number(job.cargoValue) : null, budget: listedFare,
     contractValue: decimal(job.agreedPrice) ?? myBid?.amount ?? listedFare,
     trucksRequired: count(requirements?.trucksRequired) ?? count(job.requiredTrucks), negotiable: bool(terms?.negotiable), saved: bool(job.saved),
@@ -86,18 +116,28 @@ export function jobView(value, context = 'detail', bid = null) {
     postedAt: instant(job.createdAt ?? (context === 'bid' ? job.requestedAt : null))?.getTime() ?? null,
     postedAgo: null, closesInDays: null,
     distanceKm: number(job.feeBreakdown?.recommendedFare?.distanceKm),
-    estimatedDuration: duration === null ? null : duration.toLocaleString('en-NG', { maximumFractionDigits: 1 }) + ' min',
     requirements: requirementItems?.length ? [...new Set(requirementItems)] : null, specialNotes: instructions ? [instructions] : null,
     documents: docs?.map((doc) => ({ id: text(doc.id), name: text(doc.fileName) ?? text(doc.type) ?? '—', url: safeUrl(doc.url), size: number(doc.sizeBytes) === null ? '—' : `${(doc.sizeBytes / 1024).toLocaleString('en-NG', { maximumFractionDigits: 1 })} KB` })) ?? null,
-    cargoPhotoUrl: cargoPhotos?.[0] ?? primaryPhoto, cargoPhotos, photos: photoCount, myBid,
+    cargoPhotoUrl: cargoPhotos?.[0] ?? primaryPhoto, photos: photoCount, myBid,
     bidBounds: terms && Object.hasOwn(terms, 'bidRange') ? [decimal(bidRange?.min), decimal(bidRange?.max)] : [decimal(job.bounds?.minAmount), decimal(job.bounds?.maxAmount)],
     bidSlots: { used: count(job.myBidSlots?.used), remaining: count(job.myBidSlots?.remaining), max: count(job.myBidSlots?.max) },
     contactId: text(forwarder?.id),
-    poster: { ...emptyPoster, id: text(forwarder?.id), name: text(forwarder?.businessName) ?? text(forwarder?.name) ?? ([text(forwarder?.firstName), text(forwarder?.lastName)].filter(Boolean).join(' ') || '—'), verified: bool(forwarderTerms?.verified) ?? bool(forwarder?.verified), rating: rating !== null && rating <= 5 ? rating : null, ratingCount: count(forwarderTerms?.ratingCount), jobsPosted: count(forwarderTerms?.jobsPosted), jobsCompleted: count(forwarderTerms?.jobsCompleted) },
+    poster: { ...emptyPoster, id: text(forwarder?.id), name: text(forwarder?.businessName) ?? text(forwarder?.name) ?? ([text(forwarder?.firstName), text(forwarder?.lastName)].filter(Boolean).join(' ') || '—'), verified: bool(forwarderTerms?.verified) ?? bool(forwarder?.verified), rating: rating !== null && rating <= 5 ? rating : null, ratingCount: count(forwarderTerms?.ratingCount), jobsPosted: count(forwarderTerms?.jobsPosted), jobsCompleted: count(forwarderTerms?.jobsCompleted), trustScore: number(forwarderTerms?.trustScore) ?? number(forwarder?.trustScore) },
     truckId: text(job.truck?.id), driverId: text(job.driver?.id), truckPlate: text(job.truck?.plateNumber) ?? '—',
+    pickupPlace: placeName(job.port, job.terminal) ?? text(job.pickupAddress), dropoffPlace: placeName(job.dropoffPort, job.dropoffTerminal),
+    deliveryAddress: text(job.deliveryAddress) ?? text(job.route?.destination?.address), returnAddress: text(job.containerReturnAddress),
+    tdoDate: dateLabel(job.tdoDate ?? terms?.pickupDate), weightTonnes: tons,
+    load: loadItems(job), loadAssigned: count(job.itemAssignments?.assigned), loadTotal: count(job.itemAssignments?.total),
+    recommendedFare: decimal(job.feeBreakdown?.recommendedFare?.amount), offerCount: count(job._count?.bids),
+    trustScore: number(forwarderTerms?.trustScore) ?? number(forwarder?.trustScore),
+    estimatedDuration: durationLabel(job.estimatedDurationMinutes),
+    cargoPhotos: Array.isArray(job.cargoPhotoUrls) ? job.cargoPhotoUrls.map(safeUrl).filter(Boolean) : safeUrl(job.cargoPhotoUrl) ? [safeUrl(job.cargoPhotoUrl)] : [],
   };
   mapped.dispatch = { required: 1, dispatched: job.driver === null ? 0 : object(job.driver) ? 1 : null, completed: job.status === 'COMPLETED' ? 1 : ['In Progress', 'Cancelled'].includes(mapped.status) ? 0 : null, remaining: job.status === 'DRIVER_ASSIGNED' && job.driver === null ? 1 : object(job.driver) ? 0 : null };
   mapped.canDispatch = job.status === 'DRIVER_ASSIGNED' && job.driver === null;
+  // A dispatched driver confirms in the driver app; until then the job stays DRIVER_ASSIGNED with a driver set.
+  mapped.awaitingDriver = job.status === 'DRIVER_ASSIGNED' && !!object(job.driver);
+  mapped.driverName = text(job.driver?.name) ?? ([text(job.driver?.firstName), text(job.driver?.lastName)].filter(Boolean).join(' ') || null);
   mapped.canBid = job.status === 'DOCUMENTS_VALIDATED' && !myBid && mapped.bidSlots.remaining !== 0;
   return mapped;
 }
@@ -117,8 +157,12 @@ export function earningsView(source, job) {
   const earnings = object(source?.money?.earnings);
   if (!earnings || earnings.currency !== 'NGN') return null;
   const gross = number(earnings.gross), fee = number(earnings.serviceFee), net = number(earnings.net);
-  const released = null;
-  return { totals: { gross, fee, net }, released, rows: [{ trip: { id: job.id, number: job.number, truckPlate: job.truckPlate, deliveryDate: '—' }, gross, payout: { status: text(earnings.payoutStatus) ?? '—' } }], status: text(earnings.payoutStatus), complete: gross !== null && fee !== null && net !== null };
+  const releasedAmount = (payment) => !object(payment) || number(payment.amount) === null ? null : payment.paidAt === null ? 0 : instant(payment.paidAt) ? payment.amount : null;
+  const mobilization = releasedAmount(earnings.mobilization), final = releasedAmount(earnings.final);
+  const released = fee === 0 && mobilization !== null && final !== null ? mobilization + final : null;
+  const part = (payment) => object(payment) && number(payment.amount) !== null ? { amount: payment.amount, paid: payment.paidAt === null ? false : instant(payment.paidAt) ? true : null, paidOn: dateLabel(payment.paidAt) } : null;
+  const split = { mobilization: part(earnings.mobilization), final: part(earnings.final) };
+  return { totals: { gross, fee, net }, released, split, rows: [{ trip: { id: job.id, number: job.number, truckPlate: job.truckPlate, deliveryDate: '—' }, gross, payout: { status: text(earnings.payoutStatus) ?? '—' } }], status: text(earnings.payoutStatus), complete: gross !== null && fee !== null && net !== null };
 }
 
 export function paperworkView(source) {

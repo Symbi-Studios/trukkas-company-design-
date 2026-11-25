@@ -58,7 +58,7 @@ export function VehicleMaintenance() {
       tab="maintenance"
       title="Truck Maintenance"
       description="View and manage maintenance records, schedule services, and track costs for this truck."
-      primaryAction={<><MaintenanceExportButton truckId={truck.id} search={query} status={statusFilter} disabled={!records} onToast={showToast} /><Button icon="plus" onClick={() => setScheduleOpen(true)}>Schedule Maintenance</Button></>}
+      primaryAction={<><MaintenanceExportButton truckId={truck.id} search={query} status={statusFilter} disabled={!records} onToast={showToast} /><Button icon="plus" onClick={() => setScheduleOpen(true)}>Request Maintenance</Button></>}
       rail={
         <>
           <Card style={{ display: 'grid', gap: 4 }}>

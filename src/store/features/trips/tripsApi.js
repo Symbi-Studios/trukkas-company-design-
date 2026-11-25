@@ -296,6 +296,10 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
         const trip = loadedTrip(api, tripId, true);
         if (!trip) return unavailable('Load the company trip before updating its status.');
         if (status === 'Cancelled') return unavailable('Request trip cancellation with a reason so support can review it.');
+        // POST /jobs/:id/complete releases the final escrow payment. A trip completes only after the
+        // driver's proof of delivery and container return and the forwarder's confirmation, so the
+        // company dashboard never calls it.
+        if (status === 'Completed') return unavailable('A trip completes after proof of delivery, offloading and container return, and the forwarder’s confirmation. It can’t be marked completed from here.');
         let path;
         let body;
         let expected;
@@ -314,10 +318,6 @@ export const tripsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyTrips',
           path = 'offload-complete'; body = new FormData(); expected = 'OFFLOAD_COMPLETED';
         } else if (status === 'Container Returned' && trip.actions?.containerReturned) {
           path = 'container-returned'; body = {}; expected = 'CONTAINER_RETURNED';
-        } else if (status === 'Completed' && ['DRIVER_EN_ROUTE', 'DRIVER_ARRIVED', 'PICKUP_COMPLETED', 'IN_TRANSIT'].includes(trip.wireStatus)) {
-          path = 'complete'; expected = 'COMPLETED';
-        } else if (status === 'Completed' && ['CARGO_ARRIVED', 'DEMURRAGE_IN_PROGRESS', 'OFFLOADING', 'OFFLOAD_COMPLETED', 'CONTAINER_RETURNED'].includes(trip.wireStatus)) {
-          return unavailable('After arrival, submit proof of delivery, start and finish offloading, then mark the container returned. The forwarder or backend confirms completion.');
         } else return unavailable('The API does not support that status change from this trip’s current stage.');
         const result = await baseQuery({ url: `/jobs/${encodeURIComponent(trip.jobId)}/${path}`, method: 'POST', ...(body ? { body } : {}) });
         if (result.error) return result;

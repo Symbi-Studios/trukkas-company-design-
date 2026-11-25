@@ -53,16 +53,16 @@ export function Payouts() {
       <PageHeader
         title="Payouts"
         description={error ? getApiErrorMessage(error) : 'Track job payments and wallet withdrawals, and download payout receipts.'}
-        actions={<Button icon="banknote" disabled={!canWithdraw || !!error || (!data?.canRequest && !withdrawalAttempt.current)} onClick={() => setRequestOpen(true)}>Request Payout</Button>}
+        actions={<Button icon="banknote" disabled={!canWithdraw || !!error || (!data?.canRequest && !withdrawalAttempt.current)} onClick={() => setRequestOpen(true)}>Withdraw to Bank</Button>}
       />
       <section className="tk-money-stats">
-        <StatCard icon="hand-coins" tint="teal" label="Available to Request" value={formatNaira(eligibleNet)} caption="Available wallet balance" />
+        <StatCard icon="hand-coins" tint="teal" label="Available to Withdraw" value={formatNaira(eligibleNet)} caption="Available wallet balance" />
         <StatCard icon="banknote" label="Total Paid Out" value={formatNaira(summary.paid)} />
         <StatCard icon="hourglass" tint="amber" label="In Progress" value={formatNaira(summary.processing)} caption="Requested or processing" />
         <StatCard icon="circle-x" tint="red" label="Failed" value={formatNaira(summary.failed)} />
       </section>
       {eligible.length > 0 && (
-        <Banner tone="info" title={`${formatNaira(eligibleNet)} ready to be paid out`} action={<Button size="sm" onClick={() => setRequestOpen(true)}>Request Payout</Button>}>
+        <Banner tone="info" title={`${formatNaira(eligibleNet)} ready to be paid out`} action={<Button size="sm" onClick={() => setRequestOpen(true)}>Withdraw to Bank</Button>}>
           {eligible.length} completed trip(s) haven’t been included in a payout yet: {eligible.map((r) => r.trip.id).join(', ')}.
         </Banner>
       )}

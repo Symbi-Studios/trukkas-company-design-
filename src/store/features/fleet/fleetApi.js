@@ -1,4 +1,5 @@
 import { baseApi, unwrapApiResponseData } from '../../api/baseApi.js';
+import { equipmentBody } from '../reference/referenceApi.js';
 import { validMoneyAmount } from '../../../domain/money.js';
 import { getApiErrorMessage } from '../../api/getApiErrorMessage.js';
 import { assignedFleetDriverView, count, dateLabel, driverView, fleetFuelLogsView, fleetFuelView, fleetSummaryView, fleetActivityView, fleetDocumentTypes, fleetDocumentView, fleetEditedSpecifications, fleetSpecificationsBody, fleetTripView, eligibilityView, maintenanceDueView, maintenanceTypeToWire, maintenanceView, requirementView, ownershipToWire, rows, safeUrl, text, truckView, vehicleClassToWire } from './fleetContracts.js';
@@ -147,6 +148,9 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
         if (!ownership) return unavailable('Choose a supported ownership type.');
         if (draft.purchaseDate && (!validDate(draft.purchaseDate) || draft.purchaseDate > new Date().toISOString().slice(0, 10))) return unavailable('Enter a valid purchase date that is not in the future.');
         if ((text(draft.location)?.length ?? 0) > 200) return unavailable('Enter a current location of up to 200 characters.');
+        // Job matching uses equipment: a container truck (type + size + weight) or a bulk truck type.
+        const kit = draft.vehicleClass !== 'Trailer' ? equipmentBody(draft.equipment) : {};
+        if (!kit) return unavailable('Choose what this truck carries: container type, size and weight, or a bulk truck type.');
         const odometerKm = draft.odometer === '' || draft.odometer == null ? null : maintenanceCost(draft.odometer);
         if (odometerKm !== null && (!Number.isFinite(odometerKm) || odometerKm < 0)) return unavailable('Enter a valid odometer reading of zero or more kilometres.');
         const specifications = fleetSpecificationsBody(draft);
@@ -186,7 +190,7 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
         // finishes documents/settings instead of creating a second vehicle.
         const partial = (result) => ({ error: { status: 'CUSTOM_ERROR', error: 'Vehicle setup is incomplete.', data: { message: `The vehicle was created, but some details could not be saved. ${getApiErrorMessage(result.error)} Retry to finish saving, or open the vehicle from My Fleet.`, createdTruckId } } });
         const settings = {
-          ownership, ...(draft.purchaseDate ? { purchaseDate: draft.purchaseDate } : {}),
+          ownership, ...kit, ...(draft.purchaseDate ? { purchaseDate: draft.purchaseDate } : {}),
           ...(Object.keys(specifications).length ? { specifications } : {}),
           ...(text(draft.notes) ? { notes: draft.notes.trim() } : {}),
         };
@@ -272,6 +276,11 @@ export const fleetApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyFleet',
         if (draft.vehicleClass !== original.vehicleClass) { body.vehicleClass = vehicleClassToWire(draft.vehicleClass); if (!body.vehicleClass) return unavailable('Choose a vehicle class.'); }
         if (draft.ownership !== original.ownership) { body.ownership = ownershipToWire(draft.ownership); if (!body.ownership) return unavailable('Choose an ownership type.'); }
         if (draft.purchaseDate !== original.purchaseDate) { if (!validDate(draft.purchaseDate) || draft.purchaseDate > new Date().toISOString().slice(0, 10)) return unavailable('Enter a valid purchase date that is not in the future.'); body.purchaseDate = draft.purchaseDate; }
+        if (draft.vehicleClass !== 'Trailer' && draft.equipment?.kind && JSON.stringify(draft.equipment) !== JSON.stringify(original.equipment)) {
+          const kit = equipmentBody(draft.equipment);
+          if (!kit) return unavailable('Complete the equipment: container type, size and weight, or a bulk truck type.');
+          Object.assign(body, kit);
+        }
         const locationChanged = draft.location !== original.location, odometerChanged = draft.odometer !== original.odometer;
         if (locationChanged && (!text(draft.location) || draft.location.trim().length > 200)) return unavailable('Enter a current location of up to 200 characters.');
         const odometerKm = maintenanceCost(draft.odometer);

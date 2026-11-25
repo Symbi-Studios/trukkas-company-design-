@@ -3,10 +3,10 @@
 import { useRef, useState } from 'react';
 import { useNavigate, useParams } from '../router.js';
 import {
-  Avatar, Badge, Button, Card, DataTable, EmptyState, EntityHeaderCard, Icon, PageHeader, ProgressBar,
+  Avatar, Badge, Button, Card, DataTable, EmptyState, EntityHeaderCard, Icon, Modal, PageHeader, ProgressBar,
   SectionCard, SkeletonRow, StatCard, Tabs, Timeline,
 } from '../ds.js';
-import { useGetCompanyDriverQuery, useGetDriverReviewsQuery, useGetDriverTripsQuery, useSetCompanyDriverAvailabilityMutation } from '../store/features/drivers/driversApi.js';
+import { useGetCompanyDriverQuery, useGetDriverReviewsQuery, useGetDriverTripsQuery, useSetCompanyDriverAvailabilityMutation, useSetCompanyDriverStatusMutation } from '../store/features/drivers/driversApi.js';
 import { useGetFleetQuery } from '../store/features/fleet/fleetApi.js';
 import { useGetDriverDocumentLibraryQuery, useUploadDriverComplianceDocumentMutation } from '../store/features/documents/documentsApi.js';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage.js';
@@ -53,6 +53,8 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
   const { currentData: documentLibrary, error: documentsError, isLoading: documentsLoading } = useGetDriverDocumentLibraryQuery(driverId, { skip: !driver || !!driverError, refetchOnMountOrArgChange: true });
   const [uploadDocument] = useUploadDriverComplianceDocumentMutation();
   const [setAvailability, { isLoading: changingAvailability }] = useSetCompanyDriverAvailabilityMutation();
+  const [setAccountStatus, { isLoading: settingStatus }] = useSetCompanyDriverStatusMutation();
+  const [statusConfirm, setStatusConfirm] = useState(null);
   const changingDuty = useRef(false);
   const truck = trucks?.find((item) => item.id === driver?.truckId);
   const [tab, setTab] = useState('overview');
@@ -137,6 +139,9 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
             {driver.status === 'Off Duty'
               ? <Button variant="outline" disabled={changingAvailability || !driver.active} onClick={() => changeAvailability('AVAILABLE')}>Mark Available</Button>
               : !locked && <Button variant="outline" disabled={changingAvailability || !driver.active || status === 'On Trip'} onClick={() => changeAvailability('OFF_DUTY')}>Mark Off Duty</Button>}
+            {driver.suspended
+              ? <Button variant="outline" icon="user-check" disabled={settingStatus} onClick={() => setStatusConfirm('ACTIVE')}>Reactivate</Button>
+              : driver.suspended === false && <Button variant="outline" icon="user-x" disabled={locked || driver.status === 'On Trip' || settingStatus} onClick={() => setStatusConfirm('SUSPENDED')}>Suspend</Button>}
             <Button variant="danger" icon="user-minus" disabled={locked || driver.status === 'On Trip' || changingAvailability} onClick={() => setRemoveCompanyOpen(true)}>Remove from Company</Button>
           </>
         }
@@ -252,6 +257,17 @@ export function DriverDetail({ driverId: queryDriverId } = {}) {
 
       <DriverAssignTruckModal driver={driver} open={assignOpen} onClose={() => setAssignOpen(false)} onDone={(plate) => { setAssignOpen(false); showToast(`${driver.name} assigned to ${plate}.`); }} />
       <FleetRemoveDriverModal truck={truck} open={removeOpen} onClose={() => setRemoveOpen(false)} onDone={() => { setRemoveOpen(false); showToast(`${driver.name} removed from ${truck?.plate}.`); }} />
+      <Modal open={!!statusConfirm} onClose={() => { if (!settingStatus) setStatusConfirm(null); }} width={440}
+        title={statusConfirm === 'SUSPENDED' ? `Suspend ${driver.name}?` : `Reactivate ${driver.name}?`}
+        footer={<><Button variant="outline" disabled={settingStatus} onClick={() => setStatusConfirm(null)}>Cancel</Button>
+          <Button variant={statusConfirm === 'SUSPENDED' ? 'danger' : 'primary'} disabled={settingStatus} onClick={async () => {
+            const next = statusConfirm;
+            try { await setAccountStatus({ id: driver.id, status: next }).unwrap(); showToast(next === 'SUSPENDED' ? `${driver.name} is suspended.` : `${driver.name} is active again.`); }
+            catch (err) { showToast(getApiErrorMessage(err)); }
+            finally { setStatusConfirm(null); }
+          }}>{settingStatus ? 'Saving…' : statusConfirm === 'SUSPENDED' ? 'Suspend Driver' : 'Reactivate'}</Button></>}>
+        <p className="tk-meta" style={{ margin: 0 }}>{statusConfirm === 'SUSPENDED' ? 'They stay in your company but can’t be dispatched until you reactivate them.' : 'They can be dispatched again.'}</p>
+      </Modal>
       <RemoveCompanyDriverModal driver={driver} open={removeCompanyOpen} onClose={() => setRemoveCompanyOpen(false)} onDone={() => navigate('/drivers')} />
       <UploadDocumentModal
         open={!!uploadType} onClose={() => setUploadType(null)} ownerType="driver" ownerId={driver.id} ownerLabel={driver.name}

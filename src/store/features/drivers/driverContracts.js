@@ -29,6 +29,7 @@ export function companyDriverDetailView(source) {
   return {
     ...driver,
     status: availabilityLabels[source.availability] ?? (onTrip ? 'On Trip' : source.truck === null ? 'Unassigned' : '—'),
+    suspended: source.status === 'SUSPENDED' ? true : source.status === 'ACTIVE' ? false : null,
     joined: dateLabel(source.joinedAt), address: text(source.address) ?? '—',
     tripsCompleted: count(source.stats?.completedTrips) ?? '—',
     earnings: source.stats?.currency === 'NGN' && source.stats?.period === 'ALL_TIME' ? number(source.stats.revenueGenerated) : null,

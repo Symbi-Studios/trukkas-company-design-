@@ -50,8 +50,10 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
       async queryFn(_arg, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
         baseQuery = companyQuery(api, baseQuery);
-        const available = await collection(baseQuery, api, '/jobs/available', 'jobs');
-        if (available.error) return available;
+        const listed = await collection(baseQuery, api, '/jobs/available', 'jobs');
+        if (listed.error) return listed;
+        // Export jobs are out of scope for the company dashboard in v1 (decided 24 Nov 2026).
+        const available = { data: listed.data.filter((job) => job.movementType !== 'EXPORT') };
         const bids = await collection(baseQuery, api, '/company/bids', 'bids', { tab: 'active' });
         if (bids.error) return bids;
         if (bids.data.some((bid) => !text(bid.job?.id))) return unavailable('The API did not identify the job attached to a bid.');
@@ -190,15 +192,17 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
       providesTags: ['CompanyJobs', 'CompanyDrivers', 'CompanyFleet', 'CompanyTrips'],
     }),
     submitJobBid: builder.mutation({
-      async queryFn({ jobId, amount, message = '' }, api, _options, baseQuery) {
+      // acceptOffer: bid the forwarder's posted fare by omitting proposedPrice.
+      async queryFn({ jobId, amount, message = '', bounds, acceptOffer = false }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
         baseQuery = companyQuery(api, baseQuery);
-        const error = getBidValidationError(amount, message);
+        const error = acceptOffer ? (typeof message === 'string' && message.length <= 500 ? null : 'Enter a message of 500 characters or fewer.') : getBidValidationError(amount, message, bounds);
         if (!text(jobId) || error) return unavailable(error ?? 'This job has no API ID.');
-        const result = await baseQuery({ url: `/jobs/${encodeURIComponent(jobId)}/bids`, method: 'POST', body: { proposedPrice: Number(amount), ...(message.trim() ? { message: message.trim() } : {}) } });
+        const body = { ...(acceptOffer ? {} : { proposedPrice: Number(amount) }), ...(message.trim() ? { message: message.trim() } : {}) };
+        const result = await baseQuery({ url: `/jobs/${encodeURIComponent(jobId)}/bids`, method: 'POST', body });
         if (result.error) return result;
         const saved = unwrapApiResponseData(result.data);
-        return saved?.jobId === jobId && text(saved.bidId) && saved.status === 'PENDING' && saved.amountBasis === 'WHOLE_JOB' && saved.amount === Number(amount) ? { data: { id: saved.bidId } } : unavailable('The API did not confirm the bid. Reload the job before trying again.');
+        return saved?.jobId === jobId && text(saved.bidId) && saved.status === 'PENDING' && saved.amountBasis === 'WHOLE_JOB' && (acceptOffer || saved.amount === Number(amount)) ? { data: { id: saved.bidId } } : unavailable('The API did not confirm the bid. Reload the job before trying again.');
       },
       invalidatesTags: changedTags,
     }),
@@ -242,6 +246,43 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
       },
       invalidatesTags: changedTags,
     }),
+    reassignJobDriver: builder.mutation({
+      // After a driver declines (or before they accept), hand the job to another driver. They go through the same accept step.
+      async queryFn({ jobId, driverId }, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
+        if (![jobId, driverId].every(text)) return unavailable('Select a driver.');
+        const result = await baseQuery({ url: `/jobs/${encodeURIComponent(jobId)}/assignment/reassign`, method: 'POST', body: { driverId } });
+        if (result.error) return result;
+        return unwrapApiResponseData(result.data)?.job?.id === jobId ? { data: { jobId } } : unavailable('The API did not confirm the new driver. Reload the trip before trying again.');
+      },
+      invalidatesTags: changedTags,
+    }),
+    setJobDeclined: builder.mutation({
+      // "Not interested" hides the job from this company's Find Jobs list; undo brings it back.
+      async queryFn({ jobId, declined }, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
+        if (!text(jobId) || typeof declined !== 'boolean') return unavailable('This job has no API ID.');
+        const result = await baseQuery({ url: `/jobs/${encodeURIComponent(jobId)}/decline`, method: declined ? 'POST' : 'DELETE' });
+        if (result.error) return result;
+        return unwrapApiResponseData(result.data)?.declined === declined ? { data: { jobId, declined } } : unavailable('The API did not confirm the change. Reload Find Jobs.');
+      },
+      invalidatesTags: ['CompanyJobs'],
+    }),
+    assignJobLoad: builder.mutation({
+      // Give one container (or bulk rack) of a multi-truck job to a driver and truck; driverId null removes it.
+      async queryFn({ jobId, kind, itemId, driverId, truckId }, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        baseQuery = companyQuery(api, baseQuery);
+        if (![jobId, itemId].every(text) || !['container', 'rack'].includes(kind) || (driverId !== null && !text(driverId))) return unavailable('Select a driver for this load.');
+        const path = kind === 'container' ? 'containers' : 'racks';
+        const body = { driverId, ...(driverId && text(truckId) ? { truckId } : {}) };
+        const result = await baseQuery({ url: `/jobs/${encodeURIComponent(jobId)}/${path}/${encodeURIComponent(itemId)}/assignment`, method: 'PATCH', body });
+        return result.error ? result : { data: { jobId, itemId } };
+      },
+      invalidatesTags: changedTags,
+    }),
     sendJobMessage: builder.mutation({
       async queryFn({ jobId, receiverId, content }, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
@@ -258,4 +299,5 @@ export const jobsApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyJobs', '
   }),
 });
 
-export const { useGetAvailableJobsQuery, useGetMyJobsQuery, useGetMyJobLifetimeEarningsQuery, useGetJobReviewQuery, useGetJobDetailQuery, useGetJobEarningsQuery, useLazyGetJobEarningsQuery, useGetJobPaperworkQuery, useGetJobDispatchOptionsQuery, useSubmitJobBidMutation, useWithdrawJobBidMutation, useSetSavedJobMutation, useDispatchJobDriverMutation, useSendJobMessageMutation } = jobsApi;
+export const { useGetAvailableJobsQuery, useGetMyJobsQuery, useGetMyJobLifetimeEarningsQuery, useGetJobReviewQuery, useGetJobDetailQuery, useGetJobEarningsQuery, useLazyGetJobEarningsQuery, useGetJobPaperworkQuery, useGetJobDispatchOptionsQuery, useSubmitJobBidMutation, useWithdrawJobBidMutation, useSetSavedJobMutation, useDispatchJobDriverMutation, useSendJobMessageMutation, useReassignJobDriverMutation, useSetJobDeclinedMutation, useAssignJobLoadMutation,
+} = jobsApi;

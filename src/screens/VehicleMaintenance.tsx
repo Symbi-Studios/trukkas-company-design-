@@ -4,7 +4,9 @@
 import { useRef, useState } from 'react';
 import { Badge, Button, Card, DataTable, DonutChart, DropdownMenu, EmptyState, Icon, SearchField, Select, SkeletonRow, StatCard, Switch } from '../ds';
 import { useFleetVehicle } from '../store/features/fleet/useFleetVehicle';
-import { useGetFleetMaintenanceQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi';
+import { useGetFleetEligibilityQuery, useGetFleetMaintenanceQuery, useGetFleetRequirementsQuery, useUpdateFleetVehicleMutation } from '../store/features/fleet/fleetApi';
+import { MAINTENANCE_STATUS_TONE } from '../store/features/fleet/fleetContracts';
+import { RequirementList, TruckRestrictionBanner } from '../components/MaintenanceCompliance';
 import { MaintenanceModal } from '../components/MaintenanceModal';
 import { MaintenanceActionModal, MaintenanceExportButton } from '../components/MaintenanceActions';
 import { getApiErrorMessage } from '../store/api/getApiErrorMessage';
@@ -12,13 +14,16 @@ import { Toast, useToast } from '../components/Toast';
 import { formatNaira } from '../mock/format';
 import { VehicleDetailFrame } from './VehicleDetailFrame';
 
-const STATUS_TONE = { Completed: 'success', Upcoming: 'info', Requested: 'info', 'In Progress': 'warning', Overdue: 'danger', Cancelled: 'neutral', Rejected: 'danger' };
-const STATUS_OPTIONS = ['All Status', 'Completed', 'Upcoming', 'In Progress', 'Overdue', 'Requested', 'Cancelled', 'Rejected'];
+const STATUS_TONE = MAINTENANCE_STATUS_TONE;
+const STATUS_OPTIONS = ['All Status', 'Overdue', 'Awaiting Approval', 'Scheduled', 'In Progress', 'Awaiting Verification', 'Completed', 'Verified', 'Declined', 'Cancelled'];
 
 export function VehicleMaintenance() {
   const { truck } = useFleetVehicle();
   const { currentData: maintenanceData, error, isLoading } = useGetFleetMaintenanceQuery(truck?.id, { skip: !truck, refetchOnMountOrArgChange: true });
   const records = error ? undefined : maintenanceData?.records;
+  const { currentData: eligibility } = useGetFleetEligibilityQuery(undefined, { skip: !truck, refetchOnMountOrArgChange: true });
+  const requirementsQuery = useGetFleetRequirementsQuery(truck?.id, { skip: !truck, refetchOnMountOrArgChange: true });
+  const [requirement, setRequirement] = useState(null);
   const [updateVehicle, { isLoading: savingReminders }] = useUpdateFleetVehicleMutation();
   const updatingReminders = useRef(false);
   const [action, setAction] = useState(null);
@@ -36,8 +41,8 @@ export function VehicleMaintenance() {
   if (!truck) return <VehicleDetailFrame tab="maintenance" title="Vehicle not found"><EmptyState icon="wrench" title="Not found" /></VehicleDetailFrame>;
 
   const knownStatuses = records && records.every((record) => record.status !== '—');
-  const completed = knownStatuses ? records.filter((r) => r.status === 'Completed').length : null;
-  const upcoming = knownStatuses ? records.filter((r) => r.status === 'Upcoming').length : null;
+  const completed = knownStatuses ? records.filter((r) => ['Completed', 'Verified'].includes(r.status)).length : null;
+  const upcoming = knownStatuses ? records.filter((r) => ['Scheduled', 'Awaiting Approval', 'In Progress', 'Awaiting Verification'].includes(r.status)).length : null;
   const overdue = knownStatuses ? records.filter((r) => r.status === 'Overdue').length : null;
   const totalCost = error ? null : maintenanceData?.completedCost ?? null;
   const next = error ? null : maintenanceData?.nextDue;
@@ -45,7 +50,7 @@ export function VehicleMaintenance() {
   const percent = (value) => value === null ? '—' : `${records.length ? Math.round(value / records.length * 100) : 0}%`;
   const donutData = [
     { label: 'Completed', value: completed, color: 'var(--tk-success)' },
-    { label: 'Upcoming', value: upcoming, color: 'var(--tk-warning)' },
+    { label: 'Open', value: upcoming, color: 'var(--tk-warning)' },
     { label: 'Overdue', value: overdue, color: 'var(--tk-danger)' },
   ];
 
@@ -54,9 +59,14 @@ export function VehicleMaintenance() {
       tab="maintenance"
       title="Truck Maintenance"
       description="View and manage maintenance records, schedule services, and track costs for this truck."
-      primaryAction={<><MaintenanceExportButton truckId={truck.id} search={query} status={statusFilter} disabled={!records} onToast={showToast} /><Button icon="plus" onClick={() => setScheduleOpen(true)}>Schedule Maintenance</Button></>}
+      primaryAction={<><MaintenanceExportButton truckId={truck.id} search={query} status={statusFilter} disabled={!records} onToast={showToast} /><Button icon="plus" onClick={() => setScheduleOpen(true)}>Request Maintenance</Button></>}
       rail={
         <>
+          <Card style={{ display: 'grid', gap: 4 }}>
+            <h3 className="tk-title" style={{ margin: 0, fontSize: 14 }}>Trukkas Requirements</h3>
+            <span className="tk-meta">Set by Trukkas maintenance rules for this truck.</span>
+            {!requirementsQuery.isLoading && <RequirementList compact showTruck={false} requirements={requirementsQuery.error ? undefined : requirementsQuery.currentData} error={requirementsQuery.error} onSchedule={(req) => { setRequirement(req); setScheduleOpen(true); }} />}
+          </Card>
           <Card style={{ display: 'grid', gap: 12 }}>
             <h3 className="tk-title" style={{ margin: 0, fontSize: 14 }}>Maintenance Status</h3>
             <div style={{ display: 'grid', justifyItems: 'center', gap: 10 }}>
@@ -90,8 +100,8 @@ export function VehicleMaintenance() {
           <Card style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <Icon name="bell" size={18} color="var(--tk-blue)" />
             <span style={{ flex: 1 }}>
-              <strong style={{ display: 'block', font: '600 13px/18px var(--tk-font-sans)' }}>Maintenance Reminders</strong>
-              <span className="tk-meta">Get notified when maintenance is due or overdue for this truck.</span>
+              <strong style={{ display: 'block', font: '600 13px/18px var(--tk-font-sans)' }}>Optional Reminders</strong>
+              <span className="tk-meta">Extra reminders for services you schedule. Alerts for mandatory Trukkas maintenance are always sent.</span>
               <Switch style={{ marginTop: 10 }} label="Enable Reminders" checked={truck.remindersEnabled}
                 disabled={truck.remindersEnabled === null || savingReminders} onChange={async () => {
                   if (updatingReminders.current) return;
@@ -105,10 +115,11 @@ export function VehicleMaintenance() {
         </>
       }
     >
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 16 }}>
+      <TruckRestrictionBanner view={eligibility?.[truck.id]} action={<Button size="sm" icon="wrench" onClick={() => setScheduleOpen(true)}>Schedule service</Button>} />
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, margin: '16px 0' }}>
         <StatCard icon="wrench" label="Total Services" value={records?.length ?? '—'} labelPosition="bottom" />
         <StatCard icon="circle-check" tint="green" label="Completed" value={completed ?? '—'} caption={percent(completed)} />
-        <StatCard icon="clock-3" tint="amber" label="Upcoming" value={upcoming ?? '—'} caption={percent(upcoming)} />
+        <StatCard icon="clock-3" tint="amber" label="Open" value={upcoming ?? '—'} caption={percent(upcoming)} />
         <StatCard icon="triangle-alert" tint="red" label="Overdue" value={overdue ?? '—'} caption={percent(overdue)} />
         <StatCard icon="banknote" tint="blue" label="Total Maintenance Cost" value={money(totalCost)} caption="All time" />
       </section>
@@ -128,7 +139,7 @@ export function VehicleMaintenance() {
           { key: 'description', header: 'Description', render: (m) => m.description },
           { key: 'odometer', header: 'Odometer', render: (m) => m.odometer === null ? '—' : `${m.odometer.toLocaleString()} km` },
           { key: 'cost', header: 'Cost (₦)', render: (m) => money(m.cost) },
-          { key: 'status', header: 'Status', render: (m) => <Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge> },
+          { key: 'status', header: 'Status', render: (m) => <span style={{ display: 'grid', gap: 2 }}><Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge>{m.status === 'Declined' && m.rejectionReason && <span className="tk-meta">{m.rejectionReason}</span>}{m.returnReason && m.status === 'In Progress' && <span className="tk-meta" style={{ color: 'var(--tk-danger)' }}>Sent back: {m.returnReason}</span>}</span> },
           { key: 'nextDue', header: 'Next Due', render: (m) => m.nextDue || '—' },
           { key: 'actions', header: 'Actions', render: (m) => m.canEdit || m.canStart || m.canComplete || m.canCancel ? (
             <span style={{ position: 'relative' }}>
@@ -137,7 +148,7 @@ export function VehicleMaintenance() {
                 <span style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20 }}>
                   <DropdownMenu width={190} items={[
                     ...(m.canStart ? [{ label: 'Start Maintenance', icon: 'circle-play', onClick: () => { setRowMenu(null); setAction({ kind: 'start', record: m }); } }] : []),
-                    ...(m.canComplete ? [{ label: 'Mark Completed', icon: 'circle-check', onClick: () => { setRowMenu(null); setAction({ kind: 'complete', record: m }); } }] : []),
+                    ...(m.canComplete ? [{ label: 'Record Completion', icon: 'clipboard-check', onClick: () => { setRowMenu(null); setAction({ kind: 'complete', record: m }); } }] : []),
                     { label: 'Edit Record', icon: 'pencil', onClick: () => {
                       setRowMenu(null);
                       if (!m.canEdit) { showToast('Only requested or scheduled maintenance can be edited.'); return; }
@@ -151,7 +162,7 @@ export function VehicleMaintenance() {
           ) : '—' },
         ]} />
       )}
-      <MaintenanceModal key={`${scheduleOpen}-${editingRecord?.id ?? ''}`} open={scheduleOpen} onClose={() => { setScheduleOpen(false); setEditingRecord(null); }} truckId={truck.id} record={editingRecord} />
+      {scheduleOpen && <MaintenanceModal key={`${editingRecord?.id ?? ''}-${requirement?.id ?? ''}`} open onClose={() => { setScheduleOpen(false); setEditingRecord(null); setRequirement(null); }} onDone={showToast} truckId={truck.id} record={editingRecord} requirement={requirement} />}
       {action && <MaintenanceActionModal key={action.kind + '-' + action.record.id} record={action.record} action={action.kind} onClose={() => setAction(null)} onDone={(message) => { setAction(null); showToast(message); }} />}
       <Toast message={toast} />
     </VehicleDetailFrame>

@@ -10,6 +10,7 @@ export const companyDocumentTypes = {
 };
 const companyNames = Object.fromEntries(Object.entries(companyDocumentTypes).map(([label, wire]) => [wire, label]));
 export const vehicleDocumentTypes = fleetDocumentTypes;
+export const EXPIRING_SOON_DAYS = 30;
 const vehicleNames = Object.fromEntries(Object.entries(vehicleDocumentTypes).map(([label, wire]) => [wire, label]));
 export const driverDocumentTypes = {
   "Driver's License": 'DRIVERS_LICENCE', 'Passport Photo': 'PASSPORT_PHOTO', 'Medical Fitness': 'MEDICAL_CERTIFICATE',
@@ -17,10 +18,21 @@ export const driverDocumentTypes = {
   'Police Clearance': 'POLICE_CLEARANCE', 'Defensive Driving': 'DEFENSIVE_DRIVING',
 };
 const driverNames = { ...Object.fromEntries(Object.entries(driverDocumentTypes).map(([label, wire]) => [wire, label])), NIN_SLIP: 'NIN Slip', OTHER: 'Other' };
+// Mirrors GET /company-documents, which is authoritative: these three are required, the rest optional.
+// companyRequirementsFrom() prefers each entry's own `required` / `expires` flags when the API returns them.
 const requiredCompanyTypes = ['CAC_CERTIFICATE', 'TIN_CERTIFICATE', 'GOODS_IN_TRANSIT_INSURANCE'];
+// The director's NIN/BVN rows show the director-verification status (companyComplianceView), not a file.
 export const COMPANY_DOCUMENT_REQUIREMENTS = COMPANY_REQUIREMENTS.map((requirement) => ({
   ...requirement, required: requiredCompanyTypes.includes(companyDocumentTypes[requirement.type]),
 }));
+export function companyRequirementsFrom(library) {
+  const flags = library?.flags;
+  if (!flags) return COMPANY_DOCUMENT_REQUIREMENTS;
+  return COMPANY_DOCUMENT_REQUIREMENTS.map((requirement) => {
+    const entry = flags[companyDocumentTypes[requirement.type]];
+    return entry ? { ...requirement, required: entry.required ?? requirement.required, expires: entry.expires ?? requirement.expires } : requirement;
+  });
+}
 const label = (mapping, value) => Object.hasOwn(mapping, value) ? mapping[value] : null;
 export const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 const dayKey = (value) => {
@@ -47,6 +59,8 @@ export function companyDocumentView(source, companyId) {
     status: source.status === 'REJECTED' ? 'Rejected' : expiryStatus(source.expiryStatus) ?? label({ APPROVED: 'Verified', PENDING: 'Pending Review' }, source.status) ?? '—',
     expiryDate: dateLabel(expiry), uploadedOn: dateLabel(source.uploadedAt), fileSize: fileSize(source.sizeBytes), url: safeUrl(source.url),
     expiryKnown: expiry === null || days !== null, expiryDays: days,
+    expiryState: source.expiryStatus === 'EXPIRED' ? 'expired' : source.expiryStatus === 'EXPIRING_SOON' ? 'expiring' : null,
+    expires: typeof source.expires === 'boolean' ? source.expires : null,
   };
 }
 
@@ -56,13 +70,15 @@ export function companyLibraryView(source, companyId) {
   const documents = entries.filter((entry) => entry.status !== 'MISSING').map((entry) => companyDocumentView(entry, companyId));
   if (documents.some((doc) => !doc) || new Set(documents.map((doc) => doc.id)).size !== documents.length || new Set(entries.map((entry) => entry.type)).size !== entries.length) return null;
   const missingTypes = entries.filter((entry) => entry.status === 'MISSING').map((entry) => label(companyNames, entry.type)).filter(Boolean);
-  const required = requiredCompanyTypes.map((type) => entries.find((entry) => entry.type === type));
+  const apiRequired = entries.filter((entry) => entry.required === true).map((entry) => entry.type);
+  const required = (apiRequired.length ? apiRequired : requiredCompanyTypes).map((type) => entries.find((entry) => entry.type === type));
   const incomplete = required.some((entry) => entry && ['MISSING', 'REJECTED'].includes(entry.status));
-  return { documents, missingTypes, verificationIncomplete: incomplete ? true : required.every((entry) => entry && ['PENDING', 'APPROVED'].includes(entry.status)) ? false : null };
+  const flags = Object.fromEntries(entries.map((entry) => [entry.type, { required: typeof entry.required === 'boolean' ? entry.required : null, expires: typeof entry.expires === 'boolean' ? entry.expires : null }]));
+  return { documents, missingTypes, flags, verificationIncomplete: incomplete ? true : required.every((entry) => entry && ['PENDING', 'APPROVED'].includes(entry.status)) ? false : null };
 }
 
 export function companyComplianceView(library, verification) {
-  const compliance = documentCompliance(COMPANY_DOCUMENT_REQUIREMENTS, library.documents, Object.keys(companyDocumentTypes), library.missingTypes);
+  const compliance = documentCompliance(companyRequirementsFrom(library), library.documents, Object.keys(companyDocumentTypes), library.missingTypes);
   // Identity statuses belong in the existing checklist, but are not uploaded
   // documents: keep file IDs, counts and View actions tied to actual files.
   const statuses = { NOT_STARTED: 'Missing', PENDING_REVIEW: 'Pending Review', VERIFIED: 'Verified', REJECTED: 'Rejected' };
@@ -81,6 +97,7 @@ export function vehicleDocumentView(source, truck) {
     status: expiryStatus(source.expiryStatus) ?? (source.expiryStatus === 'OK' ? 'Valid' : source.status === 'UPLOADED' ? 'Uploaded' : '—'),
     expiryDate: dateLabel(expiry), uploadedOn: dateLabel(source.uploadedAt), fileSize: fileSize(source.sizeBytes), url: safeUrl(source.url),
     expiryKnown: expiry === null || days !== null, expiryDays: days,
+    expiryState: source.expiryStatus === 'EXPIRED' ? 'expired' : source.expiryStatus === 'EXPIRING_SOON' ? 'expiring' : source.expiryStatus === 'OK' ? 'ok' : null,
   };
 }
 
@@ -147,8 +164,9 @@ export function documentExpiryTotals(collections) {
   if (collections.some((collection) => !Array.isArray(collection))) return { expiring: null, expired: null };
   const documents = collections.flat();
   if (documents.some((doc) => !doc.expiryKnown)) return { expiring: null, expired: null };
-  return { expiring: documents.filter((doc) => doc.expiryDays !== null && doc.expiryDays >= 0 && doc.expiryDays <= 60).length,
-    expired: documents.filter((doc) => doc.expiryDays !== null && doc.expiryDays < 0).length };
+  // The API's expiryStatus decides (EXPIRING_SOON = within 30 days); dates are only a fallback for rows without it.
+  const state = (doc) => doc.expiryState ?? (doc.expiryDays === null ? null : doc.expiryDays < 0 ? 'expired' : doc.expiryDays <= EXPIRING_SOON_DAYS ? 'expiring' : 'ok');
+  return { expiring: documents.filter((doc) => state(doc) === 'expiring').length, expired: documents.filter((doc) => state(doc) === 'expired').length };
 }
 
 export const EMPTY_DOCUMENT_COMPANY = { name: '—', rcNumber: '—', verification: '—', director: { name: '—', role: '—', dob: '—' } };

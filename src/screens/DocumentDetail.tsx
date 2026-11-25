@@ -38,7 +38,10 @@ export function DocumentDetail({ documentId: queryId, ownerType: queryOwnerType 
   const ownerType = document_.ownerType as keyof typeof OWNER_LABEL;
   const ownerName = ownerType === 'company' ? company?.name ?? '—' : ownerType === 'driver' ? document_.driverName ?? '—' : document_.truckPlate ?? '—';
   const requirement = ((ownerType === 'company' ? COMPANY_DOCUMENT_REQUIREMENTS : REQUIREMENTS_BY_OWNER[ownerType] || []) as Array<{ type: string; label?: string; required?: boolean; expires?: boolean; number?: string }>).find((r) => r.type === document_.type);
-  const canRenew = requirement?.expires || (document_.expiryDate && document_.expiryDate !== '—');
+  // Date-only renewal is for documents that expire and haven't lapsed; it goes back to review. A lapsed one needs a new file.
+  const expires = document_.expires ?? requirement?.expires ?? (document_.expiryDate && document_.expiryDate !== '—');
+  const lapsed = document_.status === 'Expired' || document_.expiryState === 'expired' || (typeof document_.expiryDays === 'number' && document_.expiryDays < 0);
+  const canRenew = !!expires && !lapsed;
 
   async function renew() {
     if (saving.current) return;
@@ -60,7 +63,8 @@ export function DocumentDetail({ documentId: queryId, ownerType: queryOwnerType 
           <>
             <Button variant="outline" icon="arrow-left" onClick={() => navigate(documentOwnerHref(document_))}>Back to {OWNER_LABEL[ownerType]}</Button>
             {document_.url && <Button variant="outline" icon="eye" onClick={() => window.open(document_.url, '_blank', 'noopener,noreferrer')}>Open File</Button>}
-            {canRenew && <Button icon="refresh-cw" onClick={() => { setRenewError(''); setRenewOpen(true); }}>Renew Document</Button>}
+            {canRenew && <Button icon="refresh-cw" onClick={() => { setRenewError(''); setRenewOpen(true); }}>Update Expiry Date</Button>}
+            {expires && lapsed && <Button icon="upload" onClick={() => navigate(documentOwnerHref(document_))}>Upload Renewed File</Button>}
           </>
         }
       />
@@ -73,9 +77,9 @@ export function DocumentDetail({ documentId: queryId, ownerType: queryOwnerType 
         <LabelValue label="File Size" value={document_.fileSize} />
         <LabelValue label="Requirement" value={requirement ? (requirement.required ? 'Required' : 'Optional') : 'Other'} />
       </Card>
-      <Modal open={renewOpen} onClose={() => { if (!saving.current) setRenewOpen(false); }} title="Renew Document" width={420}
+      <Modal open={renewOpen} onClose={() => { if (!saving.current) setRenewOpen(false); }} title="Update Expiry Date" description="For a renewed document you already hold. It goes back to Trukkas for review." width={420}
         footer={<><Button variant="outline" disabled={renewing} onClick={() => setRenewOpen(false)}>Cancel</Button><Button disabled={renewing || !validDate(expiryDate)} onClick={renew}>Save</Button></>}>
-        <TextField label="New Expiry Date" type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+        <TextField label="New Expiry Date" type="date" min={new Date().toISOString().slice(0, 10)} value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
         {renewError && <span className="tk-meta" style={{ color: 'var(--tk-danger)' }}>{renewError}</span>}
       </Modal>
     </div>

@@ -99,6 +99,9 @@ export function SubmitTicket() {
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get('category');
     if (topicByValue(requested)) setDraft((d) => ({ ...d, category: requested }));
+    // "Report this Job" links here with ?jobId=<id>.
+    const jobId = new URLSearchParams(window.location.search).get('jobId');
+    if (jobId && /^[\w-]{1,64}$/.test(jobId)) setDraft((d) => ({ ...d, subject: d.subject || `Report a job (${jobId})`, related: d.related || `job:${jobId}` }));
   }, []);
 
   function addFiles(list) {

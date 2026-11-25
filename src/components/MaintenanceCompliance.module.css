@@ -1,0 +1,25 @@
+.blocked { display: grid; border: 1px solid var(--tk-danger-soft); border-radius: var(--tk-r-lg); background: var(--tk-surface); overflow: hidden; }
+.blocked header { display: flex; gap: 12px; align-items: center; padding: 14px 16px; background: var(--tk-danger-soft); }
+.blocked header span:last-child { display: grid; gap: 2px; }
+.blocked header strong { font: 600 14px/20px var(--tk-font-sans); color: var(--tk-danger); }
+.blocked header small { font: 400 13px/18px var(--tk-font-sans); color: var(--tk-ink-700); }
+.blockedIco { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: var(--tk-surface); color: var(--tk-danger); flex: 0 0 auto; }
+.blockedRow { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--tk-line); }
+.plate { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 6px; background: var(--tk-surface-sunk, #f4f6fa); border: 1px solid var(--tk-line); font: 600 12px/1 var(--tk-font-mono, monospace); color: var(--tk-ink-900); white-space: nowrap; width: fit-content; }
+.reason { display: grid; gap: 2px; min-width: 0; }
+.reason strong { font: 600 13px/18px var(--tk-font-sans); color: var(--tk-ink-900); }
+.reason small, .reqMain small { font: 400 12px/17px var(--tk-font-sans); color: var(--tk-ink-500); }
+.actions { display: flex; gap: 8px; }
+.reqs { display: grid; }
+.req { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 14px; align-items: center; padding: 14px 16px; border-top: 1px solid var(--tk-line); }
+.req:first-child { border-top: 0; }
+.compact .req { padding: 10px 0; grid-template-columns: minmax(0, 1fr) auto; }
+.compact .req > :last-child:not(:nth-child(2)) { grid-column: 1 / -1; justify-self: start; }
+.reqMain { display: grid; gap: 6px; min-width: 0; }
+.reqTitle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.reqTitle strong { font: 600 13px/18px var(--tk-font-sans); color: var(--tk-ink-900); }
+@media (max-width: 760px) {
+  .blockedRow { grid-template-columns: 1fr; }
+  .req { grid-template-columns: 1fr auto; }
+  .req > :last-child { grid-column: 1 / -1; justify-self: start; }
+}

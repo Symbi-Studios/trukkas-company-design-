@@ -11,6 +11,7 @@ export const TRIP_TABS = [
   { value: 'Active', label: 'Active' },
   { value: 'Completed', label: 'Completed' },
   { value: 'Cancelled', label: 'Cancelled' },
+  { value: 'Disputed', label: 'Disputed' },
 ];
 
 export const TRIP_SECTIONS = [
@@ -56,14 +57,18 @@ const STATUS_TONE = {
 };
 
 /** Headline status shown in badges: the trip's stage, or Delayed for an active trip running behind. */
+const stageTones = new Map();
+
+/** Headline status: the trip's real stage from the API (e.g. "Demurrage running"), or Delayed for an active trip running behind. */
 export function tripHealth(trip) {
   if (!trip) return null;
   if (tripPhase(trip) === 'Active' && trip.delayed) return 'Delayed';
+  if (trip.stage?.label) { stageTones.set(trip.stage.label, trip.stage.tone); return trip.stage.label; }
   return trip.status;
 }
 
 export function tripHealthTone(label) {
-  return label === 'Delayed' ? 'danger' : STATUS_TONE[label] || 'neutral';
+  return label === 'Delayed' ? 'danger' : stageTones.get(label) || STATUS_TONE[label] || 'neutral';
 }
 
 export function tripStatusTone(status) {

@@ -110,6 +110,17 @@ export const driversApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDrive
       },
       invalidatesTags: ['CompanyDriverInvitations', 'CompanyDriverSearch'],
     }),
+    setCompanyDriverStatus: builder.mutation({
+      // Suspend keeps the driver in the company but off dispatch; blocked while they're on an active trip.
+      async queryFn({ id, status }, api, _options, baseQuery) {
+        const blocked = signedIn(api); if (blocked) return blocked;
+        if (!text(id) || !['ACTIVE', 'SUSPENDED'].includes(status)) return unavailable('Choose Active or Suspended.');
+        baseQuery = companyQuery(api, baseQuery);
+        const result = await baseQuery({ url: '/company/drivers/' + encodeURIComponent(id) + '/status', method: 'PATCH', body: { status } });
+        return result.error ? result : { data: { id, status } };
+      },
+      invalidatesTags: ['CompanyDrivers', 'CompanyFleet', 'CompanyDashboard'],
+    }),
     removeCompanyDriver: builder.mutation({
       async queryFn(id, api, _options, baseQuery) {
         const blocked = signedIn(api); if (blocked) return blocked;
@@ -231,4 +242,4 @@ export const driversApi = baseApi.enhanceEndpoints({ addTagTypes: ['CompanyDrive
   }),
 });
 
-export const { useSearchCompanyDriversQuery, useGetCompanyDriverInvitationsQuery, useInviteCompanyDriverMutation, useCancelCompanyDriverInvitationMutation, useRemoveCompanyDriverMutation, useGetCompanyDriversQuery, useGetCompanyDriverSummaryQuery, useGetCompanyDriverQuery, useGetDriverTripsQuery, useGetDriverReviewsQuery, useAddCompanyDriverMutation, useSetCompanyDriverAvailabilityMutation } = driversApi;
+export const { useSearchCompanyDriversQuery, useGetCompanyDriverInvitationsQuery, useInviteCompanyDriverMutation, useCancelCompanyDriverInvitationMutation, useRemoveCompanyDriverMutation, useGetCompanyDriversQuery, useGetCompanyDriverSummaryQuery, useGetCompanyDriverQuery, useGetDriverTripsQuery, useGetDriverReviewsQuery, useAddCompanyDriverMutation, useSetCompanyDriverAvailabilityMutation, useSetCompanyDriverStatusMutation } = driversApi;

@@ -30,7 +30,7 @@ const MAX_BYTES = 10 * 1024 * 1024;
 /** Drag-and-drop / click-to-browse upload area with a removable file list. */
 export function FileDrop({
   label, hint, accept, multiple = false, files = [], onChange, compact = false, preview = false, maxBytes = MAX_BYTES, style,
-}) {
+}: { label?: React.ReactNode; hint?: React.ReactNode; accept?: string; multiple?: boolean; files?: any[]; onChange?: (files: any[]) => void; compact?: boolean; preview?: boolean; maxBytes?: number; style?: React.CSSProperties }) {
   const inputId = useId();
   const input = useRef(null);
   const [over, setOver] = useState(false);

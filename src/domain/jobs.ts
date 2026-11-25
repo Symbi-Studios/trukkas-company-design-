@@ -1,15 +1,21 @@
 // Pure helpers for the job marketplace and the company's won jobs. A job is the
-// forwarder's booking; the haulage runs as trips (see ./trips.js) — one per
-// dispatched truck, up to `job.trucksRequired`.
+// forwarder's booking. One bid covers the whole job (all its trucks); after award
+// the lead driver runs the trip and each container / rack is given to a driver.
 import { validMoneyAmount } from './money';
-export const JOB_CATEGORIES = ['Container', 'Break-bulk', 'General Cargo'];
+// The platform classifies cargo only as containerised or break-bulk (General Cargo is break-bulk).
+export const JOB_CATEGORIES = ['Container', 'Break-bulk'];
 export const MIN_BID_AMOUNT = 1000;
 
-export function getBidValidationError(amount: unknown, message = '') {
+/** `bounds` = [min, max] the API allows for this job (the max is the bid cap); either may be null. */
+export function getBidValidationError(amount: unknown, message = '', bounds: [number | null, number | null] = [null, null]) {
   const value = typeof amount === 'string' && amount.trim() ? Number(amount) : typeof amount === 'number' ? amount : NaN;
   if (!Number.isFinite(value) || value > Number.MAX_SAFE_INTEGER || value < MIN_BID_AMOUNT) {
     return 'Enter a valid bid amount of at least ₦1,000.';
   }
+  const [low, high] = bounds ?? [];
+  const naira = (n: number) => `₦${Math.round(n).toLocaleString('en-NG')}`;
+  if (typeof low === 'number' && value < low) return `The lowest bid allowed on this job is ${naira(low)}.`;
+  if (typeof high === 'number' && value > high) return `The highest bid allowed on this job is ${naira(high)}.`;
   if (!validMoneyAmount(amount)) return 'Enter an amount with at most two decimal places.';
   if (typeof message !== 'string' || message.length > 500) return 'Enter a message of 500 characters or fewer.';
   return null;
@@ -20,16 +26,14 @@ export const JOB_TYPES = [
   { value: 'Port-to-Destination', description: 'Pickup at a port, delivery to the consignee’s location.' },
 ];
 
-// Only break-bulk cargo comes with forwarder photos; containers are sealed.
 export function hasCargoPhotos(job: JobView | null | undefined) {
-  return job?.category === 'Break-bulk' && job.photos! > 0;
+  return (job?.cargoPhotos?.length ?? 0) > 0;
 }
 
 export const JOB_SORTS = [
   { value: 'newest', label: 'Newest First' },
-  { value: 'closing', label: 'Closing Soon' },
-  { value: 'budget', label: 'Highest Budget' },
-  { value: 'pickup', label: 'Earliest Pickup' },
+  { value: 'budget', label: 'Highest Offer' },
+  { value: 'pickup', label: 'Earliest TDO Date' },
 ];
 
 const JOB_STATUS_TONE: Record<string, 'warning' | 'purple' | 'info' | 'success' | 'danger'> = {
@@ -89,7 +93,7 @@ export function nextStepFor(job: JobView, jobTrips: Array<{ status: string }> = 
 }
 
 interface JobView {
-  category?: string; photos?: number; title?: string; cargoType?: string; equipment?: string;
+  category?: string; photos?: number; cargoPhotos?: unknown[]; title?: string; cargoType?: string; equipment?: string;
   status?: string; myBid?: { amount?: number } | null; budget?: number;
   requirement?: string; trucksRequired?: number;
 }

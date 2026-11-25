@@ -12,6 +12,8 @@ import { Toast, useToast } from '../components/Toast';
 import { SUPPORT_TOPICS } from '../domain/support';
 import { GuideCard } from './HelpGuides';
 import guideStyles from './Guides.module.css';
+import feedbackStyles from './Feedback.module.css';
+import { SendFeedbackDialog } from './SendFeedbackDialog';
 
 const STATUS_TONE = { Open: 'info', Pending: 'warning', Resolved: 'success' };
 
@@ -28,6 +30,7 @@ export function Support() {
     if (pendingFlash) { showToast(pendingFlash); pendingFlash = null; }
   }, [showToast]);
   const [query, setQuery] = useState('');
+  const [sendingFeedback, setSendingFeedback] = useState(false);
   useTopBarSearch(setQuery);
   const { currentData: guides, error: guideError, isFetching: guidesLoading } = useGetSupportGuidesQuery({ search: query });
   const q = query.trim().toLowerCase();
@@ -37,7 +40,7 @@ export function Support() {
 
   return (
     <div style={{ display: 'grid', gap: 'var(--tk-grid-gap)' }}>
-      <PageHeader title="Support" description={error ? getApiErrorMessage(error) : 'Get help with jobs, payments, fleet, or your account.'} actions={<Button icon="plus" onClick={() => navigate('/support/new')}>Contact Support</Button>} />
+      <PageHeader title="Support" description={error ? getApiErrorMessage(error) : 'Get help with jobs, payments, fleet, or your account.'} actions={<><Button variant="outline" icon="message-square-heart" onClick={() => setSendingFeedback(true)}>Send feedback</Button><Button icon="plus" onClick={() => navigate('/support/new')}>Contact Support</Button></>} />
       <Card pad="none">
         <h3 className="tk-title" style={{ margin: 0, padding: '16px 16px 0' }}>Your Tickets</h3>
         {isLoading ? <SkeletonRow columns={5} /> : error ? <EmptyState icon="life-buoy" title={getApiErrorMessage(error)} /> : tickets.length === 0 ? (
@@ -83,6 +86,17 @@ export function Support() {
           </div>
         )}
       </Card>
+      <Card>
+        <div className={feedbackStyles.intro}>
+          <span className={feedbackStyles.introIcon} aria-hidden="true"><Icon name="message-square-heart" size={18} /></span>
+          <div><h3>Help us improve Trukkas</h3><p>Share an idea, report something that’s off, or tell us what you like.</p></div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Button variant="outline" onClick={() => navigate('/support/feedback')}>Your feedback</Button>
+            <Button onClick={() => setSendingFeedback(true)}>Send feedback</Button>
+          </div>
+        </div>
+      </Card>
+      {sendingFeedback && <SendFeedbackDialog onClose={() => setSendingFeedback(false)} onSent={() => showToast('Thanks, your feedback was sent.')} />}
       <Toast message={toast} />
     </div>
   );

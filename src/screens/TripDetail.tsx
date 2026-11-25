@@ -28,6 +28,7 @@ import { MessageModal } from '../components/MessageModal';
 import { RouteMap } from '../components/RouteMap';
 import { ReportIssueModal, UpdateLocationModal, TripPodModal, TripOffloadingModal } from '../components/TripModals';
 import { TripStepper } from '../components/TripStepper';
+import { ReassignDriverModal, TripStageCard } from '../components/TripStageCard';
 import { Toast, copyLink, useToast } from '../components/Toast';
 import styles from './TripDetail.module.css';
 
@@ -347,6 +348,7 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }: { s
   const job = trip?.job;
   const truck = trip?.truck;
   const [statusMenu, setStatusMenu] = useState(false);
+  const [reassignOpen, setReassignOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
@@ -455,7 +457,7 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }: { s
         }
         actions={
           <>
-            <Button variant="secondary" icon="share-2" onClick={() => copyLink(showToast)}>Share Trip</Button>
+            <Button variant="secondary" icon="link" onClick={() => copyLink((message) => showToast(message === 'Link copied to clipboard.' ? 'Link copied. Only people on your team can open it.' : message))}>Copy Link</Button>
             <Button variant="secondary" icon="triangle-alert" onClick={() => setReportOpen(true)}>Report Issue</Button>
             {open ? (
               <div style={{ position: 'relative' }}>
@@ -477,8 +479,10 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }: { s
                         ['offloadComplete', 'Offloading Complete', 'circle-check'],
                         ['containerReturned', 'Container Returned', 'truck'],
                       ].filter(([action]) => trip.actions?.[action]).map(([, label, icon]) => ({ label, icon, onClick: () => setStatus(label) })),
-                      ...TRIP_STAGES.slice(TRIP_STAGES.indexOf(trip.status) + 1).map((stage) => ({
-                        label: stage, icon: stage === 'Completed' ? 'circle-check' : 'arrow-right', onClick: () => setStatus(stage),
+                      // Completion releases the final payment and follows POD, container return and the
+                      // forwarder's confirmation, so it is never offered here.
+                      ...TRIP_STAGES.slice(TRIP_STAGES.indexOf(trip.status) + 1).filter((stage) => stage !== 'Completed').map((stage) => ({
+                        label: stage, icon: 'arrow-right', onClick: () => setStatus(stage),
                       })),
                       { divider: true },
                       { label: 'Cancel Trip', icon: 'ban', tone: 'danger', onClick: () => {
@@ -508,6 +512,7 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }: { s
 
       <div className={styles.layout}>
         <div className={styles.main}>
+          <TripStageCard trip={trip} onDispatch={() => navigate(jobDetailHref(job.id))} onReassign={() => setReassignOpen(true)} />
           <InfoStrip trip={trip} job={job} />
 
           {section === 'overview' && (
@@ -590,6 +595,7 @@ export function TripDetail({ section = 'overview', tripId: explicitTripId }: { s
 
       <TripPodModal trip={trip} open={podOpen} onClose={() => setPodOpen(false)} onDone={(message) => { setPodOpen(false); showToast(message); }} />
       <TripOffloadingModal trip={trip} open={offloadingOpen} onClose={() => setOffloadingOpen(false)} onDone={(message) => { setOffloadingOpen(false); showToast(message); }} />
+      <ReassignDriverModal trip={trip} open={reassignOpen} onClose={() => setReassignOpen(false)} onDone={(name) => { setReassignOpen(false); showToast(`${name} assigned. Waiting for them to accept.`); }} />
       <ReportIssueModal trip={trip} open={reportOpen} onClose={() => setReportOpen(false)} onDone={(msg) => { setReportOpen(false); showToast(msg); }} />
       <UpdateLocationModal trip={trip} open={locationOpen} onClose={() => setLocationOpen(false)} onDone={(msg) => { setLocationOpen(false); showToast(msg); }} />
       <MessageModal

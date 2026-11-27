@@ -300,10 +300,9 @@ export const authApi = baseApi.injectEndpoints({
       },
     }),
     signUpAccount: builder.mutation({
-      async queryFn({ name, email, password, dateOfBirth, sessionToken, acceptedTerms }, _api, _options, baseQuery) {
-        const names = typeof name === 'string' ? name.trim().split(/\s+/) : [];
+      async queryFn({ firstName, lastName, email, password, dateOfBirth, sessionToken, acceptedTerms }, _api, _options, baseQuery) {
         if (acceptedTerms !== true) return unavailable('Accept the terms to continue.');
-        if (names.length < 2 || !dateOfBirth || !sessionToken) {
+        if (typeof firstName !== 'string' || !firstName.trim() || typeof lastName !== 'string' || !lastName.trim() || !dateOfBirth || !sessionToken) {
           return unavailable('Enter your first and last name, date of birth, and verify your phone before creating an account.');
         }
         if (!isAdultDate(dateOfBirth)) return unavailable('You must be at least 18 years old to register.');
@@ -312,8 +311,7 @@ export const authApi = baseApi.injectEndpoints({
         }
         let result = pendingRegistration?.sessionToken === sessionToken ? { data: pendingRegistration.response } : null;
         if (!result) result = await baseQuery(post('/auth/register/create-account', {
-          sessionToken, firstName: names[0], lastName: names[names.length - 1],
-          ...(names.length > 2 ? { middleName: names.slice(1, -1).join(' ') } : {}),
+          sessionToken, firstName: firstName.trim(), lastName: lastName.trim(),
           dateOfBirth, email: email.trim().toLowerCase(), password, confirmPassword: password, acceptedTerms,
         }));
         if (result.error) return existingRegistration(result);

@@ -183,7 +183,7 @@ export function Onboarding() {
   const trucks = truckData || [];
 
   const [step, setStep] = useState(0);
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', terms: false, phone: '+234 ', dateOfBirth: '' });
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '', confirm: '', terms: false, phone: '+234 ', dateOfBirth: '' });
   const [sessionToken, setSessionToken] = useState(null);
   const [otp, setOtp] = useState(null);
   const [biz, setBiz] = useState({ name: '', rcNumber: '', entity: 'Limited Liability Company', founded: '', email: '', phone: '', address: '', state: 'Lagos', fleetSize: '', regions: [], operatingStates: null, role: 'Director', directorName: '', directorDob: '' });
@@ -259,7 +259,7 @@ export function Onboarding() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const current = STEPS[step];
-  const canContinueAccount = form.name.trim().split(/\s+/).length >= 2
+  const canContinueAccount = !!form.firstName.trim() && !!form.lastName.trim()
     && /^\S+@\S+\.\S+$/.test(form.email)
     && form.password.length >= 8
     && passwordStrength(form.password).score >= 3
@@ -277,7 +277,7 @@ export function Onboarding() {
   async function submitAccount(event) {
     event.preventDefault();
     setError('');
-    if (form.name.trim().split(/\s+/).length < 2) { setError('Enter your first and last name.'); return; }
+    if (!form.firstName.trim() || !form.lastName.trim()) { setError('Enter your first and last name.'); return; }
     if (!/^\S+@\S+\.\S+$/.test(form.email)) { setError('Enter a valid email address.'); return; }
     if (form.password.length < 8) { setError('Use at least 8 characters for your password.'); return; }
     if (passwordStrength(form.password).score < 3) { setError('Choose a stronger password.'); return; }
@@ -322,7 +322,7 @@ export function Onboarding() {
   }
 
   async function createAccount() {
-    const result = await signUpAccount({ name: form.name, email: form.email, password: form.password, dateOfBirth: form.dateOfBirth, sessionToken, acceptedTerms: form.terms }).unwrap();
+    const result = await signUpAccount({ firstName: form.firstName, lastName: form.lastName, email: form.email, password: form.password, dateOfBirth: form.dateOfBirth, sessionToken, acceptedTerms: form.terms }).unwrap();
     if (result.companyAccountRequired) { setCompanyOffer({ email: form.email.trim() }); return; }
     continueCompanySetup(result);
   }
@@ -433,7 +433,10 @@ export function Onboarding() {
           {current.key === 'account' && (
             <form onSubmit={submitAccount} className={styles.form}>
               <p className={styles.lead}>You’ll be the <strong>owner</strong> of your company’s account and can invite your team later.</p>
-              <TextField label="Full Name" required autoComplete="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Adaeze Okonkwo" />
+              <div className={styles.two}>
+                <TextField label="First Name" name="firstName" required autoComplete="given-name" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} placeholder="e.g. Adaeze" />
+                <TextField label="Last Name" name="lastName" required autoComplete="family-name" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} placeholder="e.g. Okonkwo" />
+              </div>
               <TextField label="Work Email" type="email" required autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
               <div className={styles.two}>
                 <TextField label="Password" type="password" required autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
